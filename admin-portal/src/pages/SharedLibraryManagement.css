@@ -1,0 +1,124 @@
+.shared-library-management {
+  padding: 24px;
+  background: #f5f5f5;
+  min-height: 100vh;
+}
+
+.shared-library-management .page-header {
+  margin-bottom: 24px;
+  background: white;
+  padding: 24px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.shared-library-management .ant-card {
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.shared-library-management .ant-statistic {
+  text-align: center;
+}
+
+.shared-library-management .ant-statistic .ant-statistic-content {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.shared-library-management .ant-tabs-content-holder {
+  padding-top: 16px;
+}
+
+.shared-library-management .ant-table-thead > tr > th {
+  background: #fafafa;
+  font-weight: 600;
+}
+
+.shared-library-management .ant-table-tbody > tr:hover > td {
+  background: #f5f9ff;
+}
+
+.shared-library-management .ant-tag {
+  border-radius: 12px;
+}
+
+.shared-library-management .ant-btn {
+  border-radius: 6px;
+}
+
+.shared-library-management .ant-modal .ant-modal-header {
+  background: #fafafa;
+}
+
+.shared-library-management .ant-modal .ant-modal-title {
+  font-weight: 600;
+}
+
+.shared-library-management .ant-descriptions-item-label {
+  font-weight: 600;
+  background: #fafafa;
+}
+
+.shared-library-management .ant-form-item-label > label {
+  font-weight: 500;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .shared-library-management {
+    padding: 16px;
+  }
+
+  .shared-library-management .page-header {
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .shared-library-management .ant-col {
+    margin-bottom: 16px;
+  }
+}
+
+/* 动画效果 */
+.shared-library-management .ant-card {
+  transition: all 0.3s ease;
+}
+
+.shared-library-management .ant-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+.shared-library-management .ant-btn {
+  transition: all 0.2s ease;
+}
+
+.shared-library-management .ant-btn:hover {
+  transform: translateY(-1px);
+}
+
+/* 状态标签样式 */
+.shared-library-management .ant-tag.ant-tag-processing {
+  background: #e6f7ff;
+  border-color: #91d5ff;
+  color: #1890ff;
+}
+
+.shared-library-management .ant-tag.ant-tag-success {
+  background: #f6ffed;
+  border-color: #b7eb8f;
+  color: #52c41a;
+}
+
+.shared-library-management .ant-tag.ant-tag-error {
+  background: #fff2f0;
+  border-color: #ffccc7;
+  color: #ff4d4f;
+}
+
+.shared-library-management .ant-tag.ant-tag-gold {
+  background: #fffbe6;
+  border-color: #ffe58f;
+  color: #faad14;
+}

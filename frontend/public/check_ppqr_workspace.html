@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>检查pPQR工作区配置</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 900px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #1890ff;
+            border-bottom: 3px solid #1890ff;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #333;
+            margin-top: 30px;
+            border-left: 4px solid #52c41a;
+            padding-left: 10px;
+        }
+        .info-box {
+            background: #e6f7ff;
+            border: 1px solid #91d5ff;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .success {
+            background: #f6ffed;
+            border-color: #b7eb8f;
+        }
+        .warning {
+            background: #fffbe6;
+            border-color: #ffe58f;
+        }
+        .error {
+            background: #fff2f0;
+            border-color: #ffccc7;
+        }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            border-left: 3px solid #1890ff;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .status.ok {
+            background: #52c41a;
+            color: white;
+        }
+        .status.fail {
+            background: #ff4d4f;
+            color: white;
+        }
+        button {
+            background: #1890ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #40a9ff;
+        }
+        .solution {
+            background: #fff7e6;
+            border: 2px solid #ffa940;
+            border-radius: 4px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .solution h3 {
+            color: #fa8c16;
+            margin-top: 0;
+        }
+        .step {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 pPQR审批问题诊断工具</h1>
+        
+        <div class="info-box">
+            <strong>📋 诊断目的：</strong>检查为什么pPQR无法提交审批
+        </div>
+
+        <button onclick="runDiagnosis()">🚀 开始诊断</button>
+        <button onclick="location.reload()">🔄 刷新页面</button>
+
+        <div id="results"></div>
+    </div>
+
+    <script>
+        async function runDiagnosis() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<h2>⏳ 诊断中...</h2>';
+
+            let html = '';
+
+            // 步骤1: 检查localStorage中的工作区信息
+            html += '<h2>【步骤1】检查前端工作区配置</h2>';
+            
+            const currentWorkspace = localStorage.getItem('current_workspace');
+            if (!currentWorkspace) {
+                html += '<div class="info-box error">';
+                html += '<strong>❌ 错误：</strong>未找到工作区信息！<br>';
+                html += '这是问题的根源！前端没有设置工作区，后端会默认使用个人工作区。';
+                html += '</div>';
+                html += generateSolution1();
+            } else {
+                try {
+                    const workspace = JSON.parse(currentWorkspace);
+                    html += '<div class="info-box success">';
+                    html += '<strong>✅ 找到工作区信息：</strong><br>';
+                    html += '<pre>' + JSON.stringify(workspace, null, 2) + '</pre>';
+                    html += '</div>';
+
+                    // 检查工作区类型
+                    if (workspace.type === 'personal') {
+                        html += '<div class="info-box error">';
+                        html += '<strong>❌ 问题：</strong>当前在个人工作区！<br>';
+                        html += '个人工作区不支持审批流程。';
+                        html += '</div>';
+                        html += generateSolution2();
+                    } else if (workspace.type === 'enterprise') {
+                        html += '<div class="info-box success">';
+                        html += '<strong>✅ 工作区类型正确：</strong>企业工作区<br>';
+                        html += '<strong>企业ID：</strong>' + (workspace.company_id || '未知');
+                        html += '</div>';
+                    }
+                } catch (e) {
+                    html += '<div class="info-box error">';
+                    html += '<strong>❌ 错误：</strong>工作区信息格式错误<br>';
+                    html += '<pre>' + currentWorkspace + '</pre>';
+                    html += '</div>';
+                }
+            }
+
+            // 步骤2: 检查API请求
+            html += '<h2>【步骤2】测试API请求</h2>';
+            
+            const token = localStorage.getItem('token');
+            if (!token) {
+                html += '<div class="info-box error">';
+                html += '<strong>❌ 错误：</strong>未登录（没有token）';
+                html += '</div>';
+            } else {
+                html += '<div class="info-box info">';
+                html += '<strong>🔄 正在测试API...</strong>';
+                html += '</div>';
+
+                try {
+                    // 测试获取pPQR列表
+                    const headers = {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    };
+
+                    // 添加工作区header
+                    if (currentWorkspace) {
+                        try {
+                            const workspace = JSON.parse(currentWorkspace);
+                            if (workspace.id) {
+                                headers['X-Workspace-ID'] = workspace.id;
+                            }
+                        } catch (e) {}
+                    }
+
+                    const response = await fetch('http://localhost:8000/api/v1/ppqr/?page=1&page_size=1', {
+                        headers: headers
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        html += '<div class="info-box success">';
+                        html += '<strong>✅ API请求成功</strong><br>';
+                        
+                        if (data.items && data.items.length > 0) {
+                            const ppqr = data.items[0];
+                            html += '<br><strong>第一个pPQR的审批信息：</strong><br>';
+                            html += '<pre>' + JSON.stringify({
+                                ppqr_number: ppqr.ppqr_number,
+                                can_submit_approval: ppqr.can_submit_approval,
+                                approval_status: ppqr.approval_status,
+                                approval_instance_id: ppqr.approval_instance_id
+                            }, null, 2) + '</pre>';
+
+                            if (ppqr.can_submit_approval === false) {
+                                html += '<div class="info-box error" style="margin-top: 10px;">';
+                                html += '<strong>❌ 问题确认：</strong>后端返回 can_submit_approval = false<br>';
+                                html += '这意味着后端认为当前工作区不需要审批流程。';
+                                html += '</div>';
+                            } else if (ppqr.can_submit_approval === true) {
+                                html += '<div class="info-box success" style="margin-top: 10px;">';
+                                html += '<strong>✅ 好消息：</strong>后端返回 can_submit_approval = true<br>';
+                                html += '审批功能应该可用！如果按钮还是不显示，请刷新页面。';
+                                html += '</div>';
+                            }
+                        } else {
+                            html += '<br><strong>⚠️ 没有pPQR记录</strong>';
+                        }
+                        html += '</div>';
+                    } else {
+                        html += '<div class="info-box error">';
+                        html += '<strong>❌ API请求失败：</strong>' + response.status + ' ' + response.statusText;
+                        html += '</div>';
+                    }
+                } catch (error) {
+                    html += '<div class="info-box error">';
+                    html += '<strong>❌ API请求出错：</strong>' + error.message;
+                    html += '</div>';
+                }
+            }
+
+            // 步骤3: 检查后端日志
+            html += '<h2>【步骤3】后端日志检查</h2>';
+            html += '<div class="info-box">';
+            html += '<strong>📝 请检查后端终端输出：</strong><br>';
+            html += '查找包含 "[工作区上下文]" 的日志行，确认：<br>';
+            html += '1. workspace_type 是否为 "enterprise"<br>';
+            html += '2. company_id 是否有值（不是None）';
+            html += '</div>';
+
+            resultsDiv.innerHTML = html;
+        }
+
+        function generateSolution1() {
+            return `
+                <div class="solution">
+                    <h3>🔧 解决方案1：设置工作区</h3>
+                    <div class="step">
+                        <strong>步骤1：</strong>点击页面左上角的工作区切换器
+                    </div>
+                    <div class="step">
+                        <strong>步骤2：</strong>选择一个企业工作区（不是"个人工作区"）
+                    </div>
+                    <div class="step">
+                        <strong>步骤3：</strong>刷新页面（Ctrl+F5）
+                    </div>
+                    <div class="step">
+                        <strong>步骤4：</strong>重新运行此诊断工具确认
+                    </div>
+                </div>
+            `;
+        }
+
+        function generateSolution2() {
+            return `
+                <div class="solution">
+                    <h3>🔧 解决方案2：切换到企业工作区</h3>
+                    <div class="step">
+                        <strong>原因：</strong>个人工作区不支持审批流程
+                    </div>
+                    <div class="step">
+                        <strong>步骤1：</strong>点击页面左上角的工作区切换器
+                    </div>
+                    <div class="step">
+                        <strong>步骤2：</strong>选择企业工作区
+                    </div>
+                    <div class="step">
+                        <strong>步骤3：</strong>刷新页面（Ctrl+F5）
+                    </div>
+                </div>
+            `;
+        }
+
+        // 页面加载时自动运行诊断
+        window.addEventListener('load', () => {
+            setTimeout(runDiagnosis, 500);
+        });
+    </script>
+</body>
+</html>
+

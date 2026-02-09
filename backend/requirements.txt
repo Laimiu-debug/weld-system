@@ -1,0 +1,65 @@
+# FastAPI核心框架
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# 数据库和ORM
+sqlalchemy==2.0.23
+alembic==1.12.1
+asyncpg==0.29.0
+psycopg2-binary==2.9.7
+
+# Redis和缓存
+redis==5.0.1
+hiredis==2.2.3
+
+# 认证和安全
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.1.2
+python-multipart==0.0.6
+
+# 数据验证
+pydantic==2.5.0
+pydantic-settings==2.1.0
+email-validator==2.0.0
+
+# HTTP客户端
+httpx==0.25.2
+
+# 任务队列
+celery==5.3.4
+flower==2.0.1
+
+# 文件处理
+python-magic==0.4.27
+pillow==10.1.0
+werkzeug==3.0.1
+
+# 文档导出
+python-docx==1.1.0
+weasyprint==60.1
+beautifulsoup4==4.12.2
+lxml==4.9.3
+
+# 日期时间处理
+python-dateutil==2.8.2
+
+# 环境变量
+python-dotenv==1.0.0
+
+# 开发工具
+pytest==7.4.3
+pytest-asyncio==0.21.1
+black==23.9.1
+isort==5.12.0
+mypy==1.7.1
+flake8==6.1.0
+pre-commit==3.5.0
+
+# 监控和日志
+structlog==23.2.0
+rich==13.6.0
+psutil==5.9.6
+
+# 类型检查
+types-passlib==1.7.1

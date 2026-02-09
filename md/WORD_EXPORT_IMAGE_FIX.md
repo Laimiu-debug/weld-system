@@ -1,0 +1,167 @@
+# Word 导出图片不显示问题修复
+
+## 问题描述
+
+导出 Word 文件时，示意图（特别是 base64 格式的图片）无法正确显示。
+
+## 根本原因
+
+后端 `_add_image_to_word` 函数中的正则表达式存在问题：
+
+```python
+# ❌ 有问题的正则表达式
+match = re.match(r'data:image/(\w+);base64,(.+)', img_src)
+```
+
+**问题**：
+1. 正则表达式中的 `.+` 是贪心匹配，可能导致匹配不完整
+2. 没有考虑 base64 数据中可能包含的特殊字符
+3. 没有处理超长 base64 数据的情况
+4. 错误处理不完善，无法清楚地诊断问题
+
+## 解决方案
+
+改用更可靠的字符串分割方式：
+
+```python
+# ✅ 改进的方式
+comma_index = img_src.find(',')
+if comma_index == -1:
+    print(f"[Word导出] base64图片格式错误，找不到逗号分隔符")
+    return
+
+header = img_src[:comma_index]  # data:image/png;base64
+base64_data = img_src[comma_index + 1:]  # base64数据
+
+# 从header中提取图片格式
+format_match = re.search(r'image/(\w+)', header)
+image_format = format_match.group(1) if format_match else 'png'
+```
+
+## 修改的文件
+
+### backend/app/services/document_export_service.py
+
+**修改内容**：
+- 行 201-292：重写 `_add_image_to_word` 函数
+- 改进 base64 图片解析逻辑
+- 增强错误处理和日志输出
+
+**关键改进**：
+1. ✅ 使用 `find(',')` 替代正则表达式分割
+2. ✅ 分离 header 和 base64 数据
+3. ✅ 添加数据长度检查
+4. ✅ 改进错误消息和日志
+5. ✅ 添加堆栈跟踪便于调试
+
+## 修复前后对比
+
+### 修复前
+```python
+# ❌ 问题：正则表达式可能无法正确匹配长的 base64 数据
+match = re.match(r'data:image/(\w+);base64,(.+)', img_src)
+if match:
+    image_format = match.group(1)
+    base64_data = match.group(2)
+    # ...
+else:
+    print(f"[Word导出] 无法解析base64图片")
+```
+
+### 修复后
+```python
+# ✅ 改进：使用字符串分割，更可靠
+comma_index = img_src.find(',')
+if comma_index == -1:
+    print(f"[Word导出] base64图片格式错误，找不到逗号分隔符")
+    return
+
+header = img_src[:comma_index]
+base64_data = img_src[comma_index + 1:]
+
+format_match = re.search(r'image/(\w+)', header)
+image_format = format_match.group(1) if format_match else 'png'
+
+print(f"[Word导出] base64图片格式: {image_format}, 数据长度: {len(base64_data)}")
+
+if not base64_data or len(base64_data) == 0:
+    print(f"[Word导出] base64数据为空")
+    return
+
+image_data = base64.b64decode(base64_data)
+# ...
+```
+
+## 改进的日志输出
+
+修复后的日志会显示：
+```
+[Word导出] 处理图片: data:image/png;base64,...
+[Word导出] base64图片格式: png, 数据长度: 12345
+[Word导出] 成功添加base64图片，大小: 9876 字节
+```
+
+## 测试步骤
+
+1. **生成示意图**
+   - 打开 WPS 编辑页面
+   - 生成焊接接头示意图 V4
+   - 保存 WPS 文档
+
+2. **导出 Word**
+   - 点击"导出为 Word"按钮
+   - 等待导出完成
+
+3. **验证图片**
+   - 打开导出的 Word 文件
+   - 检查示意图是否正确显示
+   - 检查后端日志是否显示成功添加图片
+
+## 预期结果
+
+✅ Word 文件中的示意图能正确显示
+✅ 后端日志显示成功添加 base64 图片
+✅ 没有"图片加载失败"的占位符
+
+## 相关文件
+
+- `backend/app/services/document_export_service.py` - 文档导出服务
+- `frontend/src/utils/moduleToTipTapHTML.ts` - HTML 生成工具
+- `frontend/src/pages/WPS/WPSEdit.tsx` - WPS 编辑页面
+
+## 向后兼容性
+
+✅ 完全向后兼容
+- 现有的网络图片处理不受影响
+- 现有的本地路径处理不受影响
+- 只改进了 base64 图片的处理
+
+## 性能影响
+
+- **正面**：使用字符串分割替代正则表达式，性能略有提升
+- **中立**：错误处理更完善，不影响正常流程
+
+## 常见问题
+
+**Q: 为什么不用正则表达式？**
+A: 正则表达式的 `.+` 是贪心匹配，对于超长的 base64 数据可能有问题。字符串分割更直接、更可靠。
+
+**Q: 如果 base64 数据损坏怎么办？**
+A: `base64.b64decode()` 会抛出异常，被 try-except 捕获，显示"图片加载失败"的占位符。
+
+**Q: 支持哪些图片格式？**
+A: 支持所有 base64 格式的图片（png、jpg、gif 等），以及网络图片和本地文件。
+
+## 部署说明
+
+1. 部署后端代码
+2. 重启后端服务
+3. 测试 Word 导出功能
+4. 验证图片显示正常
+
+## 监控指标
+
+- 导出成功率
+- 图片显示正确率
+- 后端日志中的错误数量
+

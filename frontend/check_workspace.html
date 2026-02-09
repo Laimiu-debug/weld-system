@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>检查工作区信息</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #1890ff;
+        }
+        h2 {
+            color: #333;
+            border-bottom: 2px solid #1890ff;
+            padding-bottom: 10px;
+        }
+        pre {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status.success {
+            background: #52c41a;
+            color: white;
+        }
+        .status.error {
+            background: #ff4d4f;
+            color: white;
+        }
+        .status.warning {
+            background: #faad14;
+            color: white;
+        }
+        button {
+            background: #1890ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #40a9ff;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 工作区信息检查工具</h1>
+    
+    <div class="card">
+        <h2>当前工作区信息</h2>
+        <div id="workspace-info"></div>
+    </div>
+    
+    <div class="card">
+        <h2>用户信息</h2>
+        <div id="user-info"></div>
+    </div>
+    
+    <div class="card">
+        <h2>Token信息</h2>
+        <div id="token-info"></div>
+    </div>
+    
+    <div class="card">
+        <h2>操作</h2>
+        <button onclick="refreshInfo()">刷新信息</button>
+        <button onclick="clearWorkspace()">清除工作区</button>
+        <button onclick="testAPI()">测试API</button>
+    </div>
+
+    <script>
+        function displayInfo() {
+            // 工作区信息
+            const workspace = localStorage.getItem('current_workspace');
+            const workspaceDiv = document.getElementById('workspace-info');
+            
+            if (workspace) {
+                try {
+                    const workspaceData = JSON.parse(workspace);
+                    workspaceDiv.innerHTML = `
+                        <span class="status success">✓ 已设置</span>
+                        <pre>${JSON.stringify(workspaceData, null, 2)}</pre>
+                    `;
+                } catch (e) {
+                    workspaceDiv.innerHTML = `
+                        <span class="status error">✗ 解析失败</span>
+                        <pre>${workspace}</pre>
+                    `;
+                }
+            } else {
+                workspaceDiv.innerHTML = `
+                    <span class="status error">✗ 未设置</span>
+                    <p>localStorage中没有找到 'current_workspace' 键</p>
+                `;
+            }
+            
+            // 用户信息
+            const user = localStorage.getItem('user');
+            const userDiv = document.getElementById('user-info');
+            
+            if (user) {
+                try {
+                    const userData = JSON.parse(user);
+                    userDiv.innerHTML = `
+                        <span class="status success">✓ 已登录</span>
+                        <pre>${JSON.stringify({
+                            id: userData.id,
+                            email: userData.email,
+                            membership_type: userData.membership_type,
+                            member_tier: userData.member_tier,
+                            is_active: userData.is_active
+                        }, null, 2)}</pre>
+                    `;
+                } catch (e) {
+                    userDiv.innerHTML = `
+                        <span class="status error">✗ 解析失败</span>
+                        <pre>${user}</pre>
+                    `;
+                }
+            } else {
+                userDiv.innerHTML = `
+                    <span class="status error">✗ 未登录</span>
+                    <p>localStorage中没有找到 'user' 键</p>
+                `;
+            }
+            
+            // Token信息
+            const token = localStorage.getItem('token');
+            const tokenDiv = document.getElementById('token-info');
+            
+            if (token) {
+                tokenDiv.innerHTML = `
+                    <span class="status success">✓ 存在</span>
+                    <p>Token长度: ${token.length} 字符</p>
+                    <p>Token前缀: ${token.substring(0, 20)}...</p>
+                `;
+            } else {
+                tokenDiv.innerHTML = `
+                    <span class="status error">✗ 不存在</span>
+                    <p>localStorage中没有找到 'token' 键</p>
+                `;
+            }
+        }
+        
+        function refreshInfo() {
+            displayInfo();
+        }
+        
+        function clearWorkspace() {
+            if (confirm('确定要清除工作区信息吗？')) {
+                localStorage.removeItem('current_workspace');
+                alert('工作区信息已清除');
+                displayInfo();
+            }
+        }
+        
+        async function testAPI() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('未找到Token，请先登录');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/v1/workspace/workspaces', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const data = await response.json();
+                alert('API测试成功！\n\n' + JSON.stringify(data, null, 2));
+            } catch (error) {
+                alert('API测试失败：' + error.message);
+            }
+        }
+        
+        // 页面加载时显示信息
+        displayInfo();
+    </script>
+</body>
+</html>
+

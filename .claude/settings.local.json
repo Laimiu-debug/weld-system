@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Stop-Process -Force)",
+      "Read(//g//**)",
+      "Bash(start:*)",
+      "Bash(timeout:*)",
+      "Bash(smart-restart.bat:*)",
+      "Bash(./smart-restart.bat:*)",
+      "Bash(curl:*)",
+      "Bash(npm run dev:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)",
+      "Bash(python:*)",
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(.venvScriptsactivate)",
+      "Bash(\"g:\\CODE\\sdweld1016\\backend\\venv\\Scripts\\activate\")",
+      "Bash(dir:*)",
+      "Bash(node:*)",
+      "Bash(find:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjA5Njc4MzEsInN1YiI6IjU4IiwidHlwZSI6ImFjY2VzcyJ9.Tf6kYqVNm4ecxPVrw_ukKlrq3m_xW6oHTdF6HDhUMYw\")",
+      "Bash(__NEW_LINE__ curl -X GET \"http://localhost:8000/api/v1/welders/?workspace_type=personal&skip=0&limit=10\" )",
+      "Bash(pkill:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjEwMjQwOTksInN1YiI6IjU4IiwidHlwZSI6ImFjY2VzcyJ9.aWg4_fGfFTD9m9kayJpP2hpB6U3_DHQ0ZODBt6Kcjuk\")",
+      "Bash(taskkill:*)",
+      "Bash(del:*)",
+      "Bash(git checkout:*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjExMzI4OTcsInN1YiI6IjIxIiwidHlwZSI6ImFjY2VzcyJ9.rwHpy9-mJOevPUfXwUoiySZHc8cYQYAhZPkA-lahRyM\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjExMzM5NzYsInN1YiI6IjIxIiwidHlwZSI6ImFjY2VzcyJ9.g_WmYLZy0Tzmmdcn4xetIVsvY3om8DB4TEzvtY_qxMk\")",
+      "Bash(netstat:*)",
+      "Bash(wmic:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

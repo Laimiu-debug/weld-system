@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test API Authentication</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold mb-6">API Authentication Test</h1>
+
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">1. Set Admin Token</h2>
+            <button onclick="setAdminToken()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                Set Admin Token
+            </button>
+            <div id="token-status" class="mt-2"></div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">2. Test API Calls</h2>
+            <button onclick="testUserStats()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 mr-2">
+                Test User Statistics
+            </button>
+            <button onclick="testSystemStatus()" class="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600">
+                Test System Status
+            </button>
+            <div id="api-results" class="mt-4"></div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-xl font-semibold mb-4">3. Current Status</h2>
+            <div id="current-status" class="space-y-2"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/v1';
+        const ADMIN_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjA3MzUzODksInN1YiI6IjEiLCJ0eXBlIjoiYWNjZXNzIn0.lF6XU6FdwGUqnVNfwELUnHNrGx6rv9-4oPr3zjck1cc';
+
+        function updateStatus() {
+            const statusDiv = document.getElementById('current-status');
+            const token = localStorage.getItem('admin_token');
+            const user = localStorage.getItem('admin_user');
+
+            statusDiv.innerHTML = `
+                <div><strong>Token Present:</strong> ${token ? 'Yes' : 'No'}</div>
+                <div><strong>Token Length:</strong> ${token ? token.length : 0}</div>
+                <div><strong>Token Preview:</strong> ${token ? token.substring(0, 20) + '...' : 'N/A'}</div>
+                <div><strong>User Data:</strong> ${user || 'Not set'}</div>
+            `;
+        }
+
+        function setAdminToken() {
+            localStorage.setItem('admin_token', ADMIN_TOKEN);
+            localStorage.setItem('admin_user', JSON.stringify({
+                id: 1,
+                email: 'Laimiu.new@gmail.com',
+                username: 'Laimiu',
+                full_name: 'Admin',
+                is_active: true,
+                is_super_admin: true,
+                admin_level: 'super_admin'
+            }));
+
+            document.getElementById('token-status').innerHTML =
+                '<span class="text-green-600">✅ Admin token set successfully!</span>';
+            updateStatus();
+        }
+
+        async function testUserStats() {
+            const resultsDiv = document.getElementById('api-results');
+            resultsDiv.innerHTML = '<div class="text-blue-600">Testing user statistics...</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/statistics/users`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultsDiv.innerHTML = `
+                        <div class="text-green-600">✅ User Statistics API Success!</div>
+                        <div class="bg-gray-100 p-4 rounded mt-2">
+                            <pre class="text-sm">${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                        <div class="mt-2 font-semibold">
+                            Total Users: ${data.data?.total_users || 'N/A'}
+                        </div>
+                    `;
+                } else {
+                    resultsDiv.innerHTML = `
+                        <div class="text-red-600">❌ API Error: ${response.status}</div>
+                        <div class="bg-gray-100 p-4 rounded mt-2">
+                            <pre class="text-sm">${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="text-red-600">❌ Network Error: ${error.message}</div>`;
+            }
+        }
+
+        async function testSystemStatus() {
+            const resultsDiv = document.getElementById('api-results');
+            resultsDiv.innerHTML = '<div class="text-blue-600">Testing system status...</div>';
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/system/status`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultsDiv.innerHTML = `
+                        <div class="text-green-600">✅ System Status API Success!</div>
+                        <div class="bg-gray-100 p-4 rounded mt-2">
+                            <pre class="text-sm">${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                } else {
+                    resultsDiv.innerHTML = `
+                        <div class="text-red-600">❌ API Error: ${response.status}</div>
+                        <div class="bg-gray-100 p-4 rounded mt-2">
+                            <pre class="text-sm">${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="text-red-600">❌ Network Error: ${error.message}</div>`;
+            }
+        }
+
+        // Initialize status on load
+        updateStatus();
+    </script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+/* 修改 Ant Design 样式导入 */
+@import 'antd/dist/reset.css';
+
+/* 添加一些基础样式确保页面可见 */
+body {
+  background-color: #f0f2f5;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+.admin-layout {
+  min-height: 100vh;
+}
+
+.admin-content {
+  margin: 24px;
+  padding: 24px;
+  background: #fff;
+  border-radius: 8px;
+}
+
+.admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #262626;
+  margin: 0;
+}
+
+.stats-card {
+  text-align: center;
+  padding: 24px;
+}
+
+.stats-card .ant-statistic-title {
+  font-size: 14px;
+  color: #8c8c8c;
+}
+
+.stats-card .ant-statistic-content {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.table-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.status-badge {
+  font-weight: 500;
+}
+
+.filter-section {
+  background: #fafafa;
+  padding: 16px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.chart-container {
+  height: 300px;
+  margin: 16px 0;
+}
+
+.log-entry {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.system-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-healthy {
+  color: #52c41a;
+}
+
+.status-warning {
+  color: #faad14;
+}
+
+.status-error {
+  color: #ff4d4f;
+}

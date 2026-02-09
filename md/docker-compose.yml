@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: welding_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: weld_db
+      POSTGRES_USER: weld_user
+      POSTGRES_PASSWORD: weld_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - welding_network
+
+  adminer:
+    image: adminer:latest
+    container_name: welding_adminer
+    restart: always
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    networks:
+      - welding_network
+
+volumes:
+  postgres_data:
+
+networks:
+  welding_network:
+    driver: bridge

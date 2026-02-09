@@ -1,0 +1,27 @@
+# HTTP 服务器 - 临时配置
+server {
+    listen 80;
+    server_name sdhaohan.cn laimiu.sdhaohan.cn api.sdhaohan.cn;
+
+    # Let's Encrypt 验证路径
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # 用户门户
+    location / {
+        root /usr/share/nginx/html/frontend;
+        try_files $uri $uri/ /index.html;
+    }
+}
+
+# 健康检查
+server {
+    listen 80 default_server;
+    server_name localhost;
+    location /health {
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
+}
+

@@ -1,0 +1,13 @@
+<svg width="300" height="300" xmlns="http://www.w3.org/2000/svg">
+  <rect width="300" height="300" fill="#f0f0f0"/>
+  <text x="150" y="140" font-family="Arial, sans-serif" font-size="16" fill="#999" text-anchor="middle">
+    收款码占位图
+  </text>
+  <text x="150" y="165" font-family="Arial, sans-serif" font-size="14" fill="#999" text-anchor="middle">
+    请上传您的收款码
+  </text>
+  <text x="150" y="185" font-family="Arial, sans-serif" font-size="12" fill="#ccc" text-anchor="middle">
+    alipay.jpg 或 wechat.jpg
+  </text>
+</svg>
+

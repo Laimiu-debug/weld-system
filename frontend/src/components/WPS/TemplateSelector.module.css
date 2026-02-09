@@ -1,0 +1,247 @@
+/**
+ * WPS模板选择器样式
+ */
+
+.templateSelector {
+  width: 100%;
+}
+
+/* 搜索框 */
+.searchInput {
+  margin-bottom: 16px;
+}
+
+/* 模板网格 */
+.templateGrid {
+  margin: 16px 0;
+}
+
+.templateGridItem {
+  display: flex;
+}
+
+.templateGridCard {
+  width: 100%;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+}
+
+.templateGridCard:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+.templateGridCardSelected {
+  border-color: #1890ff;
+  background-color: #f0f5ff;
+}
+
+.templateGridContent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+}
+
+.templateGridName {
+  font-weight: 600;
+  font-size: 14px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+}
+
+.templateGridTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 24px;
+}
+
+.templateGridMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  flex-grow: 1;
+}
+
+.templateGridMetaItem {
+  display: flex;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.templateGridMetaLabel {
+  min-width: 40px;
+  font-weight: 500;
+}
+
+/* 分页 */
+.paginationContainer {
+  display: flex;
+  justify-content: center;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.templateOption {
+  padding: 8px 0;
+  transition: all 0.3s ease;
+}
+
+.templateOption:hover {
+  background-color: #f5f5f5;
+}
+
+.templateName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.templateMeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.templateMetaItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.templateCard {
+  margin-top: 16px;
+  background: linear-gradient(135deg, #f0f5ff 0%, #e6f0ff 100%);
+  border: 1px solid #adc6ff;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.templateCard:hover {
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.15);
+}
+
+.templateCardTitle {
+  margin: 0 0 8px 0;
+  color: #1890ff;
+  font-weight: 600;
+}
+
+.templateCardDescription {
+  color: rgba(0, 0, 0, 0.65);
+  line-height: 1.6;
+}
+
+.templateCardInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.templateCardInfoItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.templateCardLabel {
+  color: rgba(0, 0, 0, 0.45);
+  min-width: 80px;
+}
+
+.templateCardValue {
+  color: rgba(0, 0, 0, 0.85);
+  font-weight: 500;
+}
+
+.errorAlert {
+  margin-bottom: 16px;
+}
+
+.infoAlert {
+  margin-bottom: 16px;
+  background-color: #e6f7ff;
+  border-color: #91d5ff;
+}
+
+.emptyState {
+  padding: 40px 0;
+  text-align: center;
+}
+
+.emptyStateText {
+  color: rgba(0, 0, 0, 0.45);
+  margin-top: 8px;
+}
+
+.loadingContainer {
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.selectLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.selectLabelText {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.85);
+}
+
+.selectLabelRequired {
+  color: #ff4d4f;
+}
+
+.selectLabelCount {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.45);
+  font-weight: normal;
+}
+
+.retryLink {
+  color: #1890ff;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.retryLink:hover {
+  color: #40a9ff;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .templateMeta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .templateCardInfo {
+    gap: 12px;
+  }
+
+  .templateCardInfoItem {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .templateCardLabel {
+    min-width: auto;
+  }
+}
+

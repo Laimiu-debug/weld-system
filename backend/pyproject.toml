@@ -1,0 +1,98 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "welding-system-backend"
+version = "1.0.0"
+description = "焊接工艺管理系统后端API服务"
+authors = [
+    {name = "Developer", email = "dev@example.com"},
+]
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "sqlalchemy>=2.0.20",
+    "alembic>=1.12.0",
+    "asyncpg>=0.29.0",
+    "redis>=5.0.0",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "python-multipart>=0.0.6",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "email-validator>=2.0.0",
+    "httpx>=0.25.0",
+    "celery>=5.3.4",
+    "python-magic>=0.4.27",
+    "pillow>=10.1.0",
+    "python-dateutil>=2.8.2",
+    "python-dotenv>=1.0.0",
+    "python-cors>=0.1.6",
+]
+requires-python = ">=3.11"
+
+[tool.hatch.envs.default]
+PYTHONPATH = ["."]
+WELD_ENV = "development"
+
+[tool.hatch.envs.production]
+WELD_ENV = "production"
+DEVELOPMENT = "false"
+DEBUG = "false"
+
+[tool.hatch.envs.development]
+WELD_ENV = "development"
+DEVELOPMENT = "true"
+DEBUG = "true"
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["app"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[tool.pytest.ini]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+addopts = "-v --tb=short"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+]

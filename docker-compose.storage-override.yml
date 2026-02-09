@@ -1,0 +1,6 @@
+version: '3.8'
+
+services:
+  nginx:
+    volumes:
+      - backend_uploads:/usr/share/nginx/html/storage/uploads:ro

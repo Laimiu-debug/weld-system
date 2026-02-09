@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fix Dashboard Auth</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-2xl mx-auto">
+        <h1 class="text-3xl font-bold mb-6 text-center">Fix Dashboard Authentication</h1>
+
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">Step 1: Clear Existing Auth</h2>
+            <button onclick="clearAuth()" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
+                Clear All Auth Data
+            </button>
+            <div id="clear-status" class="mt-2 text-sm"></div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">Step 2: Set Correct Auth Data</h2>
+            <button onclick="setCorrectAuth()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                Set Admin Authentication
+            </button>
+            <div id="set-status" class="mt-2 text-sm"></div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">Step 3: Verify Auth Status</h2>
+            <button onclick="verifyAuth()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+                Verify Authentication
+            </button>
+            <div id="verify-results" class="mt-4"></div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-xl font-semibold mb-4">Step 4: Go to Dashboard</h2>
+            <button onclick="goToDashboard()" class="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600" disabled>
+                Open Dashboard (Enable After Auth Fix)
+            </button>
+            <p class="mt-2 text-sm text-gray-600">Make sure auth is working before going to dashboard</p>
+        </div>
+    </div>
+
+    <script>
+        const ADMIN_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjA3MzUzODksInN1YiI6IjEiLCJ0eXBlIjoiYWNjZXNzIn0.lF6XU6FdwGUqnVNfwELUnHNrGx6rv9-4oPr3zjck1cc';
+
+        const ADMIN_USER = {
+            id: "1",
+            username: "Laimiu",
+            email: "Laimiu.new@gmail.com",
+            full_name: "Administrator",
+            is_admin: true,
+            admin_level: "super_admin",
+            permissions: [
+                "user_management",
+                "enterprise_management",
+                "subscription_management",
+                "system_monitoring",
+                "data_statistics",
+                "announcement_management",
+                "system_config",
+                "security_management"
+            ]
+        };
+
+        function clearAuth() {
+            localStorage.removeItem('admin_token');
+            localStorage.removeItem('admin_user');
+            document.getElementById('clear-status').innerHTML = '<span class="text-green-600">✅ Auth data cleared</span>';
+        }
+
+        function setCorrectAuth() {
+            try {
+                localStorage.setItem('admin_token', ADMIN_TOKEN);
+                localStorage.setItem('admin_user', JSON.stringify(ADMIN_USER));
+                document.getElementById('set-status').innerHTML = '<span class="text-green-600">✅ Admin auth data set successfully</span>';
+            } catch (error) {
+                document.getElementById('set-status').innerHTML = `<span class="text-red-600">❌ Error: ${error.message}</span>`;
+            }
+        }
+
+        async function verifyAuth() {
+            const resultsDiv = document.getElementById('verify-results');
+            resultsDiv.innerHTML = '<div class="text-blue-600">Verifying authentication...</div>';
+
+            // Check localStorage
+            const token = localStorage.getItem('admin_token');
+            const userStr = localStorage.getItem('admin_user');
+            let user = null;
+
+            try {
+                user = userStr ? JSON.parse(userStr) : null;
+            } catch (e) {
+                user = null;
+            }
+
+            const localStorageStatus = {
+                hasToken: !!token,
+                tokenLength: token?.length || 0,
+                hasUser: !!user,
+                userName: user?.username || 'N/A',
+                userEmail: user?.email || 'N/A',
+                adminLevel: user?.admin_level || 'N/A'
+            };
+
+            // Test API call
+            let apiTestResult = null;
+            try {
+                const response = await fetch('/api/v1/admin/statistics/users', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    apiTestResult = {
+                        success: true,
+                        totalUsers: data.data?.total_users,
+                        newUsers: data.data?.new_users
+                    };
+                } else {
+                    apiTestResult = {
+                        success: false,
+                        status: response.status,
+                        error: await response.text()
+                    };
+                }
+            } catch (error) {
+                apiTestResult = {
+                    success: false,
+                    error: error.message
+                };
+            }
+
+            resultsDiv.innerHTML = `
+                <div class="space-y-4">
+                    <div class="bg-gray-50 p-4 rounded">
+                        <h3 class="font-semibold mb-2">LocalStorage Status:</h3>
+                        <div class="text-sm space-y-1">
+                            <div>Token: ${localStorageStatus.hasToken ? '✅ Present' : '❌ Missing'} (${localStorageStatus.tokenLength} chars)</div>
+                            <div>User: ${localStorageStatus.hasUser ? '✅ Present' : '❌ Missing'}</div>
+                            <div>Name: ${localStorageStatus.userName}</div>
+                            <div>Email: ${localStorageStatus.userEmail}</div>
+                            <div>Admin Level: ${localStorageStatus.adminLevel}</div>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-50 p-4 rounded">
+                        <h3 class="font-semibold mb-2">API Test Result:</h3>
+                        <div class="text-sm">
+                            ${apiTestResult?.success ?
+                                `<div class="text-green-600">✅ API Success!</div>
+                                 <div>Total Users: ${apiTestResult.totalUsers}</div>
+                                 <div>New Users: ${apiTestResult.newUsers}</div>` :
+                                `<div class="text-red-600">❌ API Failed</div>
+                                 <div class="text-xs">${apiTestResult?.error || 'Unknown error'}</div>`
+                            }
+                        </div>
+                    </div>
+
+                    <div class="${localStorageStatus.hasToken && localStorageStatus.hasUser && apiTestResult?.success ? 'text-green-600' : 'text-red-600'} font-semibold">
+                        ${localStorageStatus.hasToken && localStorageStatus.hasUser && apiTestResult?.success ?
+                            '🎉 Authentication is working! You can now go to dashboard.' :
+                            '❌ Authentication issues detected. Fix them before proceeding.'}
+                    </div>
+                </div>
+            `;
+
+            // Enable dashboard button if auth is working
+            if (localStorageStatus.hasToken && localStorageStatus.hasUser && apiTestResult?.success) {
+                document.querySelector('button[onclick="goToDashboard()"]').disabled = false;
+                document.querySelector('button[onclick="goToDashboard()"]').classList.remove('bg-purple-500', 'hover:bg-purple-600');
+                document.querySelector('button[onclick="goToDashboard()"]').classList.add('bg-green-500', 'hover:bg-green-600');
+            }
+        }
+
+        function goToDashboard() {
+            window.open('/dashboard', '_blank');
+        }
+
+        // Initial verification
+        verifyAuth();
+    </script>
+</body>
+</html>

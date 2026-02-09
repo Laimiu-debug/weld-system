@@ -1,0 +1,64 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python dependencies
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Rust dependencies
+/target/
+**/*.rs.bk
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.development
+
+# Database
+*.db
+*.sqlite
+
+# Backup files
+*.backup*
+backup*
+
+# Docker
+.docker/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Uploads and media
+uploads/
+media/
+
+# Build artifacts
+dist/
+build/
