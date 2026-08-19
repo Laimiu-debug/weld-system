@@ -30,7 +30,7 @@ const PrivacyPolicy: React.FC = () => {
           <Typography>
             <Title level={3}>引言</Title>
             <Paragraph>
-              欢迎使用焊接工艺管理系统（以下简称"本系统"或"我们"）。我们非常重视您的隐私保护和个人信息安全。
+              欢迎使用焊序（以下简称"本系统"或"我们"）。我们非常重视您的隐私保护和个人信息安全。
               本隐私政策旨在向您说明我们如何收集、使用、存储、共享和保护您的个人信息，以及您享有的相关权利。
             </Paragraph>
             <Paragraph>
@@ -179,7 +179,7 @@ const PrivacyPolicy: React.FC = () => {
 
             <div style={{ textAlign: 'center', marginTop: 40 }}>
               <Text type="secondary">
-                本隐私政策的解释权归焊接工艺管理系统所有
+                本隐私政策的解释权归焊序所有
               </Text>
             </div>
           </Typography>

@@ -47,7 +47,7 @@ class EmailService:
             "reset_password": "重置密码"
         }.get(purpose, "验证")
 
-        subject = f"【焊接工艺管理系统】{purpose_text}验证码"
+        subject = f"【焊序】{purpose_text}验证码"
         
         html_content = self._generate_verification_email_html(
             code=code,
@@ -56,7 +56,7 @@ class EmailService:
         )
         
         text_content = f"""
-        【焊接工艺管理系统】{purpose_text}验证码
+        【焊序】{purpose_text}验证码
         
         您的验证码是: {code}
         
@@ -277,8 +277,8 @@ class EmailService:
                             <!-- Header -->
                             <tr>
                                 <td style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center;">
-                                    <h1 style="color: #ffffff; margin: 0; font-size: 24px;">焊接工艺管理系统</h1>
-                                    <p style="color: #ffffff; margin: 10px 0 0 0; opacity: 0.9;">Welding Process Management System</p>
+                                    <h1 style="color: #ffffff; margin: 0; font-size: 24px;">焊序</h1>
+                                    <p style="color: #ffffff; margin: 10px 0 0 0; opacity: 0.9;">Hanxu</p>
                                 </td>
                             </tr>
                             
@@ -313,7 +313,7 @@ class EmailService:
                                 <td style="background-color: #f8f9fa; padding: 20px 30px; border-top: 1px solid #e9ecef;">
                                     <p style="color: #999999; font-size: 12px; line-height: 1.6; margin: 0; text-align: center;">
                                         此邮件由系统自动发送，请勿回复<br>
-                                        © {datetime.now().year} 焊接工艺管理系统 版权所有
+                                        © {datetime.now().year} 焊序 版权所有
                                     </p>
                                 </td>
                             </tr>

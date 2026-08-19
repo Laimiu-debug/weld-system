@@ -334,7 +334,7 @@ const Dashboard: React.FC = () => {
         <div className="welcome-content">
           <div className="welcome-text">
             <Title level={1} className="welcome-title">
-              {isGuestMode ? '欢迎体验焊接工艺管理系统' : `欢迎回来，${user?.full_name || user?.username}！`}
+              {isGuestMode ? '欢迎体验焊序' : `欢迎回来，${user?.full_name || user?.username}！`}
             </Title>
             <Paragraph className="welcome-subtitle">
               今天是 {new Date().toLocaleDateString('zh-CN', {
@@ -346,8 +346,8 @@ const Dashboard: React.FC = () => {
             </Paragraph>
             <Paragraph className="welcome-description">
               {isGuestMode
-                ? '这是焊接工艺管理系统的演示模式，您可以浏览基础功能，了解系统的主要特性。注册后可使用完整功能。'
-                : '这是您的焊接工艺管理系统概览，高效管理您的焊接工艺、资质评定和焊工信息。'
+                ? '这是焊序的演示模式，您可以浏览基础功能，了解系统的主要特性。注册后可使用完整功能。'
+                : '这是您的焊序概览，高效管理您的焊接工艺、资质评定和焊工信息。'
               }
             </Paragraph>
           </div>

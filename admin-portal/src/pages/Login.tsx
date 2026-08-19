@@ -52,7 +52,7 @@ const Login: React.FC = () => {
       >
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <Title level={2} style={{ color: '#1890ff', marginBottom: 8 }}>
-            焊接工艺管理系统
+            焊序
           </Title>
           <Title level={4} type="secondary" style={{ marginBottom: 0 }}>
             管理员门户

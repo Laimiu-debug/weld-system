@@ -52,7 +52,7 @@ const PublicNavbar: React.FC = () => {
           }}
         >
           <span style={{ fontSize: 28 }}>⚡</span>
-          好汉焊接
+          焊序
         </Link>
 
         {/* Desktop Navigation */}

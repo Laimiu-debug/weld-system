@@ -591,7 +591,7 @@ const SecuritySettingsPage: React.FC = () => {
             请使用认证器应用（如 Google Authenticator、Microsoft Authenticator）扫描下方二维码
           </Paragraph>
           <div className="flex justify-center mb-4">
-            <QRCode value={`otpauth://totp/WeldingSystem:${user?.email}?secret=${settings.twoFactorSecret}&issuer=WeldingSystem`} />
+            <QRCode value={`otpauth://totp/Hanxu:${user?.email}?secret=${settings.twoFactorSecret}&issuer=Hanxu`} />
           </div>
           <Space direction="vertical" size="small" className="mb-4">
             <Text strong>或手动输入密钥：</Text>

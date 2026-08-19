@@ -346,7 +346,7 @@ const Features: React.FC = () => {
             准备好开始了吗？
           </h2>
           <p style={{ fontSize: 18, color: 'rgba(255,255,255,0.9)', marginBottom: 32, margin: '0 0 32px 0' }}>
-            立即注册，体验专业的焊接工艺管理系统
+            立即注册，体验专业的焊序
           </p>
           <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
             <Link to="/register">
@@ -411,7 +411,7 @@ const Features: React.FC = () => {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 40, marginBottom: 40 }}>
             <div>
               <h4 style={{ fontSize: 18, fontWeight: 600, color: 'white', marginBottom: 16, margin: '0 0 16px 0' }}>
-                好汉焊接
+                焊序
               </h4>
               <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 14, lineHeight: 1.6, margin: 0 }}>
                 专业的焊接工艺管理平台，为焊接行业提供全方位的数字化解决方案
@@ -480,7 +480,7 @@ const Features: React.FC = () => {
             }}
           >
             <span style={{ color: 'rgba(255,255,255,0.5)' }}>
-              © 2025 好焊网. All rights reserved. | 鲁ICP备2025191429号-1
+              © 2025 焊序. All rights reserved. | 鲁ICP备2025191429号-1
             </span>
           </div>
         </div>

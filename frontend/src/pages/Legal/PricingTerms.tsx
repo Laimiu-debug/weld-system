@@ -292,7 +292,7 @@ const PricingTerms: React.FC = () => {
 
             <div style={{ textAlign: 'center', marginTop: 40 }}>
               <Text type="secondary">
-                本说明的解释权归焊接工艺管理系统所有
+                本说明的解释权归焊序所有
               </Text>
             </div>
           </Typography>

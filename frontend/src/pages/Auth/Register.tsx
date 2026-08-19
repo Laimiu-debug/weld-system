@@ -141,7 +141,7 @@ const Register: React.FC = () => {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Title level={2} className="text-blue-600 mb-2">
-            好焊网
+            焊序
           </Title>
           <Text type="secondary">专业的焊接工艺管理平台</Text>
         </div>

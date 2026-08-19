@@ -457,7 +457,7 @@ class PaymentService:
             if user and user.email:
                 EmailService().send_email(
                     to_email=user.email,
-                    subject=f"【焊接工艺管理系统】{title}",
+                    subject=f"【焊序】{title}",
                     html_content=f"<p>{content}</p>",
                     text_content=content,
                 )

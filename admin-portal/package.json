@@ -2,7 +2,7 @@
   "name": "welding-admin-portal",
   "version": "1.0.0",
   "private": true,
-  "description": "焊接工艺管理系统 - 管理员门户",
+  "description": "焊序 - 管理员门户",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

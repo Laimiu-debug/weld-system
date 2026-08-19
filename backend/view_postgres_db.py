@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 PostgreSQL数据库查看工具
-用于查看焊接工艺管理系统的PostgreSQL数据库表结构和数据
+用于查看焊序的PostgreSQL数据库表结构和数据
 """
 
 import psycopg2

@@ -38,7 +38,7 @@ const RefundPolicy: React.FC = () => {
           <Typography>
             <Title level={3}>一、退款原则</Title>
             <Paragraph>
-              焊接工艺管理系统致力于为用户提供优质的服务。我们理解在某些情况下，
+              焊序致力于为用户提供优质的服务。我们理解在某些情况下，
               您可能需要申请退款。本退款政策旨在明确退款的条件、流程和时限。
             </Paragraph>
 
@@ -218,7 +218,7 @@ const RefundPolicy: React.FC = () => {
 
             <div style={{ textAlign: 'center', marginTop: 40 }}>
               <Text type="secondary">
-                本退款政策的解释权归焊接工艺管理系统所有
+                本退款政策的解释权归焊序所有
               </Text>
             </div>
           </Typography>

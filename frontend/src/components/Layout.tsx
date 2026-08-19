@@ -674,7 +674,7 @@ const Layout: React.FC<LayoutProps> = () => {
           <div className="sidebar-header">
             {collapsed ? (
               <div className="sidebar-logo-collapsed">
-                <span className="logo-text">好焊</span>
+                <span className="logo-text">焊序</span>
               </div>
             ) : (
               <div className="sidebar-logo-expanded">
@@ -682,8 +682,8 @@ const Layout: React.FC<LayoutProps> = () => {
                   <SafetyCertificateOutlined />
                 </div>
                 <div className="logo-text-wrapper">
-                  <span className="logo-title">好焊网</span>
-                  <span className="logo-subtitle">HaoHan.cn</span>
+                  <span className="logo-title">焊序</span>
+                  <span className="logo-subtitle">Hanxu</span>
                 </div>
               </div>
             )}
@@ -695,7 +695,7 @@ const Layout: React.FC<LayoutProps> = () => {
       {/* 移动端抽屉 */}
       {isMobile && (
         <Drawer
-          title="好焊网"
+          title="焊序"
           placement="left"
           onClose={() => setMobileDrawerVisible(false)}
           open={mobileDrawerVisible}

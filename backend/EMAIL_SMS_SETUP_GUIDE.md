@@ -68,7 +68,7 @@ SMTP_PORT=587
 SMTP_USER=your-email@gmail.com
 SMTP_PASSWORD=xxxx xxxx xxxx xxxx  # 刚才生成的16位密码
 EMAILS_FROM_EMAIL=your-email@gmail.com
-EMAILS_FROM_NAME=焊接工艺管理系统
+EMAILS_FROM_NAME=焊序
 ```
 
 ### 方案二：使用 QQ 邮箱 SMTP
@@ -91,7 +91,7 @@ SMTP_PORT=587
 SMTP_USER=your-qq-number@qq.com
 SMTP_PASSWORD=your-authorization-code  # QQ邮箱授权码
 EMAILS_FROM_EMAIL=your-qq-number@qq.com
-EMAILS_FROM_NAME=焊接工艺管理系统
+EMAILS_FROM_NAME=焊序
 ```
 
 ### 方案三：使用 SendGrid（推荐用于生产环境）
@@ -116,7 +116,7 @@ EMAILS_FROM_NAME=焊接工艺管理系统
 EMAIL_PROVIDER=sendgrid
 SENDGRID_API_KEY=SG.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 EMAILS_FROM_EMAIL=noreply@yourdomain.com
-EMAILS_FROM_NAME=焊接工艺管理系统
+EMAILS_FROM_NAME=焊序
 ```
 
 #### 步骤 4：验证发件人
@@ -145,7 +145,7 @@ ALIYUN_ACCESS_KEY_ID=your-access-key-id
 ALIYUN_ACCESS_KEY_SECRET=your-access-key-secret
 ALIYUN_REGION_ID=cn-hangzhou
 EMAILS_FROM_EMAIL=noreply@your-verified-domain.com
-EMAILS_FROM_NAME=焊接工艺管理系统
+EMAILS_FROM_NAME=焊序
 ```
 
 ---
@@ -164,7 +164,7 @@ EMAILS_FROM_NAME=焊接工艺管理系统
 
 1. 进入短信服务控制台
 2. 点击"国内消息" -> "签名管理" -> "添加签名"
-3. 填写签名信息（如：焊接工艺管理系统）
+3. 填写签名信息（如：焊序）
 4. 上传相关资质（企业营业执照或个人身份证）
 5. 等待审核（通常 2 小时内）
 
@@ -202,7 +202,7 @@ SMS_PROVIDER=aliyun
 ALIYUN_ACCESS_KEY_ID=your-access-key-id
 ALIYUN_ACCESS_KEY_SECRET=your-access-key-secret
 ALIYUN_REGION_ID=cn-hangzhou
-ALIYUN_SMS_SIGN_NAME=焊接工艺管理系统
+ALIYUN_SMS_SIGN_NAME=焊序
 SMS_TEMPLATE_LOGIN=SMS_123456789
 SMS_TEMPLATE_REGISTER=SMS_987654321
 SMS_TEMPLATE_RESET_PASSWORD=SMS_456789123
@@ -234,7 +234,7 @@ SMS_PROVIDER=tencent
 TENCENT_SECRET_ID=your-secret-id
 TENCENT_SECRET_KEY=your-secret-key
 TENCENT_SMS_APP_ID=your-app-id
-TENCENT_SMS_SIGN_NAME=焊接工艺管理系统
+TENCENT_SMS_SIGN_NAME=焊序
 TENCENT_SMS_REGION=ap-guangzhou
 ```
 

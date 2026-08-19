@@ -66,7 +66,7 @@ const Welcome: React.FC = () => {
                   marginBottom: 24,
                   lineHeight: 1.2
                 }}>
-                  <span style={{ color: '#1F5EFF' }}>好焊网</span><br />
+                  <span style={{ color: '#1F5EFF' }}>焊序</span><br />
                   专业的焊接工艺管理平台
                 </Title>
                 <Paragraph style={{
@@ -322,7 +322,7 @@ const Welcome: React.FC = () => {
             准备好提升焊接工艺管理效率了吗？
           </Title>
           <Paragraph style={{ fontSize: '1.25rem', color: 'rgba(255,255,255,0.9)', marginBottom: 32 }}>
-            立即加入好焊网，体验专业的焊接工艺管理平台
+            立即加入焊序，体验专业的焊接工艺管理平台
           </Paragraph>
           <Space size="large">
             <Button
@@ -370,7 +370,7 @@ const Welcome: React.FC = () => {
           <Row gutter={[32, 32]} style={{ marginBottom: 32 }}>
             <Col xs={24} sm={12} md={6}>
               <div>
-                <Title level={4} style={{ color: 'white', marginBottom: 16 }}>好焊网</Title>
+                <Title level={4} style={{ color: 'white', marginBottom: 16 }}>焊序</Title>
                 <Text style={{ color: '#9CA3AF', fontSize: 14 }}>
                   专业的焊接工艺管理平台，为焊接工程师和企业提供全面的WPS/PQR管理解决方案。
                 </Text>
@@ -413,7 +413,7 @@ const Welcome: React.FC = () => {
 
           <div style={{ borderTop: '1px solid #374151', paddingTop: 32, textAlign: 'center' }}>
             <Text style={{ color: '#9CA3AF', fontSize: 14 }}>
-              © 2024 好焊网. 保留所有权利. {' '}
+              © 2024 焊序. 保留所有权利. {' '}
               <a
                 href="https://beian.miit.gov.cn/"
                 target="_blank"

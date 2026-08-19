@@ -61,7 +61,7 @@ const About: React.FC = () => {
       <div style={{ padding: '80px 24px', textAlign: 'center' }}>
         <div style={{ maxWidth: 800, margin: '0 auto' }}>
           <h1 style={{ fontSize: 48, marginBottom: 24, fontWeight: 700, color: '#1A202C', margin: '0 0 24px 0' }}>
-            关于好焊网
+            关于焊序
           </h1>
           <p style={{ fontSize: 20, color: '#4A5568', marginBottom: 40, lineHeight: 1.6, margin: '0 0 40px 0' }}>
             专注于为焊接行业提供专业的数字化管理解决方案
@@ -152,7 +152,7 @@ const About: React.FC = () => {
             加入我们，开启数字化之旅
           </h2>
           <p style={{ fontSize: 18, color: 'rgba(255,255,255,0.9)', marginBottom: 32, lineHeight: 1.6, margin: '0 0 32px 0' }}>
-            立即注册，体验专业的焊接工艺管理系统
+            立即注册，体验专业的焊序
           </p>
           <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
             <Link
@@ -201,7 +201,7 @@ const About: React.FC = () => {
           <Row gutter={[32, 32]}>
             <Col xs={24} md={6}>
               <h4 style={{ color: 'white', marginBottom: 16, fontSize: 18, fontWeight: 600, margin: '0 0 16px 0' }}>
-                好焊网
+                焊序
               </h4>
               <p style={{ color: 'rgba(255,255,255,0.7)', margin: 0 }}>
                 专业的焊接工艺管理平台
@@ -254,7 +254,7 @@ const About: React.FC = () => {
             }}
           >
             <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>
-              © 2025 好焊网. All rights reserved. | 鲁ICP备2025191429号-1
+              © 2025 焊序. All rights reserved. | 鲁ICP备2025191429号-1
             </span>
           </div>
         </div>

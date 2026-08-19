@@ -89,7 +89,7 @@ const Footer: React.FC<FooterProps> = ({ style, className }) => {
 
         {/* 版权信息 */}
         <Text style={{ color: 'rgba(255, 255, 255, 0.45)', fontSize: '12px' }}>
-          Copyright © {currentYear} 焊接工艺管理系统. All Rights Reserved.
+          Copyright © {currentYear} 焊序. All Rights Reserved.
         </Text>
 
         {/* 备案信息 */}

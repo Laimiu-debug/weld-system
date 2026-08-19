@@ -1,8 +1,8 @@
-# 焊接工艺管理系统 - 用户门户前端
+# 焊序 - 用户门户前端
 
 ## 项目概述
 
-这是焊接工艺管理系统的用户门户前端，基于React 18 + TypeScript + Vite + Ant Design构建。
+这是焊序的用户门户前端，基于React 18 + TypeScript + Vite + Ant Design构建。
 
 ## 技术栈
 
@@ -224,7 +224,7 @@ npm run build
 
 ```env
 VITE_API_BASE_URL=http://localhost:8000/api/v1
-VITE_APP_TITLE=焊接工艺管理系统
+VITE_APP_TITLE=焊序
 VITE_ENABLE_MOCK_DATA=true
 ```
 

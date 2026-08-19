@@ -30,7 +30,7 @@ const TermsOfService: React.FC = () => {
           <Typography>
             <Title level={3}>重要提示</Title>
             <Paragraph>
-              欢迎您使用焊接工艺管理系统（以下简称"本系统"或"我们"）！
+              欢迎您使用焊序（以下简称"本系统"或"我们"）！
             </Paragraph>
             <Paragraph>
               <Text strong>
@@ -46,7 +46,7 @@ const TermsOfService: React.FC = () => {
             <Title level={3}>一、协议的范围</Title>
             <Title level={4}>1.1 协议适用主体</Title>
             <Paragraph>
-              本协议是您与焊接工艺管理系统运营方之间关于您使用本系统服务所订立的协议。
+              本协议是您与焊序运营方之间关于您使用本系统服务所订立的协议。
             </Paragraph>
 
             <Title level={4}>1.2 协议关系及冲突条款</Title>
@@ -247,7 +247,7 @@ const TermsOfService: React.FC = () => {
 
             <div style={{ textAlign: 'center', marginTop: 40 }}>
               <Text type="secondary">
-                本协议的解释权归焊接工艺管理系统所有
+                本协议的解释权归焊序所有
               </Text>
             </div>
           </Typography>

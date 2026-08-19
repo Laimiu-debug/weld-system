@@ -20,7 +20,7 @@ def create_test_notifications():
         # 测试通知数据
         test_notifications = [
             {
-                "title": "🎉 欢迎使用焊接工艺管理系统",
+                "title": "🎉 欢迎使用焊序",
                 "content": "感谢您注册使用我们的系统！我们为您提供了专业的WPS、PQR、pPQR管理功能，助力您的焊接工艺管理工作。",
                 "announcement_type": "success",
                 "priority": "normal",

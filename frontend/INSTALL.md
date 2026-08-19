@@ -1,4 +1,4 @@
-# 焊接工艺管理系统用户门户前端 - 安装指南
+# 焊序用户门户前端 - 安装指南
 
 ## 系统要求
 
@@ -87,7 +87,7 @@ cp .env.example .env
 
 ```env
 VITE_API_BASE_URL=http://localhost:8000/api/v1
-VITE_APP_TITLE=焊接工艺管理系统
+VITE_APP_TITLE=焊序
 VITE_ENABLE_MOCK_DATA=true
 ```
 

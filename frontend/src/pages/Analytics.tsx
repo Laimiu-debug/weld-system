@@ -353,7 +353,7 @@ const Analytics: React.FC = () => {
           <Row gutter={[32, 32]}>
             <Col xs={24} md={6}>
               <h4 style={{ color: 'white', marginBottom: 16, fontSize: 18, fontWeight: 600, margin: '0 0 16px 0' }}>
-                好焊网
+                焊序
               </h4>
               <p style={{ color: 'rgba(255,255,255,0.7)', margin: 0 }}>
                 专业的焊接工艺管理平台
@@ -406,7 +406,7 @@ const Analytics: React.FC = () => {
             }}
           >
             <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 14 }}>
-              © 2025 好焊网. All rights reserved. | 鲁ICP备2025191429号-1
+              © 2025 焊序. All rights reserved. | 鲁ICP备2025191429号-1
             </span>
           </div>
         </div>
