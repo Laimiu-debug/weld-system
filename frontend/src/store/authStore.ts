@@ -14,6 +14,7 @@ interface AuthState {
     password: string
     full_name: string
     phone?: string
+    invite_token?: string
   }) => Promise<boolean>
   logout: () => Promise<void>
   refreshToken: () => Promise<boolean>

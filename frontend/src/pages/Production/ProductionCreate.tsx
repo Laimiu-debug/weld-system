@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   Card,
   Form,
@@ -20,6 +20,9 @@ import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import { createProductionTask } from '@/services/production'
 import workspaceService from '@/services/workspace'
+import weldersService from '@/services/welders'
+import equipmentService from '@/services/equipment'
+import wpsService from '@/services/wps'
 
 const { Title } = Typography
 const { Option } = Select
@@ -29,6 +32,38 @@ const ProductionCreate: React.FC = () => {
   const navigate = useNavigate()
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
+  const [welders, setWelders] = useState<Array<{ id: number; full_name?: string; welder_code?: string }>>([])
+  const [equipments, setEquipments] = useState<Array<{ id: number | string; equipment_name?: string; equipment_code?: string }>>([])
+  const [wpsList, setWpsList] = useState<Array<{ id: number; wps_number?: string; title?: string }>>([])
+
+  const unwrapItems = (response: any): any[] => {
+    const data = response?.data ?? response
+    if (Array.isArray(data)) return data
+    if (Array.isArray(data?.items)) return data.items
+    if (Array.isArray(data?.data?.items)) return data.data.items
+    if (Array.isArray(data?.data)) return data.data
+    return []
+  }
+
+  useEffect(() => {
+    const loadOptions = async () => {
+      try {
+        const currentWorkspace = workspaceService.getCurrentWorkspaceFromStorage()
+        const apiWorkspaceType = currentWorkspace?.type === 'enterprise' ? 'company' : 'personal'
+        const [welderRes, equipmentRes, wpsRes] = await Promise.all([
+          weldersService.getList({ skip: 0, limit: 200 }),
+          equipmentService.getEquipmentList({ skip: 0, limit: 200, workspace_type: apiWorkspaceType }),
+          wpsService.getWPSList({ skip: 0, limit: 200 }),
+        ])
+        setWelders(unwrapItems(welderRes))
+        setEquipments(unwrapItems(equipmentRes))
+        setWpsList(unwrapItems(wpsRes))
+      } catch (error) {
+        console.error('加载追溯选项失败', error)
+      }
+    }
+    void loadOptions()
+  }, [])
 
   const handleSubmit = async (values: any) => {
     setLoading(true)
@@ -41,16 +76,17 @@ const ProductionCreate: React.FC = () => {
           task_number: `TASK-${dayjs().format('YYYYMMDDHHmmss')}`,
           task_name: values.taskName,
           task_type: values.taskType,
-          description: [
-            values.projectName ? `项目：${values.projectName}` : '',
-            values.assignedWelder ? `焊工：${values.assignedWelder}` : '',
-            values.equipment ? `设备：${values.equipment}` : '',
-            values.materialSpec ? `材料：${values.materialSpec}` : '',
-            values.description,
-            values.safetyRequirements ? `安全要求：${values.safetyRequirements}` : '',
-          ].filter(Boolean).join('\n'),
+          project_name: values.projectName,
+          wps_id: values.wps_id,
+          assigned_welder_id: values.assigned_welder_id,
+          assigned_equipment_id: values.assigned_equipment_id,
+          description: values.description,
+          work_description: values.description,
           technical_requirements: values.technicalRequirements,
-          quality_standards: values.wpsStandard,
+          quality_requirements: values.wpsStandard,
+          safety_requirements: values.safetyRequirements,
+          base_material: values.materialSpec,
+          weld_length_planned: values.workload,
           planned_start_date: values.startDate ? values.startDate.format('YYYY-MM-DD') : undefined,
           planned_end_date: values.endDate ? values.endDate.format('YYYY-MM-DD') : undefined,
           status: values.status === 'planning' ? 'pending' : (values.status || 'pending'),
@@ -151,30 +187,36 @@ const ProductionCreate: React.FC = () => {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
-                name="assignedWelder"
+                name="assigned_welder_id"
                 label="指定焊工"
-                rules={[{ required: true, message: '请选择焊工' }]}
               >
-                <Select placeholder="选择焊工">
-                  <Option value="张师傅">张师傅</Option>
-                  <Option value="李师傅">李师傅</Option>
-                  <Option value="王师傅">王师傅</Option>
-                  <Option value="刘师傅">刘师傅</Option>
-                </Select>
+                <Select
+                  allowClear
+                  showSearch
+                  placeholder="选择焊工，用于工艺追溯"
+                  optionFilterProp="label"
+                  options={welders.map((welder) => ({
+                    value: welder.id,
+                    label: `${welder.full_name || '未命名'}（${welder.welder_code || '无编号'}）`,
+                  }))}
+                />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item
-                name="equipment"
+                name="assigned_equipment_id"
                 label="使用设备"
-                rules={[{ required: true, message: '请选择设备' }]}
               >
-                <Select placeholder="选择设备">
-                  <Option value="EQP-2024-001">数字化逆变焊机</Option>
-                  <Option value="EQP-2024-002">等离子切割机</Option>
-                  <Option value="EQP-2024-003">超声波探伤仪</Option>
-                  <Option value="EQP-2024-004">CO2焊机</Option>
-                </Select>
+                <Select
+                  allowClear
+                  showSearch
+                  placeholder="选择设备，用于工艺追溯"
+                  optionFilterProp="label"
+                  options={equipments.map((equipment) => ({
+                    value: Number(equipment.id),
+                    label: `${equipment.equipment_name || '未命名'}（${equipment.equipment_code || '无编号'}）`,
+                  }))}
+                />
               </Form.Item>
             </Col>
           </Row>
@@ -236,15 +278,19 @@ const ProductionCreate: React.FC = () => {
           </Row>
 
           <Form.Item
-            name="wpsStandard"
-            label="WPS标准"
-            rules={[{ required: true, message: '请选择WPS标准' }]}
+            name="wps_id"
+            label="执行 WPS"
           >
-            <Select placeholder="选择WPS标准">
-              <Option value="WPS-001">碳钢焊接工艺规程</Option>
-              <Option value="WPS-002">不锈钢焊接工艺规程</Option>
-              <Option value="WPS-003">铝合金焊接工艺规程</Option>
-            </Select>
+            <Select
+              allowClear
+              showSearch
+              placeholder="选择本任务使用的 WPS"
+              optionFilterProp="label"
+              options={wpsList.map((item) => ({
+                value: item.id,
+                label: `${item.wps_number || item.id} ${item.title ? `- ${item.title}` : ''}`,
+              }))}
+            />
           </Form.Item>
 
           <Form.Item

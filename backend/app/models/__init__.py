@@ -7,7 +7,7 @@ from app.models.admin import Admin
 from app.models.subscription import Subscription, SubscriptionPlan, SubscriptionTransaction
 from app.models.system_announcement import SystemAnnouncement
 from app.models.system_log import SystemLog
-from app.models.company import Company, Factory, CompanyEmployee
+from app.models.company import Company, Factory, CompanyEmployee, CompanyInvitation
 from app.models.wps_template import WPSTemplate
 from app.models.custom_module import CustomModule
 from app.models.shared_library import (
@@ -51,6 +51,7 @@ __all__ = [
     "Company",
     "Factory",
     "CompanyEmployee",
+    "CompanyInvitation",
     "WPSTemplate",
     "CustomModule",
     "SharedModule",

@@ -25,6 +25,53 @@ class DashboardService:
     
     def __init__(self, db: Session):
         self.db = db
+
+    def _get_expiry_counts(
+        self,
+        user_id: Optional[int],
+        company_id: Optional[int],
+        days: int = 30,
+    ) -> Dict[str, int]:
+        from datetime import date
+
+        from app.models.welder import WelderCertification
+
+        today = date.today()
+        until = today + timedelta(days=days)
+
+        cert_query = (
+            self.db.query(func.count(WelderCertification.id))
+            .join(Welder, Welder.id == WelderCertification.welder_id)
+            .filter(
+                Welder.is_active == True,
+                WelderCertification.expiry_date.isnot(None),
+                WelderCertification.expiry_date >= today,
+                WelderCertification.expiry_date <= until,
+            )
+        )
+        warranty_query = self.db.query(func.count(Equipment.id)).filter(
+            Equipment.is_active == True,
+            Equipment.warranty_expiry_date.isnot(None),
+            Equipment.warranty_expiry_date >= today,
+            Equipment.warranty_expiry_date <= until,
+        )
+        if company_id:
+            cert_query = cert_query.filter(Welder.company_id == company_id)
+            warranty_query = warranty_query.filter(Equipment.company_id == company_id)
+        elif user_id:
+            cert_query = cert_query.filter(
+                Welder.user_id == user_id,
+                Welder.workspace_type == WorkspaceType.PERSONAL,
+            )
+            warranty_query = warranty_query.filter(
+                Equipment.user_id == user_id,
+                Equipment.workspace_type == WorkspaceType.PERSONAL,
+            )
+        return {
+            "expiring_certs": cert_query.scalar() or 0,
+            "expiring_warranties": warranty_query.scalar() or 0,
+        }
+
     
     def get_overview_stats(
         self,
@@ -117,6 +164,7 @@ class DashboardService:
         from app.services.membership_service import MembershipService
         membership_service = MembershipService(self.db)
         limits = membership_service.get_membership_limits(user.member_tier)
+        expiry = self._get_expiry_counts(user_id=user.id, company_id=None)
         
         return {
             "wps_count": wps_count,
@@ -129,6 +177,8 @@ class DashboardService:
             "quality_count": quality_count,
             "storage_used_mb": storage_used_mb,
             "storage_limit_mb": limits.get("storage", 100),
+            "expiring_certs": expiry["expiring_certs"],
+            "expiring_warranties": expiry["expiring_warranties"],
             "membership_usage": {
                 "wps_usage": user.wps_quota_used or 0,
                 "wps_limit": limits.get("wps", 0),
@@ -225,6 +275,8 @@ class DashboardService:
             Factory.company_id == workspace_context.company_id
         ).scalar() or 0
 
+        expiry = self._get_expiry_counts(user_id=None, company_id=workspace_context.company_id)
+
         return {
             "wps_count": wps_count,
             "pqr_count": pqr_count,
@@ -236,6 +288,8 @@ class DashboardService:
             "quality_count": quality_count,
             "storage_used_mb": storage_used_mb,
             "storage_limit_mb": storage_limit_mb,
+            "expiring_certs": expiry["expiring_certs"],
+            "expiring_warranties": expiry["expiring_warranties"],
             "membership_usage": {
                 "wps_usage": wps_count,  # 使用实际统计的数量
                 "wps_limit": company.max_wps_records or 0,

@@ -95,9 +95,11 @@ export interface EmployeeQuota {
 export interface InviteEmployeeData {
   email: string
   role: 'admin' | 'employee'
-  factory_id: string
+  factory_id?: string
   department_id?: string
-  permissions: Record<string, boolean>
+  permissions?: Record<string, boolean>
+  message?: string
+  expires_at?: string
 }
 
 // 角色管理相关接口
@@ -223,20 +225,10 @@ class EnterpriseService {
     return response
   }
 
-  // 邀请员工 (临时实现)
+  // 邀请员工
   async inviteEmployee(data: InviteEmployeeData) {
-    // 临时返回成功响应，实际需要后端实现
-    return {
-      success: true,
-      message: '邀请已发送',
-      data: {
-        id: Date.now().toString(),
-        email: data.email,
-        invitation_code: Math.random().toString(36).substring(2, 10).toUpperCase(),
-        status: 'pending',
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-      }
-    }
+    const response = await api.post(`${this.baseUrl}/invitations`, data)
+    return response
   }
 
   // 更新员工信息 (调用真实API)
@@ -299,41 +291,44 @@ class EnterpriseService {
     return response
   }
 
-  // 获取邀请列表 (临时实现)
+  // 获取邀请列表
   async getInvitations(params?: {
     page?: number
     page_size?: number
     status?: string
   }) {
-    // 临时返回模拟数据，实际需要后端实现
-    return {
-      success: true,
-      data: {
-        items: [],
-        total: 0,
+    const response = await api.get(`${this.baseUrl}/invitations`, {
+      params: {
         page: params?.page || 1,
         page_size: params?.page_size || 20,
-        total_pages: 0
+        status: params?.status,
       }
-    }
+    })
+    return response
   }
 
-  // 取消邀请 (临时实现)
+  async previewInvitation(token: string) {
+    const response = await api.get(`${this.baseUrl}/invitations/preview`, {
+      params: { token }
+    })
+    return response
+  }
+
+  async acceptInvitation(token: string) {
+    const response = await api.post(`${this.baseUrl}/invitations/accept`, { token })
+    return response
+  }
+
+  // 取消邀请
   async cancelInvitation(invitationId: string) {
-    // 临时返回成功响应，实际需要后端实现
-    return {
-      success: true,
-      message: '邀请已取消'
-    }
+    const response = await api.post(`${this.baseUrl}/invitations/${invitationId}/cancel`)
+    return response
   }
 
-  // 重新发送邀请 (临时实现)
+  // 重新发送邀请
   async resendInvitation(invitationId: string) {
-    // 临时返回成功响应，实际需要后端实现
-    return {
-      success: true,
-      message: '邀请已重新发送'
-    }
+    const response = await api.post(`${this.baseUrl}/invitations/${invitationId}/resend`)
+    return response
   }
 
   // 获取工厂列表 (调用真实API)

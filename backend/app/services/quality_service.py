@@ -149,7 +149,7 @@ class QualityService:
                 if field in inspection_data_dict:
                     del inspection_data_dict[field]
 
-            # 移除数据库中不存在的虚拟字段
+            inspection = QualityInspection(**inspection_data_dict)
 
             # 设置数据隔离字段
             inspection.owner_id = current_user.id
@@ -162,6 +162,16 @@ class QualityService:
             self.db.add(inspection)
             self.db.commit()
             self.db.refresh(inspection)
+
+            if inspection.production_task_id:
+                from app.models.production import ProductionTask
+
+                task = self.db.query(ProductionTask).filter(
+                    ProductionTask.id == inspection.production_task_id
+                ).first()
+                if task:
+                    task.inspection_status = "in_progress"
+                    self.db.commit()
 
             # 更新配额使用（物理资产模块会自动跳过）
             self.quota_service.update_quota_usage(current_user, workspace_context, "quality", 1)

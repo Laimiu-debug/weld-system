@@ -17,6 +17,7 @@ export interface RegisterData {
   password: string
   full_name: string
   phone?: string
+  invite_token?: string
 }
 
 export interface AuthResponse {
@@ -269,7 +270,8 @@ class AuthService {
         password: data.password,
         full_name: data.full_name,
         phone: data.phone,
-        username: data.username // 直接使用username字段
+        username: data.username,
+        invite_token: data.invite_token,
       }
 
       console.log('📤 发送注册请求:', registerData)

@@ -368,6 +368,29 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
+      {!isGuestMode && ((stats?.expiring_certs || 0) > 0 || (stats?.expiring_warranties || 0) > 0) && (
+        <Alert
+          className="mb-4"
+          type="warning"
+          showIcon
+          message="到期提醒"
+          description={
+            <Space wrap>
+              {(stats?.expiring_certs || 0) > 0 && (
+                <Button type="link" onClick={() => navigate('/welders?status=expiring_soon')}>
+                  {stats?.expiring_certs} 本焊工资质将在 30 天内到期
+                </Button>
+              )}
+              {(stats?.expiring_warranties || 0) > 0 && (
+                <Button type="link" onClick={() => navigate('/equipment')}>
+                  {stats?.expiring_warranties} 台设备保修将在 30 天内到期
+                </Button>
+              )}
+            </Space>
+          }
+        />
+      )}
+
       {/* 会员状态卡片 */}
       <div className="dashboard-user-info">
         {isGuestMode ? (

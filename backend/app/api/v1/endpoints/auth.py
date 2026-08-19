@@ -312,6 +312,11 @@ def register_user(
             detail="该邮箱已被注册"
         )
 
+    if user_in.invite_token:
+        from app.services.invitation_service import InvitationService
+
+        InvitationService(db).require_pending(user_in.invite_token, user_in.email)
+
     try:
         user = user_service.create(db, obj_in=user_in)
     except Exception:
@@ -320,6 +325,11 @@ def register_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="用户创建失败，请稍后重试",
         )
+
+    if user_in.invite_token:
+        from app.services.invitation_service import InvitationService
+
+        InvitationService(db).accept_invitation(user_in.invite_token, user)
 
     _send_verification_email(user.email)
     return {"message": "注册成功，请查收验证邮件"}

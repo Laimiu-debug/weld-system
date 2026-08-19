@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   Card,
   Form,
@@ -18,7 +18,7 @@ import {
   Tag,
 } from 'antd'
 import { SaveOutlined, ArrowLeftOutlined, UploadOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import dayjs from 'dayjs'
 import qualityService from '@/services/quality'
 import workspaceService from '@/services/workspace'
@@ -40,6 +40,8 @@ interface DefectRecord {
 
 const QualityCreate: React.FC = () => {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const taskIdFromQuery = searchParams.get('taskId')
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
   const [defects, setDefects] = useState<DefectRecord[]>([])
@@ -54,6 +56,7 @@ const QualityCreate: React.FC = () => {
       const qualified = values.inspectionResult === 'qualified'
       await qualityService.createQualityInspection(
         {
+          production_task_id: values.production_task_id || (taskIdFromQuery ? Number(taskIdFromQuery) : undefined),
           inspection_number: values.inspectionNumber,
           inspection_type: values.inspectionType,
           inspection_date: values.inspectionDate ? values.inspectionDate.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
@@ -221,6 +224,7 @@ const QualityCreate: React.FC = () => {
             inspectionType: 'routine',
             inspector: '质量检验员',
             status: 'in_progress',
+            production_task_id: taskIdFromQuery ? Number(taskIdFromQuery) : undefined,
           }}
         >
           <Row gutter={16}>
@@ -233,6 +237,19 @@ const QualityCreate: React.FC = () => {
                 <Input placeholder="例如: QI-2024-001" />
               </Form.Item>
             </Col>
+            <Col span={12}>
+              <Form.Item
+                name="production_task_id"
+                label="关联生产任务"
+              >
+                <InputNumber
+                  style={{ width: '100%' }}
+                  placeholder="生产任务 ID，用于工艺追溯"
+                  disabled={Boolean(taskIdFromQuery)}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
             <Col span={12}>
               <Form.Item
                 name="projectName"

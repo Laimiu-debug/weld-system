@@ -50,7 +50,7 @@ const Features: React.FC = () => {
       details: [
         '角色权限管理',
         '多级审批流程',
-        '实时协作编辑',
+        '企业员工邀请入职',
         '消息通知提醒',
       ],
     },
@@ -60,8 +60,8 @@ const Features: React.FC = () => {
       description: '企业级数据安全保障，符合行业标准',
       details: [
         '数据加密存储',
-        '定期自动备份',
-        '操作日志审计',
+        '工作区数据隔离',
+        '审批记录可追溯',
         '权限细粒度控制',
       ],
     },
@@ -72,8 +72,8 @@ const Features: React.FC = () => {
       details: [
         '实时数据监控',
         '多维度统计报表',
-        '趋势分析预测',
-        '自定义报表导出',
+        'WPS/PQR 使用统计',
+        '报表 CSV 导出',
       ],
     },
     {
@@ -81,10 +81,10 @@ const Features: React.FC = () => {
       title: '云端存储',
       description: '安全可靠的云端存储，随时随地访问',
       details: [
-        '无限云端存储',
-        '多设备同步',
-        '离线访问支持',
-        '快速搜索检索',
+        '按会员配额存储',
+        '多设备在线访问',
+        '文档检索与导出',
+        '企业资源共享',
       ],
     },
   ]
@@ -182,7 +182,7 @@ const Features: React.FC = () => {
             </li>
             <li style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
               <CheckCircleOutlined style={{ color: '#38A169', fontSize: 18 }} />
-              <span>操作日志审计</span>
+              <span>审批历史可查</span>
             </li>
             <li style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
               <CheckCircleOutlined style={{ color: '#38A169', fontSize: 18 }} />

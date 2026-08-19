@@ -183,7 +183,7 @@ def get_production_task_detail(
 
         return {
             "success": True,
-            "data": ProductionTaskResponse.model_validate(task),
+            "data": service.enrich_task(task),
             "message": "获取生产任务详情成功"
         }
 

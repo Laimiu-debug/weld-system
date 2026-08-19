@@ -41,15 +41,25 @@ def run_daily_notification_tasks():
         logger.info("[定时任务] 检查配额使用情况...")
         quota_count = notification_service.check_and_notify_quota_usage()
         logger.info(f"[定时任务] 发送了 {quota_count} 条配额警告")
-        
+
+        logger.info("[定时任务] 检查焊工资质到期...")
+        cert_count = notification_service.notify_expiring_welder_certs(days_ahead=30)
+        logger.info(f"[定时任务] 发送了 {cert_count} 条焊工资质到期提醒")
+
+        logger.info("[定时任务] 检查设备保修到期...")
+        warranty_count = notification_service.notify_expiring_warranties(days_ahead=30)
+        logger.info(f"[定时任务] 发送了 {warranty_count} 条设备保修到期提醒")
+
         logger.info(f"[定时任务] 每日通知任务完成 - {datetime.utcnow()}")
-        
+
         return {
             "success": True,
             "expiring_count": expiring_count,
             "expired_count": expired_count,
             "renewed_count": renewed_count,
             "quota_count": quota_count,
+            "cert_count": cert_count,
+            "warranty_count": warranty_count,
         }
         
     except Exception as e:

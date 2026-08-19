@@ -84,6 +84,7 @@ const Invitations: React.FC = () => {
   const [detailModalVisible, setDetailModalVisible] = useState(false)
   const [selectedInvitation, setSelectedInvitation] = useState<EmployeeInvitation | null>(null)
   const [form] = Form.useForm()
+  const selectedFactoryId = Form.useWatch('factory_id', form)
   const [searchText, setSearchText] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('')
   const [filterRole, setFilterRole] = useState<string>('')
@@ -326,52 +327,57 @@ const Invitations: React.FC = () => {
   ]
 
   // 发送邀请
-  const handleSendInvitation = () => {
-    form.validateFields().then(values => {
+  const handleSendInvitation = async () => {
+    try {
+      const values = await form.validateFields()
       if (!quota || quota.current >= quota.max) {
         message.error('员工配额已满，无法发送邀请')
         return
       }
 
-      const newInvitation: EmployeeInvitation = {
-        id: Date.now().toString(),
-        invitation_code: `INV-${Date.now().toString(36).toUpperCase()}`,
-        status: 'pending',
-        expires_at: dayjs().add(7, 'day').toISOString(),
-        created_at: new Date().toISOString(),
-        ...values,
-      }
-
-      invitations.unshift(newInvitation)
+      const response = await enterpriseService.inviteEmployee({
+        email: values.email,
+        role: values.role,
+        factory_id: values.factory_id,
+        department_id: values.department_id,
+        permissions: values.permissions || {},
+        message: values.message,
+        expires_at: values.expires_at,
+      })
+      const payload = response.data?.data || response.data
+      const emailSent = payload?.email_sent !== false
+      message.success(emailSent ? '邀请已发送，请对方查收邮件' : '邀请已创建，邮件未发出，请复制邀请码发给对方')
       setModalVisible(false)
       form.resetFields()
-      message.success('邀请已发送，请查收邮件')
-    })
+      loadInvitations()
+    } catch (error) {
+      if (error && typeof error === 'object' && 'errorFields' in error) {
+        return
+      }
+      message.error('发送邀请失败')
+    }
   }
 
   // 重新发送过期邀请
-  const handleResendExpiredInvitation = (expiredInvitation: EmployeeInvitation) => {
+  const handleResendExpiredInvitation = async (expiredInvitation: EmployeeInvitation) => {
     if (!quota || quota.current >= quota.max) {
       message.error('员工配额已满，无法重新邀请')
       return
     }
-
-    const newInvitation: EmployeeInvitation = {
-      ...expiredInvitation,
-      id: Date.now().toString(),
-      invitation_code: `INV-${Date.now().toString(36).toUpperCase()}`,
-      status: 'pending',
-      expires_at: dayjs().add(7, 'day').toISOString(),
-      created_at: new Date().toISOString(),
+    try {
+      await enterpriseService.inviteEmployee({
+        email: expiredInvitation.email,
+        role: expiredInvitation.role,
+        factory_id: expiredInvitation.factory_id,
+        department_id: expiredInvitation.department_id,
+        permissions: expiredInvitation.permissions || {},
+        message: expiredInvitation.message,
+      })
+      message.success('邀请已重新发送')
+      loadInvitations()
+    } catch {
+      message.error('重新邀请失败')
     }
-
-    const updatedInvitations = invitations.map(inv =>
-      inv.id === expiredInvitation.id ? { ...inv, status: 'cancelled' } : inv
-    )
-    updatedInvitations.unshift(newInvitation)
-
-    setInvitations(updatedInvitations)
-    message.success('邀请已重新发送')
   }
 
   return (
@@ -612,7 +618,7 @@ const Invitations: React.FC = () => {
           >
             <Select placeholder="请选择部门">
               {departments
-                .filter(dept => !filterFactory || dept.factory_id === filterFactory)
+                .filter(dept => !selectedFactoryId || dept.factory_id === selectedFactoryId)
                 .map(department => (
                   <Option key={department.id} value={department.id}>
                     {department.department_name}

@@ -32,6 +32,7 @@ from app.api.v1.endpoints import (
     upload,
     enterprise,
     enterprise_org,
+    enterprise_invitations,
     company_roles,
     workspace,
     dashboard,
@@ -126,6 +127,7 @@ api_router.include_router(files.router, prefix="/files", tags=["文件管理"])
 # 企业管理路由
 api_router.include_router(enterprise.router, prefix="/enterprise", tags=["企业管理"])
 api_router.include_router(enterprise_org.router, prefix="/enterprise", tags=["企业组织"])
+api_router.include_router(enterprise_invitations.router, prefix="/enterprise", tags=["企业邀请"])
 
 # 企业角色管理路由
 api_router.include_router(company_roles.router, prefix="/enterprise", tags=["企业角色管理"])

@@ -188,3 +188,31 @@ class CompanyEmployee(Base):
     factory = relationship("Factory", back_populates="employees")
     company_role = relationship("CompanyRole", back_populates="employees")
 
+
+class CompanyInvitation(Base):
+    """Pending employee invitation sent by email."""
+
+    __tablename__ = "company_invitations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    email = Column(String(255), nullable=False, index=True)
+    token = Column(String(128), unique=True, nullable=False, index=True)
+    invitation_code = Column(String(32), unique=True, nullable=False, index=True)
+    role = Column(String(50), default="employee")
+    company_role_id = Column(Integer, ForeignKey("company_roles.id", ondelete="SET NULL"))
+    factory_id = Column(Integer, ForeignKey("factories.id", ondelete="SET NULL"))
+    department = Column(String(100))
+    permissions = Column(JSONB)
+    message = Column(Text)
+    status = Column(String(20), default="pending", index=True)
+    expires_at = Column(DateTime, nullable=False)
+    accepted_at = Column(DateTime)
+    accepted_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    invited_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    company = relationship("Company")
+    factory = relationship("Factory")
+

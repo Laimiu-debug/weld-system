@@ -569,6 +569,93 @@ class NotificationService:
         self.db.commit()
         return sent_count
 
+    def _notify_user_once_today(self, user_id: int, title: str, content: str) -> bool:
+        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        existing = (
+            self.db.query(SystemAnnouncement)
+            .filter(
+                SystemAnnouncement.created_by == user_id,
+                SystemAnnouncement.title == title,
+                SystemAnnouncement.is_auto_generated == True,
+                SystemAnnouncement.publish_at >= today,
+            )
+            .first()
+        )
+        if existing:
+            return False
+        self.create_system_announcement(
+            title=title,
+            content=content,
+            announcement_type="warning",
+            priority="high",
+            target_audience="user",
+            created_by=user_id,
+            is_auto_generated=True,
+        )
+        return True
+
+    def notify_expiring_welder_certs(self, days_ahead: int = 30) -> int:
+        from datetime import date
+
+        from app.models.welder import Welder, WelderCertification
+
+        today = date.today()
+        until = today + timedelta(days=days_ahead)
+        rows = (
+            self.db.query(WelderCertification, Welder)
+            .join(Welder, Welder.id == WelderCertification.welder_id)
+            .filter(
+                Welder.is_active == True,
+                WelderCertification.expiry_date.isnot(None),
+                WelderCertification.expiry_date >= today,
+                WelderCertification.expiry_date <= until,
+            )
+            .all()
+        )
+        sent = 0
+        for cert, welder in rows:
+            days_left = (cert.expiry_date - today).days
+            if days_left <= 30:
+                welder.certification_status = "expiring_soon"
+            title = f"焊工资质即将过期：{welder.full_name}"
+            content = (
+                f"焊工 {welder.full_name}（{welder.welder_code}）的证书 "
+                f"{cert.certification_number} 将于 {cert.expiry_date} 到期，剩余 {days_left} 天。"
+            )
+            if self._notify_user_once_today(welder.user_id, title, content):
+                sent += 1
+        self.db.commit()
+        return sent
+
+    def notify_expiring_warranties(self, days_ahead: int = 30) -> int:
+        from datetime import date
+
+        from app.models.equipment import Equipment
+
+        today = date.today()
+        until = today + timedelta(days=days_ahead)
+        equipment_rows = (
+            self.db.query(Equipment)
+            .filter(
+                Equipment.is_active == True,
+                Equipment.warranty_expiry_date.isnot(None),
+                Equipment.warranty_expiry_date >= today,
+                Equipment.warranty_expiry_date <= until,
+            )
+            .all()
+        )
+        sent = 0
+        for equipment in equipment_rows:
+            days_left = (equipment.warranty_expiry_date - today).days
+            title = f"设备保修即将到期：{equipment.equipment_name}"
+            content = (
+                f"设备 {equipment.equipment_name}（{equipment.equipment_code}）保修将于 "
+                f"{equipment.warranty_expiry_date} 到期，剩余 {days_left} 天。"
+            )
+            if self._notify_user_once_today(equipment.user_id, title, content):
+                sent += 1
+        return sent
+
 
 def get_notification_service(db: Session = None) -> NotificationService:
     """获取通知服务实例"""

@@ -12,6 +12,9 @@ from fastapi import status as http_status
 from app.models.production import ProductionTask, ProductionRecord
 from app.models.user import User
 from app.models.company import Company, CompanyEmployee, CompanyRole
+from app.models.wps import WPS
+from app.models.welder import Welder
+from app.models.equipment import Equipment
 from app.schemas.production import ProductionTaskCreate, ProductionTaskUpdate
 from app.core.data_access import DataAccessMiddleware, WorkspaceContext
 from app.services.quota_service import QuotaService
@@ -66,7 +69,10 @@ class ProductionService:
                         status_code=http_status.HTTP_400_BAD_REQUEST,
                         detail=f"任务编号 {task_number} 已存在"
                     )
-            
+
+            valid_columns = {column.name for column in ProductionTask.__table__.columns}
+            task_data = {key: value for key, value in task_data.items() if key in valid_columns}
+
             # 创建任务对象
             task = ProductionTask(**task_data)
             
@@ -243,6 +249,27 @@ class ProductionService:
                 status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"获取生产任务详情失败: {str(e)}"
             )
+
+    def enrich_task(self, task: ProductionTask) -> Dict[str, Any]:
+        from app.schemas.production import ProductionTaskResponse
+
+        payload = ProductionTaskResponse.model_validate(task).model_dump()
+        if task.wps_id:
+            wps = self.db.query(WPS).filter(WPS.id == task.wps_id).first()
+            if wps:
+                payload["wps_number"] = wps.wps_number
+                payload["wps_title"] = wps.title
+        if task.assigned_welder_id:
+            welder = self.db.query(Welder).filter(Welder.id == task.assigned_welder_id).first()
+            if welder:
+                payload["welder_name"] = welder.full_name
+                payload["welder_code"] = welder.welder_code
+        if task.assigned_equipment_id:
+            equipment = self.db.query(Equipment).filter(Equipment.id == task.assigned_equipment_id).first()
+            if equipment:
+                payload["equipment_name"] = equipment.equipment_name
+                payload["equipment_code"] = equipment.equipment_code
+        return payload
     
     def update_production_task(
         self,

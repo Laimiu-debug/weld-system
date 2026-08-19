@@ -611,6 +611,8 @@ export interface DashboardStats {
   quality_count?: number;
   storage_used_mb: number;
   storage_limit_mb: number;
+  expiring_certs?: number;
+  expiring_warranties?: number;
   membership_usage: {
     wps_usage: number;
     wps_limit: number;

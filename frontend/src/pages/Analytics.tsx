@@ -287,9 +287,9 @@ const Analytics: React.FC = () => {
             </Col>
             <Col xs={24} md={12}>
               <div style={{ padding: 24 }}>
-                <h4 style={{ fontSize: 20, fontWeight: 600, color: '#1A202C', margin: '0 0 16px 0' }}>自定义报表</h4>
+                <h4 style={{ fontSize: 20, fontWeight: 600, color: '#1A202C', margin: '0 0 16px 0' }}>CSV 报表导出</h4>
                 <p style={{ color: '#4A5568', fontSize: 16, lineHeight: 1.6, margin: 0 }}>
-                  灵活配置报表内容和格式，支持导出为Excel、PDF等多种格式，方便分享和存档。
+                  WPS、PQR 与使用统计支持导出 CSV，便于线下存档和二次分析。
                 </p>
               </div>
             </Col>

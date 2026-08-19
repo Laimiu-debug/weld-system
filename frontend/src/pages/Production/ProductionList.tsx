@@ -711,7 +711,8 @@ const ProductionList: React.FC = () => {
           planned_start_date: values.planned_start_date ? values.planned_start_date.format('YYYY-MM-DD HH:mm:ss') : undefined,
           planned_end_date: values.planned_end_date ? values.planned_end_date.format('YYYY-MM-DD HH:mm:ss') : undefined,
           assigned_welder_id: values.assigned_welder_id || undefined,
-          equipment_id: values.equipment_id || undefined,
+          assigned_equipment_id: values.assigned_equipment_id || values.equipment_id || undefined,
+          wps_id: values.wps_id || undefined,
         }
 
         const response = await createProductionTask(formData, workspaceType, companyId, factoryId)
@@ -732,7 +733,8 @@ const ProductionList: React.FC = () => {
           planned_start_date: values.planned_start_date ? values.planned_start_date.format('YYYY-MM-DD HH:mm:ss') : undefined,
           planned_end_date: values.planned_end_date ? values.planned_end_date.format('YYYY-MM-DD HH:mm:ss') : undefined,
           assigned_welder_id: values.assigned_welder_id || undefined,
-          equipment_id: values.equipment_id || undefined,
+          assigned_equipment_id: values.assigned_equipment_id || values.equipment_id || undefined,
+          wps_id: values.wps_id || undefined,
         }
 
         const response = await updateProductionTask(parseInt(currentTask.id), formData, workspaceType, companyId, factoryId)
@@ -1235,7 +1237,7 @@ const ProductionList: React.FC = () => {
               </Col>
               <Col span={12}>
                 <Form.Item
-                  name="equipment_id"
+                  name="assigned_equipment_id"
                   label="使用设备"
                 >
                   <Select

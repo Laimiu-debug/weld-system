@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   Card,
   Typography,
@@ -14,8 +14,9 @@ import {
   Checkbox
 } from 'antd'
 import { UserOutlined, LockOutlined, ExclamationCircleOutlined } from '@ant-design/icons'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
+import enterpriseService from '@/services/enterprise'
 
 const { Title, Text } = Typography
 
@@ -29,7 +30,27 @@ const Register: React.FC = () => {
     account?: string
   }>({ type: null, message: '' })
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const inviteToken = searchParams.get('invite') || undefined
+  const [inviteInfo, setInviteInfo] = useState<{ company_name?: string; email?: string } | null>(null)
   const { register, isAuthenticated } = useAuthStore()
+
+  useEffect(() => {
+    if (!inviteToken) return
+    const load = async () => {
+      try {
+        const response = await enterpriseService.previewInvitation(inviteToken)
+        const data = response.data?.data || response.data
+        setInviteInfo(data)
+        if (data?.email) {
+          form.setFieldsValue({ account: data.email })
+        }
+      } catch {
+        message.error('邀请链接无效或已过期')
+      }
+    }
+    void load()
+  }, [inviteToken, form])
 
   const onFinish = async (values: any) => {
     setLoading(true)
@@ -50,6 +71,7 @@ const Register: React.FC = () => {
         username: values.username,
         full_name: values.username, // 使用用户名作为姓名
         phone: isPhone ? account : undefined, // 如果是手机号，设置为phone字段
+        invite_token: inviteToken,
       })
 
       if (success) {
@@ -151,6 +173,16 @@ const Register: React.FC = () => {
             用户注册
           </Title>
 
+          {inviteInfo?.company_name && (
+            <Alert
+              type="info"
+              showIcon
+              className="mb-4"
+              message={`你正在加入企业：${inviteInfo.company_name}`}
+              description="请使用邀请邮箱完成注册，加入后可进入企业工作区。"
+            />
+          )}
+
           {errorInfo.type && (
             <Alert
               type="error"
@@ -200,6 +232,7 @@ const Register: React.FC = () => {
                 prefix={<UserOutlined />}
                 placeholder="请输入邮箱地址或手机号码"
                 autoComplete="email"
+                disabled={Boolean(inviteInfo?.email)}
               />
             </Form.Item>
 

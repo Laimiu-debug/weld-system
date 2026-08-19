@@ -177,7 +177,13 @@ class ProductionTaskResponse(ProductionTaskBase):
     created_at: datetime
     updated_at: datetime
     is_active: bool
-    
+    wps_number: Optional[str] = None
+    wps_title: Optional[str] = None
+    welder_name: Optional[str] = None
+    welder_code: Optional[str] = None
+    equipment_name: Optional[str] = None
+    equipment_code: Optional[str] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 

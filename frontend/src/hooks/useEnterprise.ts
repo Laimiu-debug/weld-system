@@ -356,8 +356,16 @@ export const useEnterpriseInvitations = (params?: {
     setLoading(true)
     try {
       const response = await enterpriseService.getInvitations(params)
-      setInvitations(response.data.items || [])
-      setTotal(response.data.total || 0)
+      if (response?.data?.success && response?.data?.data) {
+        setInvitations(response.data.data.items || [])
+        setTotal(response.data.data.total || 0)
+      } else if (response?.data?.items) {
+        setInvitations(response.data.items || [])
+        setTotal(response.data.total || 0)
+      } else {
+        setInvitations([])
+        setTotal(0)
+      }
     } catch (error) {
       message.error('加载邀请列表失败')
       console.error('Load invitations error:', error)
@@ -387,13 +395,14 @@ export const useEnterpriseInvitations = (params?: {
     try {
       await enterpriseService.resendInvitation(invitationId)
       message.success('邀请已重新发送')
+      loadInvitations()
       return true
     } catch (error) {
       message.error('重新发送失败')
       console.error('Resend invitation error:', error)
       return false
     }
-  }, [])
+  }, [loadInvitations])
 
   return {
     invitations,

@@ -229,6 +229,21 @@ const ProductionDetail: React.FC = () => {
                         </Descriptions.Item>
                         <Descriptions.Item label="计划开始">{formatDate(startDate)}</Descriptions.Item>
                         <Descriptions.Item label="计划结束">{formatDate(endDate)}</Descriptions.Item>
+                        <Descriptions.Item label="执行 WPS">
+                          {taskData.wps_number || taskData.wps_id
+                            ? `${taskData.wps_number || taskData.wps_id}${taskData.wps_title ? ` - ${taskData.wps_title}` : ''}`
+                            : '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="焊工">
+                          {taskData.welder_name || taskData.assigned_welder_id
+                            ? `${taskData.welder_name || taskData.assigned_welder_id}${taskData.welder_code ? `（${taskData.welder_code}）` : ''}`
+                            : '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="设备">
+                          {taskData.equipment_name || taskData.assigned_equipment_id
+                            ? `${taskData.equipment_name || taskData.assigned_equipment_id}${taskData.equipment_code ? `（${taskData.equipment_code}）` : ''}`
+                            : '-'}
+                        </Descriptions.Item>
                         <Descriptions.Item label="进度" span={2}>
                           <Progress percent={taskData.progress_percentage || 0} />
                         </Descriptions.Item>
@@ -291,6 +306,9 @@ const ProductionDetail: React.FC = () => {
               <Space direction="vertical" className="w-full">
                 <Button type="primary" icon={<EditOutlined />} block onClick={() => navigate(`/production/${id}/edit`)}>
                   编辑任务
+                </Button>
+                <Button icon={<PlusOutlined />} block onClick={() => navigate(`/quality/create?taskId=${id}`)}>
+                  创建质检
                 </Button>
                 {taskData.status === 'pending' && (
                   <Button type="primary" icon={<PlayCircleOutlined />} block onClick={() => handleStatus('in_progress')}>

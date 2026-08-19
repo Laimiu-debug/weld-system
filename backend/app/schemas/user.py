@@ -20,6 +20,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """User creation schema."""
     password: str
+    invite_token: Optional[str] = None
 
 
 class UserUpdate(BaseModel):

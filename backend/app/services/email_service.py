@@ -73,6 +73,42 @@ class EmailService:
             text_content=text_content
         )
 
+    def send_invitation_email(
+        self,
+        to_email: str,
+        company_name: str,
+        invite_url: str,
+        invitation_code: str,
+        message: Optional[str] = None,
+        expires_at: Optional[datetime] = None,
+    ) -> bool:
+        subject = f"【焊序】邀请你加入{company_name}"
+        note = message or "管理员邀请你加入企业工作区。"
+        expires_text = expires_at.strftime("%Y-%m-%d %H:%M") if expires_at else "7天内"
+        html_content = f"""
+        <p>你收到来自 <strong>{company_name}</strong> 的焊序企业邀请。</p>
+        <p>{note}</p>
+        <p>邀请码：<strong>{invitation_code}</strong></p>
+        <p>请在 {expires_text} 前点击下方链接完成注册并加入企业：</p>
+        <p><a href="{invite_url}">{invite_url}</a></p>
+        <p>如果这不是你的操作，请忽略此邮件。</p>
+        """
+        text_content = (
+            f"【焊序】邀请你加入{company_name}\n\n"
+            f"{note}\n邀请码：{invitation_code}\n"
+            f"注册链接：{invite_url}\n有效期至：{expires_text}\n"
+        )
+        try:
+            return self.send_email(
+                to_email=to_email,
+                subject=subject,
+                html_content=html_content,
+                text_content=text_content,
+            )
+        except Exception:
+            logger.exception("Failed to send invitation email to %s", to_email)
+            return False
+
     def send_email(
         self,
         to_email: str,

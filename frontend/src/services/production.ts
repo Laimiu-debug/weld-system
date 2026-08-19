@@ -38,9 +38,16 @@ export interface ProductionTask {
   
   // 人员分配
   assigned_welder_id?: number;
+  assigned_equipment_id?: number;
   assigned_inspector_id?: number;
   assigned_supervisor_id?: number;
   team_members?: string;
+  wps_number?: string;
+  wps_title?: string;
+  welder_name?: string;
+  welder_code?: string;
+  equipment_name?: string;
+  equipment_code?: string;
   
   // 状态信息
   status: string;
@@ -75,10 +82,17 @@ export interface ProductionTaskCreate {
   planned_end_date?: string;
   planned_duration_hours?: number;
   assigned_welder_id?: number;
+  assigned_equipment_id?: number;
   assigned_inspector_id?: number;
   assigned_supervisor_id?: number;
   status?: string;
   priority?: string;
+  project_name?: string;
+  base_material?: string;
+  weld_length_planned?: number;
+  safety_requirements?: string;
+  quality_requirements?: string;
+  work_description?: string;
 }
 
 export interface ProductionTaskUpdate {
@@ -94,11 +108,13 @@ export interface ProductionTaskUpdate {
   actual_end_date?: string;
   actual_duration_hours?: number;
   assigned_welder_id?: number;
+  assigned_equipment_id?: number;
   assigned_inspector_id?: number;
   assigned_supervisor_id?: number;
   status?: string;
   priority?: string;
   progress_percentage?: number;
+  wps_id?: number;
 }
 
 export interface ProductionTaskListParams {
