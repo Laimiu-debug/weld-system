@@ -2,10 +2,12 @@
 Equipment service for managing equipment, maintenance, and usage records.
 设备管理服务层
 """
+import json
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func, desc
+from fastapi import HTTPException, status as http_status
 
 from app.models.user import User
 from app.models.equipment import Equipment, EquipmentMaintenance, EquipmentUsage
@@ -589,6 +591,231 @@ class EquipmentService:
         except Exception as e:
             raise Exception(f"获取设备统计失败: {str(e)}")
 
+    # ==================== 维护 / 使用记录 ====================
+
+    def _apply_equipment_workspace_filter(
+        self,
+        query,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+    ):
+        access_info = self._check_list_permission(current_user, workspace_context)
+        if workspace_context.workspace_type == "personal":
+            return query.filter(
+                Equipment.workspace_type == "personal",
+                Equipment.user_id == current_user.id,
+            )
+        if workspace_context.workspace_type in ("company", "enterprise"):
+            if not workspace_context.company_id:
+                return query.filter(Equipment.id == -1)
+            query = query.filter(
+                Equipment.workspace_type == "enterprise",
+                Equipment.company_id == workspace_context.company_id,
+            )
+            if access_info["data_access_scope"] == "factory" and access_info["factory_id"]:
+                query = query.filter(Equipment.factory_id == access_info["factory_id"])
+            return query
+        return query.filter(Equipment.id == -1)
+
+    def _serialize_maintenance(self, record: EquipmentMaintenance, equipment: Equipment) -> Dict[str, Any]:
+        return {
+            "id": record.id,
+            "equipment_id": record.equipment_id,
+            "equipment_code": equipment.equipment_code,
+            "equipment_name": equipment.equipment_name,
+            "maintenance_code": record.maintenance_code,
+            "maintenance_type": record.maintenance_type,
+            "start_date": record.start_date.isoformat() if record.start_date else None,
+            "end_date": record.end_date.isoformat() if record.end_date else None,
+            "duration_hours": record.duration_hours,
+            "technician_id": record.technician_id,
+            "technician_name": record.technician_name,
+            "work_description": record.work_description,
+            "result": record.result,
+            "status": record.status,
+            "notes": record.notes,
+            "created_at": record.created_at.isoformat() if record.created_at else None,
+        }
+
+    def _serialize_usage(self, record: EquipmentUsage, equipment: Equipment) -> Dict[str, Any]:
+        return {
+            "id": record.id,
+            "equipment_id": record.equipment_id,
+            "equipment_code": equipment.equipment_code,
+            "equipment_name": equipment.equipment_name,
+            "usage_date": record.usage_date.isoformat() if record.usage_date else None,
+            "start_time": record.start_time.isoformat() if record.start_time else None,
+            "end_time": record.end_time.isoformat() if record.end_time else None,
+            "duration_hours": record.duration_hours,
+            "operator_id": record.operator_id,
+            "work_type": record.work_type,
+            "work_description": record.work_description,
+            "output_quantity": record.output_quantity,
+            "output_unit": record.output_unit,
+            "issues_occurred": record.issues_occurred,
+            "issue_description": record.issue_description,
+            "notes": record.notes,
+            "created_at": record.created_at.isoformat() if record.created_at else None,
+        }
+
+    def list_maintenance_records(
+        self,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+        skip: int = 0,
+        limit: int = 50,
+        equipment_id: Optional[int] = None,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        query = (
+            self.db.query(EquipmentMaintenance, Equipment)
+            .join(Equipment, EquipmentMaintenance.equipment_id == Equipment.id)
+        )
+        query = self._apply_equipment_workspace_filter(query, current_user, workspace_context)
+        if equipment_id is not None:
+            query = query.filter(EquipmentMaintenance.equipment_id == equipment_id)
+        total = query.count()
+        rows = (
+            query.order_by(desc(EquipmentMaintenance.start_date))
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+        return [self._serialize_maintenance(record, equipment) for record, equipment in rows], total
+
+    def list_usage_records(
+        self,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+        skip: int = 0,
+        limit: int = 50,
+        equipment_id: Optional[int] = None,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        query = (
+            self.db.query(EquipmentUsage, Equipment)
+            .join(Equipment, EquipmentUsage.equipment_id == Equipment.id)
+        )
+        query = self._apply_equipment_workspace_filter(query, current_user, workspace_context)
+        if equipment_id is not None:
+            query = query.filter(EquipmentUsage.equipment_id == equipment_id)
+        total = query.count()
+        rows = (
+            query.order_by(desc(EquipmentUsage.usage_date), desc(EquipmentUsage.start_time))
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+        return [self._serialize_usage(record, equipment) for record, equipment in rows], total
+
+    def create_maintenance_record(
+        self,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+        equipment_id: int,
+        record_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        equipment = self.get_equipment_by_id(equipment_id, current_user, workspace_context)
+        if not equipment:
+            raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="设备不存在或无权访问")
+
+        start_date = self._parse_datetime(record_data.get("start_date"))
+        if not start_date:
+            raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="开始时间格式无效")
+        end_date = self._parse_datetime(record_data.get("end_date"))
+        duration_hours = record_data.get("duration_hours")
+        if duration_hours is None and end_date:
+            duration_hours = round((end_date - start_date).total_seconds() / 3600, 2)
+
+        technician_name = record_data.get("technician_name") or current_user.full_name or current_user.username
+        record = EquipmentMaintenance(
+            equipment_id=equipment.id,
+            user_id=current_user.id,
+            company_id=equipment.company_id,
+            factory_id=equipment.factory_id,
+            maintenance_code=f"MNT-{equipment.id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}",
+            maintenance_type=record_data.get("maintenance_type") or "routine",
+            start_date=start_date,
+            end_date=end_date,
+            duration_hours=duration_hours,
+            technician_id=record_data.get("technician_id") or current_user.id,
+            technician_name=technician_name,
+            work_description=record_data.get("work_description"),
+            result=record_data.get("result") or "completed",
+            status="completed",
+            notes=record_data.get("notes"),
+            created_by=current_user.id,
+        )
+        self.db.add(record)
+
+        equipment.last_maintenance_date = start_date.date()
+        equipment.maintenance_count = (equipment.maintenance_count or 0) + 1
+        if duration_hours:
+            equipment.total_maintenance_hours = (equipment.total_maintenance_hours or 0) + float(duration_hours)
+        if equipment.maintenance_interval_days:
+            equipment.next_maintenance_date = start_date.date() + timedelta(days=equipment.maintenance_interval_days)
+        equipment.updated_by = current_user.id
+        equipment.updated_at = datetime.utcnow()
+
+        self.db.commit()
+        self.db.refresh(record)
+        return self._serialize_maintenance(record, equipment)
+
+    def create_usage_record(
+        self,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+        equipment_id: int,
+        record_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        equipment = self.get_equipment_by_id(equipment_id, current_user, workspace_context)
+        if not equipment:
+            raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="设备不存在或无权访问")
+
+        usage_date = self._parse_date(record_data.get("usage_date"))
+        start_time = self._parse_datetime(record_data.get("start_time"))
+        if not start_time and usage_date:
+            start_time = datetime.combine(usage_date, datetime.min.time())
+        if not start_time:
+            raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail="开始时间格式无效")
+        if not usage_date:
+            usage_date = start_time.date()
+
+        end_time = self._parse_datetime(record_data.get("end_time"))
+        duration_hours = record_data.get("duration_hours")
+        if duration_hours is None and end_time:
+            duration_hours = round((end_time - start_time).total_seconds() / 3600, 2)
+
+        record = EquipmentUsage(
+            equipment_id=equipment.id,
+            user_id=current_user.id,
+            company_id=equipment.company_id,
+            factory_id=equipment.factory_id,
+            operator_id=record_data.get("operator_id") or current_user.id,
+            usage_date=usage_date,
+            start_time=start_time,
+            end_time=end_time,
+            duration_hours=duration_hours,
+            work_type=record_data.get("work_type"),
+            work_description=record_data.get("work_description"),
+            output_quantity=record_data.get("output_quantity"),
+            output_unit=record_data.get("output_unit"),
+            issues_occurred=bool(record_data.get("issues_occurred")),
+            issue_description=record_data.get("issue_description"),
+            notes=record_data.get("notes"),
+            created_by=current_user.id,
+        )
+        self.db.add(record)
+
+        equipment.last_used_date = usage_date
+        equipment.usage_count = (equipment.usage_count or 0) + 1
+        if duration_hours:
+            equipment.total_operating_hours = (equipment.total_operating_hours or 0) + float(duration_hours)
+        equipment.updated_by = current_user.id
+        equipment.updated_at = datetime.utcnow()
+
+        self.db.commit()
+        self.db.refresh(record)
+        return self._serialize_usage(record, equipment)
+
     # ==================== 工具方法 ====================
 
     def _parse_date(self, date_str: Optional[str]) -> Optional[date]:
@@ -596,9 +823,32 @@ class EquipmentService:
         if not date_str:
             return None
         try:
-            return datetime.strptime(date_str, "%Y-%m-%d").date()
+            return datetime.strptime(date_str[:10], "%Y-%m-%d").date()
         except (ValueError, TypeError):
             return None
+
+    def _parse_datetime(self, value: Optional[str]) -> Optional[datetime]:
+        """解析日期或日期时间字符串。"""
+        if not value:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(text)
+            if parsed.tzinfo is not None:
+                return parsed.replace(tzinfo=None)
+            return parsed
+        except ValueError:
+            pass
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(text, fmt)
+            except ValueError:
+                continue
+        return None
 
     def _to_json(self, data: Any) -> Optional[str]:
         """转换为JSON字符串"""
@@ -606,7 +856,6 @@ class EquipmentService:
             return None
         if isinstance(data, str):
             return data
-        import json
         return json.dumps(data, ensure_ascii=False)
 
     def _get_equipment_types(self) -> List[str]:

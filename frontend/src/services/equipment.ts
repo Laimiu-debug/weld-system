@@ -205,6 +205,71 @@ export interface MaintenanceAlert {
   status: EquipmentStatus
 }
 
+export interface MaintenanceRecordItem {
+  id: number
+  equipment_id: number
+  equipment_code: string
+  equipment_name: string
+  maintenance_code?: string
+  maintenance_type: string
+  start_date?: string
+  end_date?: string
+  duration_hours?: number
+  technician_name?: string
+  work_description?: string
+  result?: string
+  status?: string
+  notes?: string
+  created_at?: string
+}
+
+export interface UsageRecordItem {
+  id: number
+  equipment_id: number
+  equipment_code: string
+  equipment_name: string
+  usage_date?: string
+  start_time?: string
+  end_time?: string
+  duration_hours?: number
+  operator_id?: number
+  work_type?: string
+  work_description?: string
+  output_quantity?: number
+  output_unit?: string
+  issues_occurred?: boolean
+  issue_description?: string
+  notes?: string
+  created_at?: string
+}
+
+export interface CreateMaintenanceRecordData {
+  equipment_id: number
+  maintenance_type: string
+  start_date: string
+  end_date?: string
+  duration_hours?: number
+  technician_name?: string
+  work_description?: string
+  result?: string
+  notes?: string
+}
+
+export interface CreateUsageRecordData {
+  equipment_id: number
+  usage_date: string
+  start_time?: string
+  end_time?: string
+  duration_hours?: number
+  work_type?: string
+  work_description?: string
+  output_quantity?: number
+  output_unit?: string
+  issues_occurred?: boolean
+  issue_description?: string
+  notes?: string
+}
+
 // 设备服务类
 class EquipmentService {
   // ==================== 设备基础管理 ====================
@@ -326,6 +391,62 @@ class EquipmentService {
    */
   async getMaintenanceAlerts(days: number = 30): Promise<ApiResponse<{ items: MaintenanceAlert[], total: number }>> {
     const response = await apiService.get<{ items: MaintenanceAlert[], total: number }>(`/equipment/maintenance/alerts?days=${days}`)
+    return response.data
+  }
+
+  async getMaintenanceRecords(params?: {
+    skip?: number
+    limit?: number
+    equipment_id?: number
+  }): Promise<ApiResponse<{ items: MaintenanceRecordItem[], total: number }>> {
+    const queryParams = new URLSearchParams()
+    const currentWorkspace = this.getCurrentWorkspace()
+    queryParams.append('workspace_type', currentWorkspace?.type === 'enterprise' ? 'company' : 'personal')
+    if (params?.skip !== undefined) queryParams.append('skip', params.skip.toString())
+    if (params?.limit !== undefined) queryParams.append('limit', params.limit.toString())
+    if (params?.equipment_id !== undefined) queryParams.append('equipment_id', params.equipment_id.toString())
+    const response = await apiService.get<{ items: MaintenanceRecordItem[], total: number }>(
+      `/equipment/maintenance-records?${queryParams.toString()}`
+    )
+    return response.data
+  }
+
+  async createMaintenanceRecord(
+    data: CreateMaintenanceRecordData
+  ): Promise<ApiResponse<MaintenanceRecordItem>> {
+    const currentWorkspace = this.getCurrentWorkspace()
+    const workspaceType = currentWorkspace?.type === 'enterprise' ? 'company' : 'personal'
+    const response = await apiService.post<MaintenanceRecordItem>(
+      `/equipment/maintenance-records?workspace_type=${workspaceType}`,
+      data
+    )
+    return response.data
+  }
+
+  async getUsageRecords(params?: {
+    skip?: number
+    limit?: number
+    equipment_id?: number
+  }): Promise<ApiResponse<{ items: UsageRecordItem[], total: number }>> {
+    const queryParams = new URLSearchParams()
+    const currentWorkspace = this.getCurrentWorkspace()
+    queryParams.append('workspace_type', currentWorkspace?.type === 'enterprise' ? 'company' : 'personal')
+    if (params?.skip !== undefined) queryParams.append('skip', params.skip.toString())
+    if (params?.limit !== undefined) queryParams.append('limit', params.limit.toString())
+    if (params?.equipment_id !== undefined) queryParams.append('equipment_id', params.equipment_id.toString())
+    const response = await apiService.get<{ items: UsageRecordItem[], total: number }>(
+      `/equipment/usage-records?${queryParams.toString()}`
+    )
+    return response.data
+  }
+
+  async createUsageRecord(data: CreateUsageRecordData): Promise<ApiResponse<UsageRecordItem>> {
+    const currentWorkspace = this.getCurrentWorkspace()
+    const workspaceType = currentWorkspace?.type === 'enterprise' ? 'company' : 'personal'
+    const response = await apiService.post<UsageRecordItem>(
+      `/equipment/usage-records?workspace_type=${workspaceType}`,
+      data
+    )
     return response.data
   }
 

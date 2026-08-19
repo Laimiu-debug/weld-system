@@ -1,7 +1,8 @@
 """
 Equipment Management API endpoints for the welding system backend.
 """
-from typing import Any, List, Optional
+import logging
+from typing import Any, Optional
 from datetime import datetime, date, timedelta
 from pydantic import BaseModel
 
@@ -10,9 +11,11 @@ from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.services.equipment_service import EquipmentService
-from app.services.workspace_service import get_workspace_service
-from app.core.data_access import WorkspaceContext, WorkspaceType
+from app.core.data_access import WorkspaceContext
 from app.models.user import User
+from app.models.company import Company, CompanyEmployee
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -96,6 +99,7 @@ class StatusUpdate(BaseModel):
 
 class MaintenanceRecord(BaseModel):
     """维护记录模型"""
+    equipment_id: Optional[int] = None
     maintenance_type: str
     start_date: str
     end_date: Optional[str] = None
@@ -104,6 +108,23 @@ class MaintenanceRecord(BaseModel):
     technician_name: Optional[str] = None
     work_description: Optional[str] = None
     result: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class UsageRecord(BaseModel):
+    """使用记录模型"""
+    equipment_id: Optional[int] = None
+    usage_date: str
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    duration_hours: Optional[float] = None
+    operator_id: Optional[int] = None
+    work_type: Optional[str] = None
+    work_description: Optional[str] = None
+    output_quantity: Optional[float] = None
+    output_unit: Optional[str] = None
+    issues_occurred: bool = False
+    issue_description: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -130,14 +151,9 @@ def get_equipment_list(
     - **factory_id**: 工厂ID筛选
     """
     try:
-        print(f"[设备列表API] 用户ID: {current_user.id}")
-        print(f"[设备列表API] 前端传递的workspace_type: {workspace_type}")
-        print(f"[设备列表API] 前端传递的factory_id: {factory_id}")
-
         # 根据前端传递的工作区类型创建工作区上下文
         if workspace_type == "personal":
             # 个人工作区：只显示个人设备
-            print(f"[设备列表API] 使用个人工作区")
             workspace_context = WorkspaceContext(
                 user_id=current_user.id,
                 workspace_type="personal",
@@ -149,11 +165,8 @@ def get_equipment_list(
             # 获取用户的企业信息
             user_workspace_type, user_company_id, user_factory_id = get_user_company_info(db, current_user.id)
 
-            print(f"[设备列表API] 用户企业信息: workspace_type={user_workspace_type}, company_id={user_company_id}, factory_id={user_factory_id}")
-
             # 如果用户没有企业关系,返回空列表
             if user_workspace_type == "personal":
-                print(f"[设备列表API] 用户没有企业关系,返回空列表")
                 return {
                     "success": True,
                     "data": {
@@ -167,7 +180,6 @@ def get_equipment_list(
                 }
 
             # 使用企业工作区
-            print(f"[设备列表API] 使用企业工作区: company_id={user_company_id}")
             workspace_context = WorkspaceContext(
                 user_id=current_user.id,
                 workspace_type="enterprise",  # 强制使用enterprise
@@ -255,32 +267,56 @@ def get_equipment_list(
 def get_user_company_info(db: Session, user_id: int) -> tuple:
     """获取用户的公司信息"""
     try:
-        from app.models.company import CompanyEmployee, Company
-
-        # 首先检查用户是否是企业所有者
         company_as_owner = db.query(Company).filter(
             Company.owner_id == user_id
         ).first()
 
         if company_as_owner:
-            # 用户是企业所有者，返回企业信息
             return ("enterprise", company_as_owner.id, None)
 
-        # 如果不是所有者，检查是否是企业员工
         company_employee = db.query(CompanyEmployee).filter(
             CompanyEmployee.user_id == user_id,
             CompanyEmployee.status == "active"
         ).first()
 
         if company_employee:
-            # 用户是企业员工，返回企业信息
             return ("enterprise", company_employee.company_id, company_employee.factory_id)
-        else:
-            # 用户既不是所有者也不是员工，返回个人工作区
-            return ("personal", None, None)
-    except Exception as e:
-        print(f"Error in get_user_company_info: {str(e)}")
         return ("personal", None, None)
+    except Exception:
+        logger.exception("Failed to resolve company info for user_id=%s", user_id)
+        return ("personal", None, None)
+
+
+def resolve_equipment_workspace(
+    db: Session,
+    current_user: User,
+    workspace_type: Optional[str],
+    factory_id: Optional[int] = None,
+) -> WorkspaceContext:
+    """按前端工作区参数构建设备查询上下文。"""
+    if workspace_type == "personal":
+        return WorkspaceContext(
+            user_id=current_user.id,
+            workspace_type="personal",
+            company_id=None,
+            factory_id=None,
+        )
+
+    user_workspace_type, user_company_id, user_factory_id = get_user_company_info(db, current_user.id)
+    if workspace_type == "company":
+        return WorkspaceContext(
+            user_id=current_user.id,
+            workspace_type="enterprise" if user_workspace_type == "enterprise" else "personal",
+            company_id=user_company_id,
+            factory_id=factory_id or user_factory_id,
+        )
+
+    return WorkspaceContext(
+        user_id=current_user.id,
+        workspace_type=user_workspace_type,
+        company_id=user_company_id,
+        factory_id=factory_id or user_factory_id,
+    )
 
 @router.post("/")
 def create_equipment(
@@ -354,6 +390,204 @@ def create_equipment(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"创建设备失败: {str(e)}"
         )
+
+
+@router.get("/maintenance-records")
+def list_maintenance_records(
+    db: Session = Depends(deps.get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    equipment_id: Optional[int] = Query(None, description="按设备筛选"),
+    workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """获取当前工作区的设备维护记录。"""
+    workspace_context = resolve_equipment_workspace(db, current_user, workspace_type)
+    workspace_context.validate()
+    equipment_service = EquipmentService(db)
+    items, total = equipment_service.list_maintenance_records(
+        current_user=current_user,
+        workspace_context=workspace_context,
+        skip=skip,
+        limit=limit,
+        equipment_id=equipment_id,
+    )
+    return {
+        "success": True,
+        "data": {"items": items, "total": total},
+        "message": "获取维护记录成功",
+    }
+
+
+@router.post("/maintenance-records")
+def create_maintenance_record(
+    record: MaintenanceRecord,
+    workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """新增设备维护记录。"""
+    if not record.equipment_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少设备ID")
+    workspace_context = resolve_equipment_workspace(db, current_user, workspace_type)
+    workspace_context.validate()
+    equipment_service = EquipmentService(db)
+    item = equipment_service.create_maintenance_record(
+        current_user=current_user,
+        workspace_context=workspace_context,
+        equipment_id=record.equipment_id,
+        record_data=record.model_dump(),
+    )
+    return {"success": True, "data": item, "message": "维护记录已创建"}
+
+
+@router.get("/usage-records")
+def list_usage_records(
+    db: Session = Depends(deps.get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    equipment_id: Optional[int] = Query(None, description="按设备筛选"),
+    workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """获取当前工作区的设备使用记录。"""
+    workspace_context = resolve_equipment_workspace(db, current_user, workspace_type)
+    workspace_context.validate()
+    equipment_service = EquipmentService(db)
+    items, total = equipment_service.list_usage_records(
+        current_user=current_user,
+        workspace_context=workspace_context,
+        skip=skip,
+        limit=limit,
+        equipment_id=equipment_id,
+    )
+    return {
+        "success": True,
+        "data": {"items": items, "total": total},
+        "message": "获取使用记录成功",
+    }
+
+
+@router.post("/usage-records")
+def create_usage_record(
+    record: UsageRecord,
+    workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """新增设备使用记录。"""
+    if not record.equipment_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少设备ID")
+    workspace_context = resolve_equipment_workspace(db, current_user, workspace_type)
+    workspace_context.validate()
+    equipment_service = EquipmentService(db)
+    item = equipment_service.create_usage_record(
+        current_user=current_user,
+        workspace_context=workspace_context,
+        equipment_id=record.equipment_id,
+        record_data=record.model_dump(),
+    )
+    return {"success": True, "data": item, "message": "使用记录已创建"}
+
+
+@router.get("/{equipment_id}/maintenance-records")
+def list_equipment_maintenance_records(
+    equipment_id: int,
+    db: Session = Depends(deps.get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """获取指定设备的维护记录。"""
+    workspace_context = resolve_equipment_workspace(db, current_user, workspace_type)
+    workspace_context.validate()
+    equipment_service = EquipmentService(db)
+    items, total = equipment_service.list_maintenance_records(
+        current_user=current_user,
+        workspace_context=workspace_context,
+        skip=skip,
+        limit=limit,
+        equipment_id=equipment_id,
+    )
+    return {
+        "success": True,
+        "data": {"items": items, "total": total},
+        "message": "获取维护记录成功",
+    }
+
+
+@router.post("/{equipment_id}/maintenance-records")
+def create_equipment_maintenance_record(
+    equipment_id: int,
+    record: MaintenanceRecord,
+    workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """为指定设备新增维护记录。"""
+    workspace_context = resolve_equipment_workspace(db, current_user, workspace_type)
+    workspace_context.validate()
+    equipment_service = EquipmentService(db)
+    payload = record.model_dump()
+    payload["equipment_id"] = equipment_id
+    item = equipment_service.create_maintenance_record(
+        current_user=current_user,
+        workspace_context=workspace_context,
+        equipment_id=equipment_id,
+        record_data=payload,
+    )
+    return {"success": True, "data": item, "message": "维护记录已创建"}
+
+
+@router.get("/{equipment_id}/usage-records")
+def list_equipment_usage_records(
+    equipment_id: int,
+    db: Session = Depends(deps.get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """获取指定设备的使用记录。"""
+    workspace_context = resolve_equipment_workspace(db, current_user, workspace_type)
+    workspace_context.validate()
+    equipment_service = EquipmentService(db)
+    items, total = equipment_service.list_usage_records(
+        current_user=current_user,
+        workspace_context=workspace_context,
+        skip=skip,
+        limit=limit,
+        equipment_id=equipment_id,
+    )
+    return {
+        "success": True,
+        "data": {"items": items, "total": total},
+        "message": "获取使用记录成功",
+    }
+
+
+@router.post("/{equipment_id}/usage-records")
+def create_equipment_usage_record(
+    equipment_id: int,
+    record: UsageRecord,
+    workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """为指定设备新增使用记录。"""
+    workspace_context = resolve_equipment_workspace(db, current_user, workspace_type)
+    workspace_context.validate()
+    equipment_service = EquipmentService(db)
+    payload = record.model_dump()
+    payload["equipment_id"] = equipment_id
+    item = equipment_service.create_usage_record(
+        current_user=current_user,
+        workspace_context=workspace_context,
+        equipment_id=equipment_id,
+        record_data=payload,
+    )
+    return {"success": True, "data": item, "message": "使用记录已创建"}
 
 
 @router.get("/{equipment_id}")

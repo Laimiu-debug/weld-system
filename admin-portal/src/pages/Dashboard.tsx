@@ -16,8 +16,6 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import apiService from '@/services/api';
 
 const Dashboard: React.FC = () => {
-  console.log('Dashboard: Component loading...');
-
   // 使用错误边界和安全的API调用
   const [apiError, setApiError] = useState<string | null>(null);
   const [systemStatus, setSystemStatus] = useState<any>(null);
@@ -29,9 +27,7 @@ const Dashboard: React.FC = () => {
   // 安全的API调用函数
   const safeApiCall = async (apiCall: () => Promise<any>, errorMessage: string) => {
     try {
-      console.log(`Dashboard: Making API call: ${errorMessage}`);
       const result = await apiCall();
-      console.log(`Dashboard: API call success: ${errorMessage}`, result);
       return result;
     } catch (error: any) {
       console.error(`Dashboard: API call failed: ${errorMessage}`, error);
@@ -51,7 +47,6 @@ const Dashboard: React.FC = () => {
 
       // 如果是401错误，不自动清除认证状态，让用户手动处理
       if (error.response?.status === 401) {
-        console.log('Dashboard: 401 error detected, but not auto-clearing auth');
         setApiError(`API认证失败，但保持登录状态。${errorDetails}`);
       } else {
         setApiError(`${errorMessage}: ${errorDetails}`);

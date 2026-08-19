@@ -16,7 +16,6 @@ class ApiService {
   // 提供切换模拟数据的方法
   public setUseMockData(useMock: boolean) {
     this.useMockData = useMock;
-    console.log(`API Service: ${useMock ? '启用' : '禁用'}模拟数据模式`);
   }
 
   public getUseMockData() {
@@ -56,12 +55,6 @@ class ApiService {
         if (token) {
           config.headers.Authorization = `Bearer ${token}`;
         }
-        console.log('=== API 请求调试 ===');
-        console.log('URL:', `${config.baseURL || ''}${config.url || ''}`);
-        console.log('Method:', config.method?.toUpperCase());
-        console.log('Headers:', config.headers);
-        console.log('Params:', config.params);
-        console.log('Token length:', token?.length || 0);
         return config;
       },
       (error) => {
@@ -81,38 +74,23 @@ class ApiService {
         const { response } = error;
 
         if (response) {
-          console.log('=== API INTERCEPTOR ERROR ===');
-          console.log('Error status:', response.status);
-          console.log('Error URL:', response.config?.url);
-          console.log('Error method:', response.config?.method);
-          
           switch (response.status) {
             case 401:
-              console.log('API 401 Error: Unauthorized - NOT auto-clearing auth');
-              console.log('Current token:', localStorage.getItem('admin_token')?.substring(0, 20) + '...');
-              console.log('Current user:', localStorage.getItem('admin_user'));
-              
-              // 不自动清除认证状态和重定向，让组件处理
               message.warning('API认证失败，请检查登录状态或联系管理员');
               break;
             case 403:
-              console.log('API 403 Error: Forbidden');
               message.error('权限不足');
               break;
             case 404:
-              console.log('API 404 Error: Not Found');
               message.error('请求的资源不存在');
               break;
             case 500:
-              console.log('API 500 Error: Internal Server Error');
               message.error('服务器内部错误');
               break;
             default:
-              console.log('API Error:', response.status, response.data?.message || '请求失败');
               message.error(response.data?.message || '请求失败');
           }
         } else {
-          console.log('API Network Error: No response received');
           message.error('网络连接失败');
         }
 

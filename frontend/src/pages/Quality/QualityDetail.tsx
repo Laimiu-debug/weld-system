@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Card,
@@ -12,15 +12,13 @@ import {
   Divider,
   Tabs,
   Table,
-  Timeline,
-  Badge,
   Avatar,
-  Tooltip,
   Modal,
   message,
   Alert,
   Image,
   Upload,
+  Spin,
 } from 'antd'
 import {
   ArrowLeftOutlined,
@@ -30,122 +28,186 @@ import {
   DeleteOutlined,
   ExclamationCircleOutlined,
   CheckCircleOutlined,
-  ClockCircleOutlined,
   WarningOutlined,
   FileImageOutlined,
   UploadOutlined,
-  EyeOutlined,
 } from '@ant-design/icons'
-import { QualityInspection, InspectionType, InspectionResult } from '@/types'
+import type { QualityInspection } from '@/services/quality'
+import qualityService from '@/services/quality'
+import workspaceService from '@/services/workspace'
+import { apiService } from '@/services/api'
 import dayjs from 'dayjs'
 
 const { Title, Text, Paragraph } = Typography
+
+interface InspectionPhoto {
+  file_id: string
+  filename: string
+  url?: string
+}
+
+const unwrapInspection = (response: unknown): QualityInspection | null => {
+  const body = response as { data?: { data?: QualityInspection } & QualityInspection }
+  return body?.data?.data || body?.data || null
+}
+
+const parsePhotos = (raw?: string): InspectionPhoto[] => {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.map((item, index) => {
+      if (typeof item === 'string') {
+        return { file_id: item, filename: item, url: `/api/v1/files/${item}` }
+      }
+      const fileId = item.file_id || item.id || String(index)
+      return {
+        file_id: String(fileId),
+        filename: item.filename || item.name || '检验图片',
+        url: item.url || `/api/v1/files/${fileId}`,
+      }
+    })
+  } catch {
+    return []
+  }
+}
+
+const parseDefects = (raw?: string) => {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) {
+      return parsed.map((item, index) => ({
+        id: String(item.id ?? index),
+        location: item.location || '-',
+        type: item.type || item.defect_type || '缺陷',
+        size: item.size || '-',
+        quantity: item.quantity ?? 1,
+        description: item.description || item.notes || '',
+      }))
+    }
+  } catch {
+    return raw
+      ? [{ id: '1', location: '-', type: '记录', size: '-', quantity: 1, description: raw }]
+      : []
+  }
+  return [{ id: '1', location: '-', type: '记录', size: '-', quantity: 1, description: raw }]
+}
+
+const AuthImage: React.FC<{ fileId: string; alt: string }> = ({ fileId, alt }) => {
+  const [src, setSrc] = useState('')
+
+  useEffect(() => {
+    let objectUrl = ''
+    const load = async () => {
+      const blob = await apiService.downloadFile(fileId)
+      objectUrl = URL.createObjectURL(blob)
+      setSrc(objectUrl)
+    }
+    void load().catch(() => {
+      setSrc('')
+    })
+    return () => {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl)
+      }
+    }
+  }, [fileId])
+
+  if (!src) {
+    return (
+      <div className="flex items-center justify-center" style={{ height: 180 }}>
+        <Spin />
+      </div>
+    )
+  }
+  return <Image src={src} alt={alt} />
+}
 
 const QualityDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('info')
+  const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
+  const [inspectionData, setInspectionData] = useState<QualityInspection | null>(null)
 
-  // 模拟获取质量检验详情数据
-  const inspectionData: QualityInspection = {
-    id: id || '1',
-    user_id: 'user1',
-    production_task_id: '1',
-    inspection_number: 'INS-2024-001',
-    inspection_date: '2024-01-15',
-    inspector_name: '张检验员',
-    inspection_type: 'visual',
-    result: 'pass',
-    defects_found: {},
-    corrective_actions: '无',
-    follow_up_required: false,
-    created_at: '2024-01-15T10:30:00Z',
-    updated_at: '2024-01-15T10:30:00Z',
+  const workspace = () => {
+    const current = workspaceService.getCurrentWorkspaceFromStorage()
+    return {
+      type: (current?.type === 'enterprise' ? 'enterprise' : 'personal') as 'personal' | 'enterprise',
+      companyId: current?.type === 'enterprise' ? current.company_id : undefined,
+      factoryId: current?.factory_id,
+    }
   }
 
-  // 模拟检验项目
+  const loadInspection = async () => {
+    if (!id) return
+    setLoading(true)
+    try {
+      const ws = workspace()
+      const response = await qualityService.getQualityInspectionById(
+        Number(id),
+        ws.type,
+        ws.companyId,
+        ws.factoryId,
+      )
+      const data = unwrapInspection(response)
+      if (!data) {
+        message.error('未找到检验记录')
+        return
+      }
+      setInspectionData(data)
+    } catch {
+      message.error('加载检验记录失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadInspection()
+  }, [id])
+
+  const inspectionImages = parsePhotos(inspectionData?.photos)
+  const defectRecords = parseDefects(inspectionData?.defect_details)
   const inspectionItems = [
     {
-      id: '1',
-      name: '焊缝外观',
-      standard: '无裂纹、气孔、咬边等缺陷',
-      result: '合格',
-      notes: '焊缝成型良好，无可见缺陷',
-    },
-    {
-      id: '2',
-      name: '焊缝尺寸',
-      standard: '焊缝宽度6-8mm，余高0-2mm',
-      result: '合格',
-      notes: '焊缝宽度7mm，余高1mm，符合要求',
-    },
-    {
-      id: '3',
-      name: '焊接变形',
-     标准: '角变形≤3mm',
-      result: '合格',
-      notes: '实测角变形1.5mm，符合要求',
+      id: 'standard',
+      name: '检验标准',
+      standard: inspectionData?.inspection_standard || inspectionData?.acceptance_criteria || '-',
+      result: inspectionData?.is_qualified ? '合格' : '待确认',
+      notes: inspectionData?.inspection_method || inspectionData?.ndt_method || '',
     },
   ]
 
-  // 模拟缺陷记录
-  const defectRecords = [
-    {
-      id: '1',
-      location: '焊缝A段',
-      type: '气孔',
-      size: '直径1mm',
-      quantity: 2,
-      description: '分散小气孔，不影响强度',
-      images: ['defect1.jpg', 'defect2.jpg'],
-    },
-  ]
-
-  // 模拟检验图片
-  const inspectionImages = [
-    {
-      id: '1',
-      name: '焊缝外观照片',
-      url: 'https://via.placeholder.com/300x200?text=Weld+Appearance',
-      description: '整体焊缝外观良好',
-    },
-    {
-      id: '2',
-      name: '尺寸测量照片',
-      url: 'https://via.placeholder.com/300x200?text=Size+Measurement',
-      description: '焊缝尺寸测量记录',
-    },
-  ]
-
-  // 获取检验类型显示名称
-  const getInspectionTypeName = (type: InspectionType) => {
-    const typeNames: Record<InspectionType, { color: string; text: string }> = {
-      'visual': { color: 'blue', text: '外观检验' },
-      'radiographic': { color: 'green', text: '射线检验' },
-      'ultrasonic': { color: 'orange', text: '超声波检验' },
-      'magnetic_particle': { color: 'purple', text: '磁粉检验' },
-      'liquid_penetrant': { color: 'cyan', text: '渗透检验' },
-      'destructive': { color: 'red', text: '破坏性检验' },
+  const getInspectionTypeName = (type: string) => {
+    const typeNames: Record<string, { color: string; text: string }> = {
+      visual: { color: 'blue', text: '外观检验' },
+      radiographic: { color: 'green', text: '射线检验' },
+      ultrasonic: { color: 'orange', text: '超声波检验' },
+      magnetic_particle: { color: 'purple', text: '磁粉检验' },
+      liquid_penetrant: { color: 'cyan', text: '渗透检验' },
+      destructive: { color: 'red', text: '破坏性检验' },
     }
-    return typeNames[type] || { color: 'default', text: type }
+    return typeNames[type] || { color: 'default', text: type || '未知' }
   }
 
-  // 获取检验结果显示名称
-  const getInspectionResultName = (result: InspectionResult) => {
-    const resultNames: Record<InspectionResult, { color: string; text: string; icon: React.ReactNode }> = {
-      'pass': { color: 'success', text: '合格', icon: <CheckCircleOutlined /> },
-      'fail': { color: 'error', text: '不合格', icon: <ExclamationCircleOutlined /> },
-      'conditional': { color: 'warning', text: '有条件合格', icon: <WarningOutlined /> },
+  const getInspectionResultName = (result: string) => {
+    const resultNames: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
+      pass: { color: 'success', text: '合格', icon: <CheckCircleOutlined /> },
+      qualified: { color: 'success', text: '合格', icon: <CheckCircleOutlined /> },
+      fail: { color: 'error', text: '不合格', icon: <ExclamationCircleOutlined /> },
+      unqualified: { color: 'error', text: '不合格', icon: <ExclamationCircleOutlined /> },
+      conditional: { color: 'warning', text: '有条件合格', icon: <WarningOutlined /> },
     }
-    return resultNames[result] || resultNames['pass']
+    return resultNames[result] || resultNames.pass
   }
 
-  // 处理编辑
   const handleEdit = () => {
     navigate(`/quality/${id}/edit`)
   }
 
-  // 处理删除
   const handleDelete = () => {
     Modal.confirm({
       title: '确定要删除这个检验记录吗？',
@@ -153,100 +215,104 @@ const QualityDetail: React.FC = () => {
       content: '删除后将无法恢复',
       okText: '确定',
       cancelText: '取消',
-      onOk() {
+      async onOk() {
+        if (!id) return
+        const ws = workspace()
+        await qualityService.deleteQualityInspection(Number(id), ws.type, ws.companyId, ws.factoryId)
         message.success('删除成功')
         navigate('/quality')
       },
     })
   }
 
-  // 处理上传图片
-  const handleUploadImage = () => {
-    message.info('上传图片功能开发中')
+  const persistPhotos = async (photos: InspectionPhoto[]) => {
+    if (!id) return
+    const ws = workspace()
+    await qualityService.updateQualityInspection(
+      Number(id),
+      { photos: JSON.stringify(photos) },
+      ws.type,
+      ws.companyId,
+      ws.factoryId,
+    )
+    await loadInspection()
   }
 
-  // 检验项目表格列
+  const handleUploadImage = async (file: File) => {
+    if (!id) return false
+    setUploading(true)
+    try {
+      const uploadResp = await apiService.uploadFile(file, {
+        resource_type: 'quality',
+        resource_id: String(id),
+        description: '质量检验图片',
+      })
+      const payload = (uploadResp as any)?.data?.data || (uploadResp as any)?.data || uploadResp
+      const fileId = payload?.file_id
+      if (!fileId) {
+        throw new Error('上传未返回文件编号')
+      }
+      const nextPhotos = [
+        ...inspectionImages,
+        {
+          file_id: fileId,
+          filename: payload.filename || file.name,
+          url: payload.url || `/api/v1/files/${fileId}`,
+        },
+      ]
+      await persistPhotos(nextPhotos)
+      message.success('图片已上传')
+    } catch {
+      message.error('上传图片失败')
+    } finally {
+      setUploading(false)
+    }
+    return false
+  }
+
   const inspectionColumns = [
-    {
-      title: '检验项目',
-      dataIndex: 'name',
-      key: 'name',
-    },
-    {
-      title: '标准要求',
-      dataIndex: 'standard',
-      key: 'standard',
-      ellipsis: true,
-    },
+    { title: '检验项目', dataIndex: 'name', key: 'name' },
+    { title: '标准要求', dataIndex: 'standard', key: 'standard', ellipsis: true },
     {
       title: '检验结果',
       dataIndex: 'result',
       key: 'result',
       render: (result: string) => (
-        <Tag color={result === '合格' ? 'success' : 'error'}>
-          {result}
-        </Tag>
+        <Tag color={result === '合格' ? 'success' : 'warning'}>{result}</Tag>
       ),
     },
-    {
-      title: '备注',
-      dataIndex: 'notes',
-      key: 'notes',
-      ellipsis: true,
-    },
+    { title: '备注', dataIndex: 'notes', key: 'notes', ellipsis: true },
   ]
 
-  // 缺陷记录表格列
   const defectColumns = [
-    {
-      title: '位置',
-      dataIndex: 'location',
-      key: 'location',
-    },
+    { title: '位置', dataIndex: 'location', key: 'location' },
     {
       title: '缺陷类型',
       dataIndex: 'type',
       key: 'type',
-      render: (type: string) => (
-        <Tag color="red">{type}</Tag>
-      ),
+      render: (type: string) => <Tag color="red">{type}</Tag>,
     },
-    {
-      title: '尺寸',
-      dataIndex: 'size',
-      key: 'size',
-    },
-    {
-      title: '数量',
-      dataIndex: 'quantity',
-      key: 'quantity',
-    },
-    {
-      title: '描述',
-      dataIndex: 'description',
-      key: 'description',
-      ellipsis: true,
-    },
-    {
-      title: '图片',
-      dataIndex: 'images',
-      key: 'images',
-      render: (images: string[]) => (
-        <Space>
-          {images.map((image, index) => (
-            <Button
-              key={index}
-              type="text"
-              icon={<EyeOutlined />}
-              onClick={() => message.info('查看图片功能开发中')}
-            >
-              查看
-            </Button>
-          ))}
-        </Space>
-      ),
-    },
+    { title: '尺寸', dataIndex: 'size', key: 'size' },
+    { title: '数量', dataIndex: 'quantity', key: 'quantity' },
+    { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true },
   ]
+
+  if (loading) {
+    return (
+      <div className="page-container flex justify-center items-center" style={{ minHeight: 320 }}>
+        <Spin size="large" />
+      </div>
+    )
+  }
+
+  if (!inspectionData) {
+    return (
+      <div className="page-container">
+        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/quality')}>返回列表</Button>
+        <Alert className="mt-4" type="warning" message="未找到检验记录" />
+      </div>
+    )
+  }
 
   const inspectionType = getInspectionTypeName(inspectionData.inspection_type)
   const inspectionResult = getInspectionResultName(inspectionData.result)
@@ -254,18 +320,25 @@ const QualityDetail: React.FC = () => {
   return (
     <div className="page-container">
       <div className="page-header">
-        <Space>
-          <Button
-            icon={<ArrowLeftOutlined />}
-            onClick={() => navigate('/quality')}
-          >
-            返回列表
-          </Button>
-          <Title level={2}>质量检验详情</Title>
-        </Space>
+        <div className="flex justify-between items-center">
+          <Space>
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/quality')}>
+              返回
+            </Button>
+            <Title level={2} className="!mb-0">质量检验详情</Title>
+            <Tag color={inspectionType.color}>{inspectionType.text}</Tag>
+            <Tag color={inspectionResult.color} icon={inspectionResult.icon}>
+              {inspectionResult.text}
+            </Tag>
+          </Space>
+          <Space>
+            <Button icon={<EditOutlined />} onClick={handleEdit}>编辑</Button>
+            <Button danger icon={<DeleteOutlined />} onClick={handleDelete}>删除</Button>
+          </Space>
+        </div>
       </div>
 
-      <Row gutter={[24, 24]}>
+      <Row gutter={24}>
         <Col xs={24} lg={16}>
           <Card>
             <Tabs
@@ -276,39 +349,26 @@ const QualityDetail: React.FC = () => {
                   key: 'info',
                   label: '基本信息',
                   children: (
-                    <Descriptions bordered column={2}>
-                      <Descriptions.Item label="检验编号">
-                        {inspectionData.inspection_number}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="检验类型">
-                        <Tag color={inspectionType.color}>
-                          {inspectionType.text}
-                        </Tag>
-                      </Descriptions.Item>
+                    <Descriptions column={2} bordered>
+                      <Descriptions.Item label="检验编号">{inspectionData.inspection_number}</Descriptions.Item>
                       <Descriptions.Item label="检验日期">
-                        {dayjs(inspectionData.inspection_date).format('YYYY-MM-DD')}
+                        {inspectionData.inspection_date ? dayjs(inspectionData.inspection_date).format('YYYY-MM-DD') : '-'}
                       </Descriptions.Item>
-                      <Descriptions.Item label="检验员">
-                        {inspectionData.inspector_name}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="生产任务">
-                        压力容器筒体焊接 (TSK-2024-001)
-                      </Descriptions.Item>
-                      <Descriptions.Item label="检验结果">
-                        <Tag color={inspectionResult.color} icon={inspectionResult.icon}>
-                          {inspectionResult.text}
-                        </Tag>
+                      <Descriptions.Item label="检验员">{inspectionData.inspector_name || '-'}</Descriptions.Item>
+                      <Descriptions.Item label="焊工">{inspectionData.welder_name || '-'}</Descriptions.Item>
+                      <Descriptions.Item label="焊缝位置">{inspectionData.weld_location || '-'}</Descriptions.Item>
+                      <Descriptions.Item label="接头编号">{inspectionData.joint_number || '-'}</Descriptions.Item>
+                      <Descriptions.Item label="检验标准">{inspectionData.inspection_standard || '-'}</Descriptions.Item>
+                      <Descriptions.Item label="验收标准">{inspectionData.acceptance_criteria || '-'}</Descriptions.Item>
+                      <Descriptions.Item label="缺陷数量">{inspectionData.defects_found ?? 0}</Descriptions.Item>
+                      <Descriptions.Item label="是否合格">
+                        {inspectionData.is_qualified ? <Tag color="success">合格</Tag> : <Tag color="warning">待确认</Tag>}
                       </Descriptions.Item>
                       <Descriptions.Item label="纠正措施" span={2}>
-                        {inspectionData.corrective_actions}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="跟进要求" span={2}>
-                        <Tag color={inspectionData.follow_up_required ? 'warning' : 'success'}>
-                          {inspectionData.follow_up_required ? '需要跟进' : '无需跟进'}
-                        </Tag>
+                        {inspectionData.corrective_actions || '无'}
                       </Descriptions.Item>
                     </Descriptions>
-                  )
+                  ),
                 },
                 {
                   key: 'items',
@@ -320,19 +380,22 @@ const QualityDetail: React.FC = () => {
                       rowKey="id"
                       pagination={false}
                     />
-                  )
+                  ),
                 },
                 {
                   key: 'defects',
                   label: '缺陷记录',
-                  children: (
+                  children: Array.isArray(defectRecords) ? (
                     <Table
                       dataSource={defectRecords}
                       columns={defectColumns}
                       rowKey="id"
                       pagination={false}
+                      locale={{ emptyText: '暂无缺陷记录' }}
                     />
-                  )
+                  ) : (
+                    <Paragraph>{String(defectRecords)}</Paragraph>
+                  ),
                 },
                 {
                   key: 'images',
@@ -341,29 +404,30 @@ const QualityDetail: React.FC = () => {
                     <div className="p-4">
                       <Row gutter={[16, 16]}>
                         {inspectionImages.map((image) => (
-                          <Col xs={24} sm={12} md={8} key={image.id}>
-                            <Card
-                              hoverable
-                              cover={<Image src={image.url} alt={image.name} />}
-                              actions={[
-                                <Button type="text" icon={<EyeOutlined />}>
-                                  查看
-                                </Button>,
-                              ]}
-                            >
-                              <Card.Meta title={image.name} description={image.description} />
+                          <Col xs={24} sm={12} md={8} key={image.file_id}>
+                            <Card hoverable cover={<AuthImage fileId={image.file_id} alt={image.filename} />}>
+                              <Card.Meta title={image.filename} />
                             </Card>
                           </Col>
                         ))}
                       </Row>
+                      {inspectionImages.length === 0 && (
+                        <Alert type="info" message="还没有检验图片" className="mb-4" />
+                      )}
                       <div className="mt-4 text-center">
-                        <Button icon={<UploadOutlined />} onClick={handleUploadImage}>
-                          上传图片
-                        </Button>
+                        <Upload
+                          accept="image/*"
+                          showUploadList={false}
+                          beforeUpload={handleUploadImage}
+                        >
+                          <Button icon={<UploadOutlined />} loading={uploading}>
+                            上传图片
+                          </Button>
+                        </Upload>
                       </div>
                     </div>
-                  )
-                }
+                  ),
+                },
               ]}
             />
           </Card>
@@ -385,9 +449,7 @@ const QualityDetail: React.FC = () => {
               </div>
               <div className="mb-4">
                 <Text>检验类型: </Text>
-                <Tag color={inspectionType.color}>
-                  {inspectionType.text}
-                </Tag>
+                <Tag color={inspectionType.color}>{inspectionType.text}</Tag>
               </div>
             </div>
           </Card>
@@ -397,15 +459,17 @@ const QualityDetail: React.FC = () => {
               <Space direction="vertical" className="w-full">
                 <div className="flex justify-between">
                   <Text>检验日期:</Text>
-                  <Text>{dayjs(inspectionData.inspection_date).format('YYYY-MM-DD')}</Text>
+                  <Text>
+                    {inspectionData.inspection_date ? dayjs(inspectionData.inspection_date).format('YYYY-MM-DD') : '-'}
+                  </Text>
                 </div>
                 <div className="flex justify-between">
                   <Text>检验员:</Text>
-                  <Text>{inspectionData.inspector_name}</Text>
+                  <Text>{inspectionData.inspector_name || '-'}</Text>
                 </div>
                 <div className="flex justify-between">
-                  <Text>生产任务:</Text>
-                  <Text>TSK-2024-001</Text>
+                  <Text>焊缝位置:</Text>
+                  <Text>{inspectionData.weld_location || '-'}</Text>
                 </div>
               </Space>
             </div>
@@ -416,11 +480,15 @@ const QualityDetail: React.FC = () => {
               <Space direction="vertical" className="w-full">
                 <div className="flex justify-between">
                   <Text>缺陷总数:</Text>
-                  <Text strong>{defectRecords.length}</Text>
+                  <Text strong>{inspectionData.defects_found ?? (Array.isArray(defectRecords) ? defectRecords.length : 0)}</Text>
                 </div>
                 <div className="flex justify-between">
-                  <Text>缺陷类型:</Text>
-                  <Text>{defectRecords.length > 0 ? defectRecords[0].type : '无'}</Text>
+                  <Text>气孔:</Text>
+                  <Text>{inspectionData.porosity_count ?? 0}</Text>
+                </div>
+                <div className="flex justify-between">
+                  <Text>裂纹:</Text>
+                  <Text>{inspectionData.crack_count ?? 0}</Text>
                 </div>
               </Space>
             </div>
@@ -428,62 +496,23 @@ const QualityDetail: React.FC = () => {
 
           <Card title="操作" className="mt-6">
             <Space direction="vertical" className="w-full">
-              <Button
-                type="primary"
-                icon={<EditOutlined />}
-                block
-                onClick={handleEdit}
-              >
+              <Button type="primary" icon={<EditOutlined />} block onClick={handleEdit}>
                 编辑检验
               </Button>
-              <Button
-                icon={<PlusOutlined />}
-                block
-              >
-                添加检验项目
-              </Button>
-              <Button
-                icon={<FileImageOutlined />}
-                block
-              >
+              <Button icon={<FileImageOutlined />} block onClick={() => setActiveTab('images')}>
                 添加图片
               </Button>
-              <Button
-                icon={<DownloadOutlined />}
-                block
-              >
+              <Button icon={<PlusOutlined />} block disabled>
+                添加检验项目
+              </Button>
+              <Button icon={<DownloadOutlined />} block disabled>
                 导出报告
               </Button>
-              <Button
-                icon={<DeleteOutlined />}
-                block
-                danger
-                onClick={handleDelete}
-              >
+              <Button icon={<DeleteOutlined />} block danger onClick={handleDelete}>
                 删除检验
               </Button>
             </Space>
           </Card>
-
-          {inspectionResult.text === '不合格' && (
-            <Alert
-              message="检验不合格"
-              description="检验结果为不合格，请查看缺陷记录并采取纠正措施"
-              type="error"
-              showIcon
-              className="mt-6"
-            />
-          )}
-
-          {inspectionResult.text === '有条件合格' && (
-            <Alert
-              message="有条件合格"
-              description="检验结果为有条件合格，请查看缺陷记录并采取相应措施"
-              type="warning"
-              showIcon
-              className="mt-6"
-            />
-          )}
         </Col>
       </Row>
     </div>

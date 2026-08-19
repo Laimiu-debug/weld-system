@@ -16,7 +16,6 @@ const Register = React.lazy(() => import('@/pages/Auth/Register'))
 const ForgotPassword = React.lazy(() => import('@/pages/Auth/ForgotPassword'))
 const ResetPassword = React.lazy(() => import('@/pages/Auth/ResetPassword'))
 const VerifyEmail = React.lazy(() => import('@/pages/Auth/VerifyEmail'))
-const LoginDebug = React.lazy(() => import('@/pages/Auth/LoginDebug'))
 
 // 法律政策页面
 const PrivacyPolicy = React.lazy(() => import('@/pages/Legal/PrivacyPolicy'))
@@ -105,10 +104,6 @@ const ApprovalWorkflows = React.lazy(() => import('@/pages/Workflow/ApprovalWork
 
 // 管理端页面
 const PendingPayments = React.lazy(() => import('@/pages/Admin/PendingPayments'))
-
-// 测试页面
-const TestWeldJointV2 = React.lazy(() => import('@/pages/TestWeldJointV2'))
-const TestWeldJointV3 = React.lazy(() => import('@/pages/TestWeldJointV3'))
 
 // 路由守卫组件
 const ProtectedRoute: React.FC<{ children: React.ReactNode; requiredPermission?: string }> = ({
@@ -239,10 +234,6 @@ const App: React.FC = () => {
         <Route
           path="/verify-email"
           element={<VerifyEmail />}
-        />
-        <Route
-          path="/login-debug"
-          element={<LoginDebug />}
         />
 
         {/* 法律政策路由（公开访问） */}
@@ -760,24 +751,6 @@ const App: React.FC = () => {
             element={
               <ProtectedRoute>
                 <PendingPayments />
-              </ProtectedRoute>
-            }
-          />
-
-          {/* 测试页面 */}
-          <Route
-            path="test-weld-joint-v2"
-            element={
-              <ProtectedRoute>
-                <TestWeldJointV2 />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="test-weld-joint-v3"
-            element={
-              <ProtectedRoute>
-                <TestWeldJointV3 />
               </ProtectedRoute>
             }
           />

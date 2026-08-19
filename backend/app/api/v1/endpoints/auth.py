@@ -122,8 +122,6 @@ def login_for_access_token(
     user.last_login_ip = client_ip
     db.commit()
 
-    print(f"用户登录成功: {user.email}, IP: {client_ip}, 时间: {user.last_login_at}")
-
     # 创建访问令牌和刷新令牌
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
@@ -220,8 +218,6 @@ def login_with_json(  # Updated to support phone/email login
     user.last_login_at = local_time
     user.last_login_ip = client_ip
     db.commit()
-
-    print(f"用户登录成功(JSON): {user.email}, IP: {client_ip}, 时间: {user.last_login_at}")
 
     # 创建访问令牌和刷新令牌
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -661,8 +657,6 @@ def login_with_verification_code(
     user.last_login_at = local_time
     user.last_login_ip = client_ip
     db.commit()
-
-    print(f"用户登录成功(验证码): {user.email}, IP: {client_ip}, 时间: {user.last_login_at}")
 
     # 创建访问令牌和刷新令牌
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)

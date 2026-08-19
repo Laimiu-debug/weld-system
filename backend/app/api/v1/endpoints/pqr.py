@@ -98,17 +98,7 @@ def read_pqr_list(
     - 企业工作区：只返回企业内的PQR
     """
     try:
-        # Get workspace context
-        print(f"DEBUG PQR: 开始获取工作区上下文, workspace_id={workspace_id}")
         workspace_context = get_workspace_context(db, current_user, workspace_id)
-        print(f"DEBUG PQR: 工作区上下文获取成功: type={workspace_context.workspace_type}, user_id={workspace_context.user_id}")
-
-        # Debug information
-        print(f"DEBUG PQR: User {current_user.id}, membership_type={current_user.membership_type}, workspace_id={workspace_id}")
-
-        # For now, allow all authenticated users to access PQR
-        # TODO: Implement proper permission checking
-        print(f"DEBUG PQR: User authenticated, allowing access")
 
         # 计算 skip 和 limit（优先使用 page 和 page_size）
         actual_skip = skip if skip is not None else (page - 1) * page_size

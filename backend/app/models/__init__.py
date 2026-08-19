@@ -37,6 +37,7 @@ from app.models.approval import (
     ApprovalAction,
     DocumentType
 )
+from app.models.equipment import Equipment, EquipmentMaintenance, EquipmentUsage
 
 __all__ = [
     "User",
@@ -74,5 +75,8 @@ __all__ = [
     "ApprovalNotification",
     "ApprovalStatus",
     "ApprovalAction",
-    "DocumentType"
+    "DocumentType",
+    "Equipment",
+    "EquipmentMaintenance",
+    "EquipmentUsage",
 ]

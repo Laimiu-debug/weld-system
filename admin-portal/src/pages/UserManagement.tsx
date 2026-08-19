@@ -53,22 +53,16 @@ const UserManagement: React.FC = () => {
   const [usersData, setUsersData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  console.log('=== USER MANAGEMENT COMPONENT LOADING ===');
-  console.log('UserManagement: Current auth token:', localStorage.getItem('admin_token')?.substring(0, 20) + '...');
-
   // 安全的API调用函数
   const safeApiCall = async (apiCall: () => Promise<any>, errorMessage: string) => {
     try {
-      console.log(`UserManagement: Making API call: ${errorMessage}`);
       const result = await apiCall();
-      console.log(`UserManagement: API call success: ${errorMessage}`, result);
       return result;
     } catch (error: any) {
       console.error(`UserManagement: API call failed: ${errorMessage}`, error);
 
       // 如果是401错误，不自动清除认证状态
       if (error.response?.status === 401) {
-        console.log('UserManagement: 401 error detected, but not auto-clearing auth');
         setApiError('API认证失败，但保持登录状态。请检查后端服务是否正常运行。');
       } else {
         setApiError(`${errorMessage}: ${error.message || '未知错误'}`);

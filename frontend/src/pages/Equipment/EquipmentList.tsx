@@ -56,6 +56,8 @@ import {
   EquipmentStatus,
   EquipmentStatistics,
   MaintenanceAlert,
+  MaintenanceRecordItem,
+  UsageRecordItem,
   EquipmentListParams,
   CreateEquipmentData,
   UpdateEquipmentData
@@ -88,6 +90,13 @@ const EquipmentList: React.FC = () => {
   const [form] = Form.useForm()
   const [activeTab, setActiveTab] = useState('equipment')
   const [searchKeyword, setSearchKeyword] = useState('')
+  const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceRecordItem[]>([])
+  const [usageRecords, setUsageRecords] = useState<UsageRecordItem[]>([])
+  const [recordsLoading, setRecordsLoading] = useState(false)
+  const [maintenanceModalVisible, setMaintenanceModalVisible] = useState(false)
+  const [usageModalVisible, setUsageModalVisible] = useState(false)
+  const [maintenanceForm] = Form.useForm()
+  const [usageForm] = Form.useForm()
 
   // 加载设备列表
   const loadEquipment = async (params?: EquipmentListParams) => {
@@ -157,12 +166,102 @@ const EquipmentList: React.FC = () => {
     }
   }
 
+  const loadMaintenanceRecords = async () => {
+    setRecordsLoading(true)
+    try {
+      const response = await equipmentService.getMaintenanceRecords({ skip: 0, limit: 100 })
+      if (response.success) {
+        setMaintenanceRecords(response.data.items || [])
+      }
+    } catch {
+      message.error('获取维护记录失败')
+    } finally {
+      setRecordsLoading(false)
+    }
+  }
+
+  const loadUsageRecords = async () => {
+    setRecordsLoading(true)
+    try {
+      const response = await equipmentService.getUsageRecords({ skip: 0, limit: 100 })
+      if (response.success) {
+        setUsageRecords(response.data.items || [])
+      }
+    } catch {
+      message.error('获取使用记录失败')
+    } finally {
+      setRecordsLoading(false)
+    }
+  }
+
+  const handleCreateMaintenance = async () => {
+    try {
+      const values = await maintenanceForm.validateFields()
+      await equipmentService.createMaintenanceRecord({
+        equipment_id: Number(values.equipment_id),
+        maintenance_type: values.maintenance_type,
+        start_date: values.start_date ? values.start_date.format('YYYY-MM-DD HH:mm:ss') : '',
+        end_date: values.end_date ? values.end_date.format('YYYY-MM-DD HH:mm:ss') : undefined,
+        duration_hours: values.duration_hours,
+        technician_name: values.technician_name,
+        work_description: values.work_description,
+        result: values.result,
+        notes: values.notes,
+      })
+      message.success('维护记录已创建')
+      setMaintenanceModalVisible(false)
+      maintenanceForm.resetFields()
+      await loadMaintenanceRecords()
+      await loadEquipment()
+      await loadMaintenanceAlerts()
+    } catch (error: any) {
+      if (error?.errorFields) return
+      message.error('创建维护记录失败')
+    }
+  }
+
+  const handleCreateUsage = async () => {
+    try {
+      const values = await usageForm.validateFields()
+      await equipmentService.createUsageRecord({
+        equipment_id: Number(values.equipment_id),
+        usage_date: values.usage_date ? values.usage_date.format('YYYY-MM-DD') : '',
+        start_time: values.start_time ? values.start_time.format('YYYY-MM-DD HH:mm:ss') : undefined,
+        end_time: values.end_time ? values.end_time.format('YYYY-MM-DD HH:mm:ss') : undefined,
+        duration_hours: values.duration_hours,
+        work_type: values.work_type,
+        work_description: values.work_description,
+        notes: values.notes,
+      })
+      message.success('使用记录已创建')
+      setUsageModalVisible(false)
+      usageForm.resetFields()
+      await loadUsageRecords()
+      await loadEquipment()
+    } catch (error: any) {
+      if (error?.errorFields) return
+      message.error('创建使用记录失败')
+    }
+  }
+
   // 初始化数据
   useEffect(() => {
     loadEquipment()
     loadStatistics()
     loadMaintenanceAlerts()
   }, [])
+
+  useEffect(() => {
+    if (activeTab === 'maintenance') {
+      void loadMaintenanceRecords()
+    }
+    if (activeTab === 'usage') {
+      void loadUsageRecords()
+    }
+    if (activeTab === 'schedule') {
+      void loadMaintenanceAlerts()
+    }
+  }, [activeTab])
 
   // 监听工作区切换
   useEffect(() => {
@@ -774,16 +873,42 @@ const EquipmentList: React.FC = () => {
             label: '维护记录',
             children: (
               <Card>
-                <div className="text-center py-8">
-                  <Title level={4}>维护记录管理</Title>
-                  <Paragraph type="secondary">
-                    设备维护记录功能正在开发中，敬请期待...
-                  </Paragraph>
-                  <Empty
-                    description="暂无维护记录"
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  />
+                <div className="flex justify-between items-center mb-4">
+                  <Title level={5} className="!mb-0">维护记录</Title>
+                  <Button type="primary" icon={<PlusOutlined />} onClick={() => setMaintenanceModalVisible(true)}>
+                    新增维护记录
+                  </Button>
                 </div>
+                <Table
+                  rowKey="id"
+                  loading={recordsLoading}
+                  dataSource={maintenanceRecords}
+                  pagination={{ pageSize: 10, showTotal: (total) => `共 ${total} 条` }}
+                  columns={[
+                    { title: '设备编号', dataIndex: 'equipment_code', key: 'equipment_code' },
+                    { title: '设备名称', dataIndex: 'equipment_name', key: 'equipment_name' },
+                    {
+                      title: '维护类型',
+                      dataIndex: 'maintenance_type',
+                      key: 'maintenance_type',
+                      render: (value: string) => {
+                        const labels: Record<string, string> = {
+                          routine: '例行维护',
+                          preventive: '预防性维护',
+                          corrective: '纠正性维护',
+                          emergency: '紧急维护',
+                        }
+                        return labels[value] || value
+                      },
+                    },
+                    { title: '开始时间', dataIndex: 'start_date', key: 'start_date', render: (value: string) => value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '-' },
+                    { title: '技术员', dataIndex: 'technician_name', key: 'technician_name' },
+                    { title: '结果', dataIndex: 'result', key: 'result' },
+                    { title: '工时(h)', dataIndex: 'duration_hours', key: 'duration_hours' },
+                    { title: '说明', dataIndex: 'work_description', key: 'work_description', ellipsis: true },
+                  ]}
+                  locale={{ emptyText: '暂无维护记录' }}
+                />
               </Card>
             ),
           },
@@ -792,16 +917,28 @@ const EquipmentList: React.FC = () => {
             label: '使用记录',
             children: (
               <Card>
-                <div className="text-center py-8">
-                  <Title level={4}>设备使用记录</Title>
-                  <Paragraph type="secondary">
-                    设备使用记录功能正在开发中，敬请期待...
-                  </Paragraph>
-                  <Empty
-                    description="暂无使用记录"
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  />
+                <div className="flex justify-between items-center mb-4">
+                  <Title level={5} className="!mb-0">使用记录</Title>
+                  <Button type="primary" icon={<PlusOutlined />} onClick={() => setUsageModalVisible(true)}>
+                    新增使用记录
+                  </Button>
                 </div>
+                <Table
+                  rowKey="id"
+                  loading={recordsLoading}
+                  dataSource={usageRecords}
+                  pagination={{ pageSize: 10, showTotal: (total) => `共 ${total} 条` }}
+                  columns={[
+                    { title: '设备编号', dataIndex: 'equipment_code', key: 'equipment_code' },
+                    { title: '设备名称', dataIndex: 'equipment_name', key: 'equipment_name' },
+                    { title: '使用日期', dataIndex: 'usage_date', key: 'usage_date' },
+                    { title: '开始时间', dataIndex: 'start_time', key: 'start_time', render: (value: string) => value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '-' },
+                    { title: '时长(h)', dataIndex: 'duration_hours', key: 'duration_hours' },
+                    { title: '工作类型', dataIndex: 'work_type', key: 'work_type' },
+                    { title: '说明', dataIndex: 'work_description', key: 'work_description', ellipsis: true },
+                  ]}
+                  locale={{ emptyText: '暂无使用记录' }}
+                />
               </Card>
             ),
           },
@@ -810,16 +947,43 @@ const EquipmentList: React.FC = () => {
             label: '维护计划',
             children: (
               <Card>
-                <div className="text-center py-8">
-                  <Title level={4}>设备维护计划</Title>
-                  <Paragraph type="secondary">
-                    设备维护计划功能正在开发中，敬请期待...
-                  </Paragraph>
-                  <Empty
-                    description="暂无维护计划"
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  />
-                </div>
+                <Title level={5}>即将到期的维护计划</Title>
+                <Table
+                  rowKey="id"
+                  dataSource={maintenanceAlerts}
+                  pagination={false}
+                  columns={[
+                    { title: '设备编号', dataIndex: 'equipment_code', key: 'equipment_code' },
+                    { title: '设备名称', dataIndex: 'equipment_name', key: 'equipment_name' },
+                    { title: '位置', dataIndex: 'location', key: 'location' },
+                    { title: '下次维护', dataIndex: 'next_maintenance_date', key: 'next_maintenance_date' },
+                    {
+                      title: '剩余天数',
+                      dataIndex: 'days_until_maintenance',
+                      key: 'days_until_maintenance',
+                      render: (days: number) => (
+                        <Tag color={days <= 7 ? 'red' : days <= 30 ? 'orange' : 'blue'}>
+                          {days < 0 ? `已逾期 ${Math.abs(days)} 天` : `${days} 天`}
+                        </Tag>
+                      ),
+                    },
+                    {
+                      title: '紧急程度',
+                      dataIndex: 'urgency',
+                      key: 'urgency',
+                      render: (urgency: string) => {
+                        const map: Record<string, { color: string; text: string }> = {
+                          urgent: { color: 'red', text: '紧急' },
+                          normal: { color: 'orange', text: '即将到期' },
+                          low: { color: 'blue', text: '计划中' },
+                        }
+                        const item = map[urgency] || { color: 'default', text: urgency }
+                        return <Tag color={item.color}>{item.text}</Tag>
+                      },
+                    },
+                  ]}
+                  locale={{ emptyText: '近期没有待维护设备' }}
+                />
               </Card>
             ),
           },
@@ -1174,6 +1338,106 @@ const EquipmentList: React.FC = () => {
             </Form.Item>
           </Form>
         )}
+      </Modal>
+
+      <Modal
+        title="新增维护记录"
+        open={maintenanceModalVisible}
+        onCancel={() => setMaintenanceModalVisible(false)}
+        onOk={handleCreateMaintenance}
+        okText="保存"
+        destroyOnClose
+      >
+        <Form form={maintenanceForm} layout="vertical">
+          <Form.Item name="equipment_id" label="设备" rules={[{ required: true, message: '请选择设备' }]}>
+            <Select
+              showSearch
+              placeholder="选择设备"
+              optionFilterProp="label"
+              options={equipment.map(item => ({
+                value: Number(item.id),
+                label: `${item.equipment_code} - ${item.equipment_name}`,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="maintenance_type" label="维护类型" rules={[{ required: true, message: '请选择维护类型' }]} initialValue="routine">
+            <Select>
+              <Option value="routine">例行维护</Option>
+              <Option value="preventive">预防性维护</Option>
+              <Option value="corrective">纠正性维护</Option>
+              <Option value="emergency">紧急维护</Option>
+            </Select>
+          </Form.Item>
+          <Form.Item name="start_date" label="开始时间" rules={[{ required: true, message: '请选择开始时间' }]}>
+            <DatePicker showTime className="w-full" />
+          </Form.Item>
+          <Form.Item name="end_date" label="结束时间">
+            <DatePicker showTime className="w-full" />
+          </Form.Item>
+          <Form.Item name="duration_hours" label="工时(小时)">
+            <InputNumber min={0} className="w-full" />
+          </Form.Item>
+          <Form.Item name="technician_name" label="技术员">
+            <Input />
+          </Form.Item>
+          <Form.Item name="result" label="结果" initialValue="completed">
+            <Select>
+              <Option value="completed">完成</Option>
+              <Option value="partial">部分完成</Option>
+              <Option value="failed">未完成</Option>
+            </Select>
+          </Form.Item>
+          <Form.Item name="work_description" label="工作内容">
+            <TextArea rows={3} />
+          </Form.Item>
+          <Form.Item name="notes" label="备注">
+            <TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="新增使用记录"
+        open={usageModalVisible}
+        onCancel={() => setUsageModalVisible(false)}
+        onOk={handleCreateUsage}
+        okText="保存"
+        destroyOnClose
+      >
+        <Form form={usageForm} layout="vertical">
+          <Form.Item name="equipment_id" label="设备" rules={[{ required: true, message: '请选择设备' }]}>
+            <Select
+              showSearch
+              placeholder="选择设备"
+              optionFilterProp="label"
+              options={equipment.map(item => ({
+                value: Number(item.id),
+                label: `${item.equipment_code} - ${item.equipment_name}`,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="usage_date" label="使用日期" rules={[{ required: true, message: '请选择使用日期' }]}>
+            <DatePicker className="w-full" />
+          </Form.Item>
+          <Form.Item name="start_time" label="开始时间">
+            <DatePicker showTime className="w-full" />
+          </Form.Item>
+          <Form.Item name="end_time" label="结束时间">
+            <DatePicker showTime className="w-full" />
+          </Form.Item>
+          <Form.Item name="duration_hours" label="时长(小时)">
+            <InputNumber min={0} className="w-full" />
+          </Form.Item>
+          <Form.Item name="work_type" label="工作类型">
+            <Input />
+          </Form.Item>
+          <Form.Item name="work_description" label="工作内容">
+            <TextArea rows={3} />
+          </Form.Item>
+          <Form.Item name="notes" label="备注">
+            <TextArea rows={2} />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   )

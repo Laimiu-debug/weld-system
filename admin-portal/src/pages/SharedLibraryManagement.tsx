@@ -35,6 +35,7 @@ import {
   BarChartOutlined
 } from '@ant-design/icons';
 import { useAuthContext } from '@/contexts/AuthContext';
+import apiService from '@/services/api';
 import './SharedLibraryManagement.css';
 
 const { Search } = Input;
@@ -96,25 +97,8 @@ interface SharedTemplate {
 
 // API 服务类
 class SharedLibraryService {
-  private static getBaseURL() {
-    // 使用环境变量配置的 API 地址
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api/v1';
-    return `${apiBaseUrl}/shared-library`;
-  }
-
   static async getLibraryStats(): Promise<LibraryStats> {
-    const response = await fetch(`${this.getBaseURL()}/admin/stats`, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('获取统计信息失败');
-    }
-
-    return response.json();
+    return apiService.authGet('/shared-library/admin/stats');
   }
 
   static async getPendingResources(
@@ -122,21 +106,9 @@ class SharedLibraryService {
     page: number = 1,
     pageSize: number = 10
   ): Promise<{ items: SharedModule[] | SharedTemplate[], total: number }> {
-    const response = await fetch(
-      `${this.getBaseURL()}/admin/pending/${resourceType}?page=${page}&page_size=${pageSize}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error('获取待审核资源失败');
-    }
-
-    return response.json();
+    return apiService.authGet(`/shared-library/admin/pending/${resourceType}`, {
+      params: { page, page_size: pageSize },
+    });
   }
 
   static async getSharedModules(params: {
@@ -146,24 +118,7 @@ class SharedLibraryService {
     sort_by?: string;
     sort_order?: string;
   }): Promise<{ items: SharedModule[], total: number }> {
-    const queryParams = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) {
-        queryParams.append(key, String(value));
-      }
-    });
-
-    const response = await fetch(`${this.getBaseURL()}/modules?${queryParams}`, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('获取共享模块失败');
-    }
-
-    return response.json();
+    return apiService.authGet('/shared-library/modules', { params });
   }
 
   static async getSharedTemplates(params: {
@@ -173,24 +128,7 @@ class SharedLibraryService {
     sort_by?: string;
     sort_order?: string;
   }): Promise<{ items: SharedTemplate[], total: number }> {
-    const queryParams = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined) {
-        queryParams.append(key, String(value));
-      }
-    });
-
-    const response = await fetch(`${this.getBaseURL()}/templates?${queryParams}`, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error('获取共享模板失败');
-    }
-
-    return response.json();
+    return apiService.authGet('/shared-library/templates', { params });
   }
 
   static async reviewSharedResource(
@@ -198,21 +136,7 @@ class SharedLibraryService {
     resourceId: string,
     reviewData: { status: string, review_comment?: string }
   ): Promise<void> {
-    const response = await fetch(
-      `${this.getBaseURL()}/admin/review/${resourceType}/${resourceId}`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(reviewData),
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error('审核资源失败');
-    }
+    await apiService.authPost(`/shared-library/admin/review/${resourceType}/${resourceId}`, reviewData);
   }
 
   static async setFeaturedResource(
@@ -220,21 +144,7 @@ class SharedLibraryService {
     resourceId: string,
     featuredData: { is_featured: boolean, featured_order?: number }
   ): Promise<void> {
-    const response = await fetch(
-      `${this.getBaseURL()}/admin/featured/${resourceType}/${resourceId}`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('admin_token')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(featuredData),
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error('设置推荐失败');
-    }
+    await apiService.authPost(`/shared-library/admin/featured/${resourceType}/${resourceId}`, featuredData);
   }
 }
 

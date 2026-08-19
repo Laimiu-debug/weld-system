@@ -99,8 +99,6 @@ def read_wps_list(
             status=status_filter,
             search_term=search_term
         )
-        print(f"DEBUG WPS: 查询完成, 返回 {len(wps_list)} 条记录")
-
         approval_service = ApprovalService(db)
         latest, workflows = load_latest_approvals(db, "wps", [item.id for item in wps_list])
         can_submit_default = approval_service.should_require_approval("wps", workspace_context)

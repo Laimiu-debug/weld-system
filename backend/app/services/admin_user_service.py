@@ -2,6 +2,7 @@
 Admin user management service for admin operations.
 管理员用户管理服务
 """
+import logging
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta, date
 from uuid import UUID
@@ -10,6 +11,9 @@ from sqlalchemy import func, and_, or_, text
 
 from app.models.user import User
 from app.models.admin import Admin
+from app.models.company import CompanyEmployee
+
+logger = logging.getLogger(__name__)
 
 
 class AdminUserService:
@@ -420,9 +424,6 @@ class AdminUserService:
         删除用户
         """
         try:
-            from app.models.company import CompanyEmployee
-
-            # 记录用户信息用于日志
             user_info = {
                 "id": str(user.id),
                 "email": user.email,
@@ -430,33 +431,28 @@ class AdminUserService:
                 "full_name": user.full_name
             }
 
-            print(f"DEBUG: Attempting to delete user {user_info}")
-
-            # 1. 删除用户的企业员工关系
             company_employees = db.query(CompanyEmployee).filter(
                 CompanyEmployee.user_id == user.id
             ).all()
 
             if company_employees:
-                print(f"DEBUG: Deleting {len(company_employees)} company employee records")
                 for emp in company_employees:
                     db.delete(emp)
-                db.flush()  # 确保先删除这些记录
+                db.flush()
 
-            # 2. 删除用户
             db.delete(user)
             db.commit()
 
-            print(f"DEBUG: Successfully deleted user {user_info['id']}")
+            logger.info("Deleted user id=%s", user_info["id"])
 
             return {
                 "deleted_user": user_info,
                 "deleted_at": datetime.utcnow().isoformat()
             }
-        except Exception as e:
-            print(f"ERROR: Failed to delete user: {e}")
+        except Exception:
+            logger.exception("Failed to delete user id=%s", getattr(user, "id", None))
             db.rollback()
-            raise e
+            raise
 
     def get_user_statistics(
         self,
