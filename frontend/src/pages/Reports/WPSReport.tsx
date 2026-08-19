@@ -23,6 +23,8 @@ import {
   PieChartOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import wpsService from '@/services/wps'
+import { downloadCsv } from '@/utils/csv'
 
 const { Title, Text } = Typography
 const { RangePicker } = DatePicker
@@ -45,69 +47,54 @@ const WPSReport: React.FC = () => {
     dayjs().startOf('month'),
     dayjs().endOf('month'),
   ])
+  const [statusFilter, setStatusFilter] = useState<string | undefined>()
   const [loading, setLoading] = useState(false)
   const [wpsData, setWpsData] = useState<WPSData[]>([])
 
-  // 模拟数据
+  const loadData = async () => {
+    setLoading(true)
+    try {
+      const payload = await wpsService.getWPSList({
+        skip: 0,
+        limit: 200,
+        status: statusFilter,
+      })
+      const items = Array.isArray(payload)
+        ? payload
+        : Array.isArray((payload as any)?.items)
+          ? (payload as any).items
+          : Array.isArray((payload as any)?.data)
+            ? (payload as any).data
+            : []
+      const start = dateRange[0].startOf('day')
+      const end = dateRange[1].endOf('day')
+      const mapped = items
+        .filter((item) => {
+          if (!item.created_at) return true
+          const created = dayjs(item.created_at)
+          return created.isAfter(start.subtract(1, 'millisecond')) && created.isBefore(end.add(1, 'millisecond'))
+        })
+        .map((item) => ({
+          id: String(item.id),
+          wpsNumber: item.wps_number,
+          title: item.title,
+          version: item.revision || '-',
+          status: (item.status as WPSData['status']) || 'draft',
+          createdBy: item.company || '-',
+          createdAt: item.created_at,
+          projectCount: 0,
+          lastUsed: item.updated_at,
+        }))
+      setWpsData(mapped)
+    } catch {
+      setWpsData([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
-    const mockData: WPSData[] = [
-      {
-        id: '1',
-        wpsNumber: 'WPS-2024-001',
-        title: '压力容器筒体焊接工艺',
-        version: '1.0',
-        status: 'approved',
-        createdBy: '张工程师',
-        createdAt: '2024-01-15',
-        projectCount: 12,
-        lastUsed: '2024-01-20',
-      },
-      {
-        id: '2',
-        wpsNumber: 'WPS-2024-002',
-        title: '管道对接焊缝工艺',
-        version: '2.0',
-        status: 'approved',
-        createdBy: '李工程师',
-        createdAt: '2024-01-18',
-        projectCount: 8,
-        lastUsed: '2024-01-19',
-      },
-      {
-        id: '3',
-        wpsNumber: 'WPS-2024-003',
-        title: '不锈钢储罐焊接工艺',
-        version: '1.0',
-        status: 'pending',
-        createdBy: '王工程师',
-        createdAt: '2024-01-20',
-        projectCount: 5,
-        lastUsed: '2024-01-21',
-      },
-      {
-        id: '4',
-        wpsNumber: 'WPS-2024-004',
-        title: '热交换器管束焊接工艺',
-        version: '1.0',
-        status: 'draft',
-        createdBy: '赵工程师',
-        createdAt: '2024-01-22',
-        projectCount: 3,
-        lastUsed: '',
-      },
-      {
-        id: '5',
-        wpsNumber: 'WPS-2024-005',
-        title: '储罐罐底焊接工艺',
-        version: '1.0',
-        status: 'rejected',
-        createdBy: '钱工程师',
-        createdAt: '2024-01-23',
-        projectCount: 2,
-        lastUsed: '',
-      },
-    ]
-    setWpsData(mockData)
+    void loadData()
   }, [])
 
   // 计算统计数据
@@ -132,18 +119,24 @@ const WPSReport: React.FC = () => {
 
   const stats = getStatistics()
 
-  // 处理筛选
   const handleFilter = () => {
-    setLoading(true)
-    // 模拟API调用
-    setTimeout(() => {
-      setLoading(false)
-    }, 1000)
+    void loadData()
   }
 
-  // 处理导出
-  const handleExport = (format: string) => {
-    console.log(`导出${format}格式报告`)
+  const handleExport = () => {
+    downloadCsv(
+      `wps-report-${dayjs().format('YYYYMMDD')}.csv`,
+      ['WPS编号', '标题', '版本', '状态', '创建者', '创建时间', '最后更新'],
+      wpsData.map((item) => [
+        item.wpsNumber,
+        item.title,
+        item.version,
+        item.status,
+        item.createdBy,
+        item.createdAt,
+        item.lastUsed,
+      ]),
+    )
   }
 
   const columns = [
@@ -226,7 +219,13 @@ const WPSReport: React.FC = () => {
             <RangePicker value={dateRange} onChange={setDateRange} />
           </Col>
           <Col>
-            <Select placeholder="状态筛选" style={{ width: 120 }} allowClear>
+            <Select
+              placeholder="状态筛选"
+              style={{ width: 120 }}
+              allowClear
+              value={statusFilter}
+              onChange={setStatusFilter}
+            >
               <Option value="draft">草稿</Option>
               <Option value="pending">待审核</Option>
               <Option value="approved">已批准</Option>
@@ -240,11 +239,8 @@ const WPSReport: React.FC = () => {
           </Col>
           <Col>
             <Space>
-              <Button icon={<DownloadOutlined />} onClick={() => handleExport('excel')}>
-                导出Excel
-              </Button>
-              <Button icon={<DownloadOutlined />} onClick={() => handleExport('pdf')}>
-                导出PDF
+              <Button icon={<DownloadOutlined />} onClick={handleExport}>
+                导出CSV
               </Button>
             </Space>
           </Col>
@@ -368,7 +364,7 @@ const WPSReport: React.FC = () => {
       {/* 导出说明 */}
       <Alert
         message="导出说明"
-        description="Excel格式适合数据分析，PDF格式适合打印和分享。导出的数据将根据当前筛选条件生成。"
+        description="导出为 CSV，可用 Excel 打开。数据按当前筛选条件生成。"
         type="info"
         showIcon
       />

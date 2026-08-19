@@ -1,9 +1,9 @@
 """
 PQR (Procedure Qualification Record) API endpoints for the welding system backend.
 """
+import csv
 import io
 import time
-import traceback
 from typing import Any, List, Optional
 from urllib.parse import quote
 
@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.api import deps
 from app.core.data_access import DataAccessAction, WorkspaceContext, WorkspaceType
 from app.core.document_access import require_document_access
+from app.core.rate_limit import enforce_export_limit
 from app.models.company import CompanyEmployee
 from app.models.pqr import PQR
 from app.models.user import User
@@ -180,13 +181,10 @@ def read_pqr_list(
         )
     except HTTPException:
         raise
-    except Exception as e:
-        print(f"ERROR PQR: 获取PQR列表失败: {str(e)}")
-        import traceback
-        traceback.print_exc()
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"获取PQR列表失败: {str(e)}"
+            detail="获取PQR列表失败"
         )
 
 
@@ -245,15 +243,9 @@ def create_pqr(
 
         return pqr
     except ValueError as e:
-        # 业务逻辑错误（如PQR编号重复）
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        # 其他错误，记录详细信息
-        import traceback
-        error_detail = f"创建PQR失败: {str(e)}"
-        print(f"[ERROR] {error_detail}")
-        print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=error_detail)
+    except Exception:
+        raise HTTPException(status_code=500, detail="创建PQR失败")
 
 
 @router.get("/{id}", response_model=PQRResponse)
@@ -598,7 +590,6 @@ def duplicate_pqr(
     except HTTPException:
         raise
     except Exception:
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail="复制PQR失败")
 
 
@@ -626,7 +617,6 @@ def export_pqr_pdf(
     except HTTPException:
         raise
     except Exception:
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail="导出PDF失败")
 
 
@@ -637,48 +627,66 @@ def export_pqr_excel(
     id: int,
     current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
-    """导出PQR为Excel."""
+    """导出PQR为CSV（Excel可直接打开）。"""
     try:
+        enforce_export_limit(current_user.id)
         pqr = require_document_access(db, PQR, id, current_user, "PQR不存在")
 
-        # TODO: 实现实际的Excel生成逻辑
-        # 这里暂时返回一个简单的CSV文件作为示例
-        content = f"""PQR编号,标题,试验日期,评定结果,焊接工艺,母材规格
-{pqr.pqr_number},{pqr.title},{pqr.test_date},{pqr.qualification_result},{pqr.welding_process},{pqr.base_material_spec}
-"""
-
-        # 创建字节流
-        buffer = io.BytesIO(content.encode('utf-8-sig'))  # 使用utf-8-sig以支持Excel中文显示
-        buffer.seek(0)
-
-        encoded_filename = quote(f"{pqr.pqr_number}.xlsx")
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(["PQR编号", "标题", "试验日期", "评定结果", "焊接工艺", "母材规格", "焊工", "状态"])
+        writer.writerow([
+            pqr.pqr_number or "",
+            pqr.title or "",
+            pqr.test_date or "",
+            pqr.qualification_result or "",
+            pqr.welding_process or "",
+            pqr.base_material_spec or "",
+            pqr.welder_name or "",
+            pqr.status or "",
+        ])
+        data = io.BytesIO(buffer.getvalue().encode("utf-8-sig"))
+        encoded_filename = quote(f"{pqr.pqr_number or 'pqr'}.csv")
         return StreamingResponse(
-            buffer,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            data,
+            media_type="text/csv",
             headers={
                 "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
             }
         )
     except HTTPException:
         raise
-    except Exception as e:
-        print(f"ERROR: 导出Excel失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"导出Excel失败: {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=500, detail="导出失败")
 
 
-@router.post("/export", response_model=dict)
+@router.post("/export")
 def export_pqr(
     *,
     db: Session = Depends(deps.get_db),
     export_request: PQRExportRequest,
     current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
-    """批量导出前先校验每份文档的访问权限."""
+    """批量导出可访问的 PQR 清单为 CSV。"""
+    enforce_export_limit(current_user.id)
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["PQR编号", "标题", "试验日期", "评定结果", "焊接工艺", "母材规格", "状态"])
     for pqr_id in export_request.pqr_ids:
-        require_document_access(db, PQR, pqr_id, current_user, "PQR不存在")
-    return {
-        "message": f"导出请求已接收，将导出 {len(export_request.pqr_ids)} 个PQR文件",
-        "format": export_request.export_format,
-        "include_specimens": export_request.include_specimens,
-        "include_attachments": export_request.include_attachments
-    }
+        pqr = require_document_access(db, PQR, pqr_id, current_user, "PQR不存在")
+        writer.writerow([
+            pqr.pqr_number or "",
+            pqr.title or "",
+            pqr.test_date or "",
+            pqr.qualification_result or "",
+            pqr.welding_process or "",
+            pqr.base_material_spec or "",
+            pqr.status or "",
+        ])
+    data = io.BytesIO(buffer.getvalue().encode("utf-8-sig"))
+    filename = quote("pqr-export.csv")
+    return StreamingResponse(
+        data,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )

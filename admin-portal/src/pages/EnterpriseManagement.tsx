@@ -3,6 +3,7 @@ import { Card, Table, Button, Space, Input, Select, Tag, Badge, Row, Col, messag
 import { SearchOutlined, ReloadOutlined, ExportOutlined, EyeOutlined, BankOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import apiService from '@/services/api';
+import { downloadCsv } from '@/utils/csv';
 
 const { Search } = Input;
 const { Option } = Select;
@@ -21,7 +22,6 @@ const EnterpriseManagement: React.FC = () => {
   const fetchEnterpriseData = async (page = currentPage, search = searchText) => {
     setLoading(true);
     try {
-      console.log('🔍 调用管理员企业列表API', { page, page_size: pageSize, search });
       const response = await apiService.get('/enterprises', {
         params: {
           page,
@@ -29,8 +29,6 @@ const EnterpriseManagement: React.FC = () => {
           search: search || undefined
         }
       });
-
-      console.log('✅ 企业数据响应:', response);
 
       if (response && response.data && response.data.items) {
         setEnterpriseData(response.data.items);
@@ -71,9 +69,20 @@ const EnterpriseManagement: React.FC = () => {
   };
 
   // 刷新数据
-  const handleRefresh = () => {
-    fetchEnterpriseData(currentPage, searchText);
-    message.success('数据已刷新');
+  const handleExport = () => {
+    downloadCsv(
+      `enterprises-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['企业ID', '企业名称', '管理员', '管理员邮箱', '员工数', '员工配额', '工厂配额'],
+      enterpriseData.map((item) => [
+        item.company_id,
+        item.company_name,
+        item.admin_user?.username,
+        item.admin_user?.email,
+        item.members?.length || 0,
+        item.max_employees || 0,
+        item.max_factories || 0,
+      ]),
+    );
   };
 
   // 分页处理
@@ -284,7 +293,7 @@ const EnterpriseManagement: React.FC = () => {
           <Button icon={<ReloadOutlined />} onClick={handleRefresh}>
             刷新
           </Button>
-          <Button icon={<ExportOutlined />} onClick={() => message.info('导出功能开发中')}>
+          <Button icon={<ExportOutlined />} onClick={handleExport}>
             导出
           </Button>
         </Space>

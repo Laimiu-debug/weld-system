@@ -14,6 +14,8 @@ import {
   message,
   Steps,
   Upload,
+  Modal,
+  Descriptions,
 } from 'antd'
 import {
   SaveOutlined,
@@ -23,12 +25,10 @@ import {
   CheckOutlined,
   UploadOutlined,
 } from '@ant-design/icons'
-import { Welder } from '@/types'
-import { useAuthStore } from '@/store/authStore'
 import dayjs from 'dayjs'
 import weldersService from '@/services/welders'
 
-const { Title, Text } = Typography
+const { Title } = Typography
 const { Option } = Select
 const { Step } = Steps
 
@@ -62,8 +62,8 @@ const WeldersCreate: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [currentStep, setCurrentStep] = useState(0)
   const [formData, setFormData] = useState<Partial<WeldersCreateForm>>({})
+  const [previewOpen, setPreviewOpen] = useState(false)
   const navigate = useNavigate()
-  const { user } = useAuthStore()
 
   // 步骤配置
   const steps = [
@@ -212,14 +212,8 @@ const WeldersCreate: React.FC = () => {
     }
   }
 
-  // 处理预览
   const handlePreview = () => {
-    const allValues = form.getFieldsValue()
-    const previewData = { ...formData, ...allValues }
-    
-    // 这里可以打开一个预览模态框或新页面
-    console.log('Preview data:', previewData)
-    message.info('预览功能开发中')
+    setPreviewOpen(true)
   }
 
   // 处理文件上传
@@ -459,6 +453,8 @@ const WeldersCreate: React.FC = () => {
     }
   }
 
+  const previewValues = { ...formData, ...form.getFieldsValue() }
+
   return (
     <div className="page-container">
       <div className="page-header">
@@ -518,6 +514,28 @@ const WeldersCreate: React.FC = () => {
           </Space>
         </div>
       </Card>
+
+      <Modal
+        title="焊工信息预览"
+        open={previewOpen}
+        onCancel={() => setPreviewOpen(false)}
+        footer={<Button onClick={() => setPreviewOpen(false)}>关闭</Button>}
+      >
+        <Descriptions column={1} bordered size="small">
+          <Descriptions.Item label="焊工编号">{previewValues.welder_code || '-'}</Descriptions.Item>
+          <Descriptions.Item label="姓名">{previewValues.full_name || '-'}</Descriptions.Item>
+          <Descriptions.Item label="证件号">{previewValues.id_number || '-'}</Descriptions.Item>
+          <Descriptions.Item label="电话">{previewValues.phone || '-'}</Descriptions.Item>
+          <Descriptions.Item label="证书编号">{previewValues.certification_number || '-'}</Descriptions.Item>
+          <Descriptions.Item label="资质等级">{previewValues.certification_level || '-'}</Descriptions.Item>
+          <Descriptions.Item label="发证机构">{previewValues.issuing_authority || '-'}</Descriptions.Item>
+          <Descriptions.Item label="合格工艺">
+            {Array.isArray(previewValues.qualified_processes)
+              ? previewValues.qualified_processes.join('、')
+              : previewValues.qualified_processes || '-'}
+          </Descriptions.Item>
+        </Descriptions>
+      </Modal>
     </div>
   )
 }

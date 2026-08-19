@@ -55,11 +55,24 @@ def get_users_admin(
             "success": True,
             "data": result
         }
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"获取用户列表失败: {str(e)}"
+            detail="获取用户列表失败"
         )
+
+
+@router.get("/admins")
+def list_admins(
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_active_admin)
+) -> Any:
+    """获取管理端账号列表（不含密码）。"""
+    result = admin_user_service.list_admins(db)
+    return {
+        "success": True,
+        "data": result
+    }
 
 
 @router.get("/users/{user_id}", response_model=Dict[str, Any])

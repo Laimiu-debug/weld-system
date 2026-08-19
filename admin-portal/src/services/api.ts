@@ -187,6 +187,15 @@ class ApiService {
     return this.api.get('/users', { params });
   }
 
+  async getAdmins() {
+    if (this.useMockData) {
+      return new Promise(resolve => {
+        setTimeout(() => resolve({ items: [], total: 0 }), 500);
+      });
+    }
+    return this.api.get('/admins');
+  }
+
   async getUserDetail(userId: string) {
     if (this.useMockData) {
       const user = mockUsers.data.items.find(u => u.id === userId);

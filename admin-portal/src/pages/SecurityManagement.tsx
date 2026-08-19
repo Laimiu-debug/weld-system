@@ -1,84 +1,108 @@
-import React, { useState } from 'react';
-import { Card, Table, Button, Space, Input, Tag, Badge, Row, Col, message, Modal } from 'antd';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Card, Table, Button, Space, Tag, Badge, Alert } from 'antd';
 import {
-  SearchOutlined,
-  PlusOutlined,
   ReloadOutlined,
   EyeOutlined,
-  SafetyOutlined,
   UserOutlined,
   SecurityScanOutlined,
-  LockOutlined
 } from '@ant-design/icons';
+import apiService from '@/services/api';
 
-const { Search } = Input;
+interface AdminAccount {
+  key: string;
+  username: string;
+  email: string;
+  role: string;
+  permissions: string[];
+  lastLogin: string;
+  status: string;
+}
+
+interface SecurityLog {
+  key: string;
+  time: string;
+  event: string;
+  user: string;
+  ip: string;
+  location: string;
+  status: 'success' | 'warning' | 'error';
+  details: string;
+}
 
 const SecurityManagement: React.FC = () => {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [adminData, setAdminData] = useState<AdminAccount[]>([]);
+  const [securityLogsData, setSecurityLogsData] = useState<SecurityLog[]>([]);
 
-  // 模拟管理员数据
-  const adminData = [
-    {
-      key: '1',
-      username: 'admin',
-      email: 'admin@welding-system.com',
-      role: 'super_admin',
-      permissions: ['all'],
-      lastLogin: '2025-10-16 09:30',
-      status: 'active',
-      createdBy: 'system'
-    },
-    {
-      key: '2',
-      username: 'security_admin',
-      email: 'security@welding-system.com',
-      role: 'admin',
-      permissions: ['user_management', 'security_logs'],
-      lastLogin: '2025-10-16 08:15',
-      status: 'active',
-      createdBy: 'admin'
-    }
-  ];
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [adminsResp, usersResp, logsResp] = await Promise.all([
+        apiService.getAdmins(),
+        apiService.getUsers({ page: 1, page_size: 20, sort_field: 'last_login_at', sort_order: 'desc' }),
+        apiService.getErrorLogs({ page: 1, page_size: 20 }),
+      ]);
 
-  // 模拟安全日志数据
-  const securityLogsData = [
-    {
-      key: '1',
-      time: '2025-10-16 10:30:22',
-      event: '用户登录',
-      user: 'admin',
-      ip: '192.168.1.100',
-      location: '上海',
-      status: 'success',
-      details: '管理员登录成功'
-    },
-    {
-      key: '2',
-      time: '2025-10-16 10:25:15',
-      event: '权限修改',
-      user: 'security_admin',
-      ip: '192.168.1.101',
-      location: '北京',
-      status: 'success',
-      details: '修改用户权限配置'
-    },
-    {
-      key: '3',
-      time: '2025-10-16 10:20:08',
-      event: '登录失败',
-      user: 'unknown',
-      ip: '192.168.1.200',
-      location: '广州',
-      status: 'warning',
-      details: '密码错误，登录失败'
+      const adminItems = (adminsResp as any)?.items || (adminsResp as any)?.data?.items || [];
+      setAdminData(
+        (Array.isArray(adminItems) ? adminItems : []).map((item: any) => ({
+          key: String(item.id),
+          username: item.username,
+          email: item.email,
+          role: item.role || (item.is_super_admin ? 'super_admin' : 'admin'),
+          permissions: Array.isArray(item.permissions) ? item.permissions : [],
+          lastLogin: item.last_login_at || '-',
+          status: item.status || (item.is_active ? 'active' : 'inactive'),
+        }))
+      );
+
+      const userItems = (usersResp as any)?.items || (usersResp as any)?.data?.items || [];
+      const loginLogs: SecurityLog[] = (Array.isArray(userItems) ? userItems : [])
+        .filter((item: any) => item.last_login_at)
+        .map((item: any) => ({
+          key: `login-${item.id}`,
+          time: item.last_login_at,
+          event: '用户登录',
+          user: item.username || item.email,
+          ip: item.last_login_ip || '-',
+          location: '-',
+          status: 'success' as const,
+          details: `${item.full_name || item.username || item.email} 最近登录`,
+        }));
+
+      const errorItems = (logsResp as any)?.items || (logsResp as any)?.data?.items || [];
+      const errorLogs: SecurityLog[] = (Array.isArray(errorItems) ? errorItems : []).map((item: any, index: number) => ({
+        key: `err-${item.id || index}`,
+        time: item.created_at || item.time || '-',
+        event: item.event || item.level || '系统错误',
+        user: item.user || item.username || '-',
+        ip: item.ip || '-',
+        location: item.location || '-',
+        status: 'error' as const,
+        details: item.message || item.details || '',
+      }));
+
+      setSecurityLogsData([...errorLogs, ...loginLogs]);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || '加载安全管理数据失败');
+      setAdminData([]);
+      setSecurityLogsData([]);
+    } finally {
+      setLoading(false);
     }
-  ];
+  }, []);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   const adminColumns = [
     {
       title: '管理员信息',
       key: 'admin_info',
-      render: (record: any) => (
+      render: (record: AdminAccount) => (
         <div>
           <div style={{ fontWeight: 500, marginBottom: 4 }}>
             <UserOutlined style={{ marginRight: 4 }} />
@@ -111,9 +135,11 @@ const SecurityManagement: React.FC = () => {
         <div style={{ fontSize: '12px' }}>
           {permissions.includes('all') ? (
             <Tag color="red">全部权限</Tag>
+          ) : permissions.length === 0 ? (
+            <Tag>未配置</Tag>
           ) : (
-            permissions.map((perm, index) => (
-              <Tag key={index} style={{ marginBottom: 2 }}>
+            permissions.map((perm) => (
+              <Tag key={perm} style={{ marginBottom: 2 }}>
                 {perm}
               </Tag>
             ))
@@ -142,7 +168,7 @@ const SecurityManagement: React.FC = () => {
       key: 'actions',
       render: () => (
         <Space size="small">
-          <Button type="link" size="small" icon={<EyeOutlined />}>
+          <Button type="link" size="small" icon={<EyeOutlined />} disabled>
             查看
           </Button>
         </Space>
@@ -162,9 +188,9 @@ const SecurityManagement: React.FC = () => {
       dataIndex: 'event',
       key: 'event',
       render: (event: string) => (
-        <span style={{ 
-          color: event.includes('失败') || event.includes('警告') ? '#ff4d4f' : '#1890ff',
-          fontWeight: 500 
+        <span style={{
+          color: event.includes('失败') || event.includes('错误') ? '#ff4d4f' : '#1890ff',
+          fontWeight: 500
         }}>
           {event}
         </span>
@@ -194,12 +220,20 @@ const SecurityManagement: React.FC = () => {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
-      render: (status: string) => (
-        <Badge
-          status={status === 'success' ? 'success' : status === 'warning' ? 'warning' : 'error'}
-          text={status === 'success' ? '成功' : status === 'warning' ? '警告' : '失败'}
-        />
-      ),
+      render: (status: SecurityLog['status']) => {
+        switch (status) {
+          case 'success':
+            return <Badge status="success" text="成功" />
+          case 'warning':
+            return <Badge status="warning" text="警告" />
+          case 'error':
+            return <Badge status="error" text="失败" />
+          default: {
+            const _exhaustive: never = status
+            return _exhaustive
+          }
+        }
+      },
     },
     {
       title: '详情',
@@ -209,40 +243,28 @@ const SecurityManagement: React.FC = () => {
     },
   ];
 
-  const handleRefresh = () => {
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      message.success('数据已刷新');
-    }, 1000);
-  };
-
   return (
     <div>
       <div className="admin-header">
         <h1 className="page-title">安全管理</h1>
         <Space>
-          <Button 
-            type="primary" 
-            icon={<PlusOutlined />}
-            onClick={() => message.info('添加管理员功能开发中')}
-          >
-            添加管理员
-          </Button>
-          <Button icon={<ReloadOutlined />} onClick={handleRefresh} loading={loading}>
+          <Button icon={<ReloadOutlined />} onClick={loadData} loading={loading}>
             刷新
           </Button>
         </Space>
       </div>
 
-      {/* 管理员列表 */}
-      <Card 
+      {error && (
+        <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />
+      )}
+
+      <Card
         title={
           <span>
             <UserOutlined style={{ marginRight: 8 }} />
             管理员列表
           </span>
-        } 
+        }
         style={{ marginBottom: 16 }}
       >
         <Table
@@ -253,8 +275,7 @@ const SecurityManagement: React.FC = () => {
         />
       </Card>
 
-      {/* 安全日志 */}
-      <Card 
+      <Card
         title={
           <span>
             <SecurityScanOutlined style={{ marginRight: 8 }} />

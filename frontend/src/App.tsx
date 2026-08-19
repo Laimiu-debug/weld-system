@@ -134,50 +134,32 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const initAuth = async () => {
-      console.log('🚀 App.tsx: 开始初始化认证')
       setLoading(true)
       try {
-        // 检查本地存储的token
         const hasToken = authService.isAuthenticated()
-        console.log('🔑 App.tsx: 检查token存在:', hasToken)
 
         if (hasToken) {
-          // 尝试从本地存储获取用户信息
           const user = authService.getCurrentUserFromStorage()
-          console.log('👤 App.tsx: 从localStorage获取用户:', user)
 
           if (user && user.id) {
-            // 用户信息有效，设置用户状态
-            console.log('✅ App.tsx: 用户信息有效，设置认证状态')
             setUser(user)
           } else {
-            // 如果本地没有有效的用户信息，尝试从API获取
-            console.log('⚠️ App.tsx: 本地用户信息无效，尝试从API获取')
             try {
               const currentUser = await authService.getCurrentUser()
               if (currentUser && currentUser.id) {
-                console.log('✅ App.tsx: 从API获取用户成功')
                 setUser(currentUser)
               } else {
-                // token无效，清除本地存储
-                console.log('❌ App.tsx: 从API获取用户失败，清除认证状态')
                 await authService.logout()
               }
-            } catch (apiError) {
-              console.error('❌ App.tsx: API获取用户异常，清除认证状态', apiError)
+            } catch {
               await authService.logout()
             }
           }
-        } else {
-          console.log('ℹ️ App.tsx: 没有token，跳过认证初始化')
         }
-      } catch (error) {
-        console.error('❌ App.tsx: 认证初始化异常:', error)
-        // 发生异常时清除认证状态
+      } catch {
         await authService.logout()
       } finally {
         setLoading(false)
-        console.log('✅ App.tsx: 认证初始化完成')
       }
     }
 

@@ -27,6 +27,10 @@ import {
   FileTextOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import reportsService from '@/services/reports'
+import { equipmentService } from '@/services/equipment'
+import wpsService from '@/services/wps'
+import { downloadCsv } from '@/utils/csv'
 
 const { Title, Text } = Typography
 const { RangePicker } = DatePicker
@@ -71,114 +75,69 @@ const UsageReport: React.FC = () => {
   const [userUsage, setUserUsage] = useState<UserUsage[]>([])
   const [equipmentUsage, setEquipmentUsage] = useState<EquipmentUsage[]>([])
 
-  // 模拟数据
+  const loadData = async () => {
+    setLoading(true)
+    try {
+      const [statsResp, usageResp, wpsList] = await Promise.all([
+        reportsService.getStatistics(dateRange[0].format('YYYY-MM-DD'), dateRange[1].format('YYYY-MM-DD')),
+        equipmentService.getUsageRecords({ skip: 0, limit: 100 }),
+        wpsService.getWPSList({ skip: 0, limit: 50 }),
+      ])
+      const stats = (statsResp as any)?.data?.data || (statsResp as any)?.data || {}
+      const usageItems = usageResp.success ? (usageResp.data.items || []) : []
+      const wpsItems = Array.isArray(wpsList) ? wpsList : []
+
+      setUsageData([
+        ...wpsItems.slice(0, 20).map((item) => ({
+          id: `wps-${item.id}`,
+          category: 'wps' as const,
+          action: '更新WPS',
+          user: item.company || '-',
+          timestamp: item.updated_at || item.created_at,
+          details: `${item.wps_number} ${item.title}`,
+        })),
+        ...usageItems.map((item) => ({
+          id: `eq-${item.id}`,
+          category: 'equipment' as const,
+          action: '设备使用',
+          user: String(item.operator_id || '-'),
+          timestamp: item.start_time || item.usage_date || item.created_at || '',
+          details: `${item.equipment_name} (${item.equipment_code}) ${item.duration_hours || 0}小时`,
+        })),
+      ])
+      setUserUsage([
+        {
+          userId: 'workspace',
+          userName: '当前工作区',
+          department: '-',
+          wpsCount: stats.wps?.total || wpsItems.length,
+          pqrCount: stats.pqr?.total || 0,
+          qualityCount: stats.quality?.total || 0,
+          lastActive: dayjs().format('YYYY-MM-DD'),
+        },
+      ])
+      setEquipmentUsage(
+        usageItems.map((item) => ({
+          id: String(item.id),
+          equipmentName: item.equipment_name,
+          usageHours: item.duration_hours || 0,
+          utilizationRate: 0,
+          maintenanceHours: 0,
+          projectsCompleted: 0,
+          efficiency: 0,
+        })),
+      )
+    } catch {
+      setUsageData([])
+      setUserUsage([])
+      setEquipmentUsage([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
-    const mockUsageData: UsageData[] = [
-      {
-        id: '1',
-        category: 'wps',
-        action: '创建WPS',
-        user: '张工程师',
-        timestamp: '2024-01-20 14:30:00',
-        details: '创建了WPS-2024-005 储罐罐底焊接工艺',
-      },
-      {
-        id: '2',
-        category: 'quality',
-        action: '质量检验',
-        user: '李检验员',
-        timestamp: '2024-01-20 15:45:00',
-        details: '完成了WPS-2024-002 焊缝外观检验',
-      },
-      {
-        id: '3',
-        category: 'equipment',
-        action: '设备使用',
-        user: '王师傅',
-        timestamp: '2024-01-20 16:20:00',
-        details: '使用了焊机EQP-2024-001，工时3.5小时',
-      },
-      {
-        id: '4',
-        category: 'pqr',
-        action: 'PQR测试',
-        user: '赵工程师',
-        timestamp: '2024-01-20 17:10:00',
-        details: '完成PQR-2024-002 拉伸试验',
-      },
-      {
-        id: '5',
-        category: 'materials',
-        action: '材料出库',
-        user: '钱管理员',
-        timestamp: '2024-01-20 18:00:00',
-        details: '出库E7018焊丝5kg',
-      },
-    ]
-
-    const mockUserUsage: UserUsage[] = [
-      {
-        userId: '1',
-        userName: '张工程师',
-        department: '技术部',
-        wpsCount: 12,
-        pqrCount: 8,
-        qualityCount: 15,
-        lastActive: '2024-01-20 18:30:00',
-      },
-      {
-        userId: '2',
-        userName: '李检验员',
-        department: '质量部',
-        wpsCount: 3,
-        pqrCount: 2,
-        qualityCount: 45,
-        lastActive: '2024-01-20 17:45:00',
-      },
-      {
-        userId: '3',
-        userName: '王师傅',
-        department: '生产一部',
-        wpsCount: 0,
-        pqrCount: 0,
-        qualityCount: 8,
-        lastActive: '2024-01-20 16:20:00',
-      },
-    ]
-
-    const mockEquipmentUsage: EquipmentUsage[] = [
-      {
-        id: '1',
-        equipmentName: '数字化逆变焊机',
-        usageHours: 1250,
-        utilizationRate: 85,
-        maintenanceHours: 24,
-        projectsCompleted: 15,
-        efficiency: 92,
-      },
-      {
-        id: '2',
-        equipmentName: '等离子切割机',
-        usageHours: 890,
-        utilizationRate: 65,
-        maintenanceHours: 72,
-        projectsCompleted: 10,
-        efficiency: 88,
-      },
-      {
-        id: '3',
-        equipmentName: '超声波探伤仪',
-        usageHours: 560,
-        utilizationRate: 45,
-        maintenanceHours: 120,
-        projectsCompleted: 8,
-        efficiency: 75,
-      },
-    ]
-
-    setUsageData(mockUsageData)
-    setUserUsage(mockUserUsage)
-    setEquipmentUsage(mockEquipmentUsage)
+    void loadData()
   }, [])
 
   // 计算统计数据
@@ -187,16 +146,16 @@ const UsageReport: React.FC = () => {
     const wpsUsage = usageData.filter(item => item.category === 'wps').length
     const pqrUsage = usageData.filter(item => item.category === 'pqr').length
     const qualityUsage = usageData.filter(item => item.category === 'quality').length
-    const equipmentUsage = usageData.filter(item => item.category === 'equipment').length
+    const equipmentEventCount = usageData.filter(item => item.category === 'equipment').length
     const materialsUsage = usageData.filter(item => item.category === 'materials').length
 
-    const avgUtilization = equipmentUsageData.length > 0
-      ? Math.round(equipmentUsageData.reduce((sum, item) => sum + item.utilizationRate, 0) / equipmentUsageData.length)
+    const avgUtilization = equipmentUsage.length > 0
+      ? Math.round(equipmentUsage.reduce((sum, item) => sum + item.utilizationRate, 0) / equipmentUsage.length)
       : 0
 
-    const totalUsageHours = equipmentUsageData.reduce((sum, item) => sum + item.usageHours, 0)
-    const avgEfficiency = equipmentUsageData.length > 0
-      ? Math.round(equipmentUsageData.reduce((sum, item) => sum + item.efficiency, 0) / equipmentUsageData.length)
+    const totalUsageHours = equipmentUsage.reduce((sum, item) => sum + item.usageHours, 0)
+    const avgEfficiency = equipmentUsage.length > 0
+      ? Math.round(equipmentUsage.reduce((sum, item) => sum + item.efficiency, 0) / equipmentUsage.length)
       : 0
 
     return {
@@ -204,7 +163,7 @@ const UsageReport: React.FC = () => {
       wpsUsage,
       pqrUsage,
       qualityUsage,
-      equipmentUsage,
+      equipmentUsage: equipmentEventCount,
       materialsUsage,
       avgUtilization,
       totalUsageHours,
@@ -216,15 +175,15 @@ const UsageReport: React.FC = () => {
 
   // 处理筛选
   const handleFilter = () => {
-    setLoading(true)
-    setTimeout(() => {
-      setLoading(false)
-    }, 1000)
+    void loadData()
   }
 
-  // 处理导出
-  const handleExport = (format: string) => {
-    console.log(`导出${format}格式报告`)
+  const handleExport = () => {
+    downloadCsv(
+      `usage-report-${dayjs().format('YYYYMMDD')}.csv`,
+      ['时间', '类别', '操作', '用户', '详情'],
+      usageData.map((item) => [item.timestamp, item.category, item.action, item.user, item.details]),
+    )
   }
 
   const usageColumns = [
@@ -408,11 +367,8 @@ const UsageReport: React.FC = () => {
           </Col>
           <Col>
             <Space>
-              <Button icon={<DownloadOutlined />} onClick={() => handleExport('excel')}>
-                导出Excel
-              </Button>
-              <Button icon={<DownloadOutlined />} onClick={() => handleExport('pdf')}>
-                导出PDF
+              <Button icon={<DownloadOutlined />} onClick={handleExport}>
+                导出CSV
               </Button>
             </Space>
           </Col>
@@ -555,7 +511,7 @@ const UsageReport: React.FC = () => {
       {/* 导出说明 */}
       <Alert
         message="导出说明"
-        description="Excel格式适合数据分析，PDF格式适合打印和分享。导出的数据将包含完整的使用统计、用户活跃度和设备效率信息。"
+        description="导出为 CSV，可用 Excel 打开。数据包含当前筛选范围内的使用记录。"
         type="info"
         showIcon
       />

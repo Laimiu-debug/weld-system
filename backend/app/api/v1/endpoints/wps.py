@@ -1,12 +1,17 @@
 """
 WPS (Welding Procedure Specification) API endpoints for the welding system backend.
 """
+import csv
+import io
 from typing import Any, List, Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.core.rate_limit import enforce_export_limit
 from app.models.user import User
 from app.models.company import CompanyEmployee
 from app.schemas.wps import (
@@ -609,7 +614,7 @@ def get_wps_count_by_status(
     return wps_service_instance.get_wps_count(db, owner_id=owner_id or current_user.id)
 
 
-@router.post("/export", response_model=dict)
+@router.post("/export")
 def export_wps(
     *,
     db: Session = Depends(deps.get_db),
@@ -617,15 +622,10 @@ def export_wps(
     current_user: User = Depends(deps.get_current_active_user),
     workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID")
 ) -> Any:
-    """
-    导出WPS（带工作区上下文数据隔离）.
-
-    只能导出当前工作区内有权限的WPS。
-    """
-    # Get workspace context
+    """导出当前工作区内可访问的 WPS 清单为 CSV。"""
+    enforce_export_limit(current_user.id)
     workspace_context = get_workspace_context(db, current_user, workspace_id)
 
-    # Check permission
     if current_user.membership_type != "enterprise":
         if not user_service.has_permission(db, current_user.id, "wps", "export"):
             raise HTTPException(
@@ -633,9 +633,8 @@ def export_wps(
                 detail="没有足够的权限"
             )
 
-    # Verify all requested WPS IDs are accessible in current workspace
     wps_service_instance = WPSService(db)
-    accessible_count = 0
+    rows = []
     for wps_id in export_request.wps_ids:
         wps = wps_service_instance.get(
             db,
@@ -643,15 +642,26 @@ def export_wps(
             current_user=current_user,
             workspace_context=workspace_context
         )
-        if wps:
-            accessible_count += 1
+        if not wps:
+            continue
+        rows.append([
+            wps.wps_number or "",
+            wps.title or "",
+            wps.revision or "",
+            wps.status or "",
+            wps.welding_process or "",
+            wps.company or "",
+            wps.created_at.isoformat() if getattr(wps, "created_at", None) else "",
+        ])
 
-    # TODO: Implement actual export logic
-    return {
-        "message": f"导出请求已接收，将导出 {accessible_count} 个WPS文件（共请求 {len(export_request.wps_ids)} 个）",
-        "format": export_request.export_format,
-        "include_revisions": export_request.include_revisions,
-        "include_attachments": export_request.include_attachments,
-        "accessible_count": accessible_count,
-        "requested_count": len(export_request.wps_ids)
-    }
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["WPS编号", "标题", "版本", "状态", "焊接工艺", "公司", "创建时间"])
+    writer.writerows(rows)
+    data = io.BytesIO(buffer.getvalue().encode("utf-8-sig"))
+    filename = quote("wps-export.csv")
+    return StreamingResponse(
+        data,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )

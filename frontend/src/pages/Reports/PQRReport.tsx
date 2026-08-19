@@ -27,6 +27,8 @@ import {
   LineChartOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import pqrService from '@/services/pqr'
+import { downloadCsv } from '@/utils/csv'
 
 const { Title, Text } = Typography
 const { RangePicker } = DatePicker
@@ -66,104 +68,62 @@ const PQRReport: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [pqrData, setPqrData] = useState<PQRData[]>([])
 
-  // 模拟数据
+  const loadData = async () => {
+    setLoading(true)
+    try {
+      const payload = await pqrService.list({ page: 1, page_size: 200 })
+      const raw = (payload as any)?.data ?? payload
+      const items = Array.isArray(raw?.items)
+        ? raw.items
+        : Array.isArray(raw)
+          ? raw
+          : Array.isArray((payload as any)?.items)
+            ? (payload as any).items
+            : []
+      const startDate = dateRange[0].startOf('day')
+      const endDate = dateRange[1].endOf('day')
+      const mapped = items
+        .filter((item: any) => {
+          if (!item.created_at && !item.test_date) return true
+          const created = dayjs(item.created_at || item.test_date)
+          return created.isAfter(startDate.subtract(1, 'millisecond')) && created.isBefore(endDate.add(1, 'millisecond'))
+        })
+        .map((item: any) => {
+          const result = String(item.qualification_result || item.status || '')
+          let status: PQRData['status'] = 'in_progress'
+          if (['completed', 'qualified', 'pass', 'approved'].includes(result)) status = 'completed'
+          else if (['failed', 'unqualified', 'fail', 'rejected'].includes(result)) status = 'failed'
+          else if (['cancelled', 'canceled'].includes(result)) status = 'cancelled'
+          return {
+            id: String(item.id),
+            pqrNumber: item.pqr_number,
+            wpsNumber: item.applicable_wps || '-',
+            title: item.title,
+            status,
+            createdAt: item.created_at || item.test_date || '',
+            completedAt: item.qualification_date,
+            tester: item.welder_name || item.qualified_by || '-',
+            results: {
+              tensile: item.qualification_result || '-',
+              bend: '-',
+              impact: '-',
+              hardness: '-',
+              visual: '-',
+            },
+            score: status === 'completed' ? 100 : 0,
+            notes: item.notes || item.failure_reason || '',
+          }
+        })
+      setPqrData(mapped)
+    } catch {
+      setPqrData([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
-    const mockData: PQRData[] = [
-      {
-        id: '1',
-        pqrNumber: 'PQR-2024-001',
-        wpsNumber: 'WPS-2024-001',
-        title: '压力容器筒体焊接工艺评定',
-        status: 'completed',
-        createdAt: '2024-01-15',
-        completedAt: '2024-01-18',
-        tester: '张工程师',
-        results: {
-          tensile: '合格',
-          bend: '合格',
-          impact: '合格',
-          hardness: '合格',
-          visual: '合格',
-        },
-        score: 95,
-        notes: '所有测试项目均符合要求',
-      },
-      {
-        id: '2',
-        pqrNumber: 'PQR-2024-002',
-        wpsNumber: 'WPS-2024-002',
-        title: '管道对接焊缝工艺评定',
-        status: 'completed',
-        createdAt: '2024-01-18',
-        completedAt: '2024-01-20',
-        tester: '李工程师',
-        results: {
-          tensile: '合格',
-          bend: '合格',
-          impact: '合格',
-          hardness: '合格',
-          visual: '合格',
-        },
-        score: 92,
-        notes: '测试结果良好，符合规范要求',
-      },
-      {
-        id: '3',
-        pqrNumber: 'PQR-2024-003',
-        wpsNumber: 'WPS-2024-003',
-        title: '不锈钢储罐焊接工艺评定',
-        status: 'in_progress',
-        createdAt: '2024-01-20',
-        tester: '王工程师',
-        results: {
-          tensile: '待测',
-          bend: '待测',
-          impact: '待测',
-          hardness: '待测',
-          visual: '待测',
-        },
-        score: 0,
-        notes: '正在进行拉伸试验',
-      },
-      {
-        id: '4',
-        pqrNumber: 'PQR-2024-004',
-        wpsNumber: 'WPS-2024-004',
-        title: '热交换器管束焊接工艺评定',
-        status: 'failed',
-        createdAt: '2024-01-22',
-        completedAt: '2024-01-24',
-        tester: '赵工程师',
-        results: {
-          tensile: '不合格',
-          bend: '合格',
-          impact: '合格',
-          hardness: '合格',
-          visual: '合格',
-        },
-        score: 60,
-        notes: '拉伸试验不符合要求，需要重新评定',
-      },
-      {
-        id: '5',
-        pqrNumber: 'PQR-2024-005',
-        wpsNumber: 'WPS-2024-005',
-        title: '储罐罐底焊接工艺评定',
-        status: 'cancelled',
-        createdAt: '2024-01-23',
-        tester: '钱工程师',
-        results: {
-          tensile: '未测',
-          bend: '未测',
-          impact: '未测',
-          hardness: '未测',
-          visual: '未测',
-        },
-        score: 0,
-        notes: '测试取消，原因：设备故障',
-      },
-    ]
-    setPqrData(mockData)
+    void loadData()
   }, [])
 
   // 计算统计数据
@@ -190,17 +150,16 @@ const PQRReport: React.FC = () => {
 
   const stats = getStatistics()
 
-  // 处理筛选
   const handleFilter = () => {
-    setLoading(true)
-    setTimeout(() => {
-      setLoading(false)
-    }, 1000)
+    void loadData()
   }
 
-  // 处理导出
-  const handleExport = (format: string) => {
-    console.log(`导出${format}格式报告`)
+  const handleExport = () => {
+    downloadCsv(
+      `pqr-report-${dayjs().format('YYYYMMDD')}.csv`,
+      ['PQR编号', '标题', '状态', '测试工程师', '创建时间', '备注'],
+      pqrData.map((item) => [item.pqrNumber, item.title, item.status, item.tester, item.createdAt, item.notes]),
+    )
   }
 
   const columns = [
@@ -333,11 +292,8 @@ const PQRReport: React.FC = () => {
           </Col>
           <Col>
             <Space>
-              <Button icon={<DownloadOutlined />} onClick={() => handleExport('excel')}>
-                导出Excel
-              </Button>
-              <Button icon={<DownloadOutlined />} onClick={() => handleExport('pdf')}>
-                导出PDF
+              <Button icon={<DownloadOutlined />} onClick={handleExport}>
+                导出CSV
               </Button>
             </Space>
           </Col>
@@ -488,7 +444,7 @@ const PQRReport: React.FC = () => {
       {/* 导出说明 */}
       <Alert
         message="导出说明"
-        description="Excel格式适合数据分析，PDF格式适合打印和分享。导出的数据将包含完整的测试结果和评分信息。"
+        description="导出为 CSV，可用 Excel 打开。数据包含当前筛选范围内的评定记录。"
         type="info"
         showIcon
       />

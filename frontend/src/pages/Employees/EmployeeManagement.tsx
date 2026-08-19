@@ -122,6 +122,19 @@ interface EmployeeQuota {
   tier: string
 }
 
+const pickList = (resp: any, nestedKeys: string[] = ['items']): any[] => {
+  const data = resp?.data?.data ?? resp?.data ?? resp
+  if (Array.isArray(data)) return data
+  for (const key of nestedKeys) {
+    if (Array.isArray(data?.[key])) return data[key]
+  }
+  return []
+}
+
+const pickObject = (resp: any): any => {
+  return resp?.data?.data ?? resp?.data ?? resp ?? {}
+}
+
 const EmployeeManagement: React.FC = () => {
   const { user, checkPermission } = useAuthStore()
   const [activeTab, setActiveTab] = useState('employees')
@@ -155,38 +168,32 @@ const EmployeeManagement: React.FC = () => {
   const loadData = async () => {
     setLoading(true)
     try {
-      console.log('=== 开始加载员工数据 ===')
-      // 使用真实API获取员工数据
       const response = await enterpriseService.getEmployees({
         page: 1,
         page_size: 100
       })
 
-      console.log('员工API响应:', response)
-
       let employees: CompanyEmployee[] = []
       if (response?.data?.employees) {
         employees = response.data.employees
-      } else if (response?.data) {
-        employees = Array.isArray(response.data) ? response.data : [response.data]
+      } else if (Array.isArray(response?.data?.items)) {
+        employees = response.data.items
+      } else if (response?.data?.data?.items) {
+        employees = response.data.data.items
+      } else if (Array.isArray(response?.data)) {
+        employees = response.data
       } else if (Array.isArray(response)) {
         employees = response
       }
 
-      console.log('原始员工数据:', employees)
-
-      // 基于user_id合并重复的员工记录
       const employeeMap = new Map<string, CompanyEmployee>()
 
       employees.forEach(employee => {
         const existing = employeeMap.get(employee.user_id)
 
         if (!existing) {
-          // 如果员工不存在，直接添加
           employeeMap.set(employee.user_id, employee)
         } else {
-          // 如果员工已存在，合并信息
-          // 优先级：admin > manager > employee
           const getRolePriority = (role: string) => {
             switch (role) {
               case 'admin': return 3
@@ -199,7 +206,6 @@ const EmployeeManagement: React.FC = () => {
           const existingPriority = getRolePriority(existing.role)
           const newPriority = getRolePriority(employee.role)
 
-          // 如果新记录的角色优先级更高，则更新
           if (newPriority > existingPriority) {
             const mergedEmployee = {
               ...existing,
@@ -215,9 +221,7 @@ const EmployeeManagement: React.FC = () => {
       })
 
       const uniqueEmployees = Array.from(employeeMap.values())
-      console.log('合并后的员工数据:', uniqueEmployees)
 
-      // 转换为前端需要的格式
       const formattedEmployees: Employee[] = uniqueEmployees.map(emp => ({
         id: emp.id,
         employee_number: emp.employee_number,
@@ -230,7 +234,7 @@ const EmployeeManagement: React.FC = () => {
         role: emp.role,
         location: emp.factory_name || '未分配',
         joinDate: emp.joined_at || new Date().toISOString().split('T')[0],
-        lastLogin: new Date().toISOString().split('T')[0] + ' ' + new Date().toTimeString().split(' ')[0].substring(0,5),
+        lastLogin: emp.last_active_at || '-',
         avatar: '',
         permissions: ['basic_access'],
         workSchedule: '9:00-18:00',
@@ -239,91 +243,30 @@ const EmployeeManagement: React.FC = () => {
       }))
 
       setEmployees(formattedEmployees)
-      console.log('格式化后的员工数据:', formattedEmployees)
 
-      // 设置员工数量到统计信息
-      setStatistics({
-        total: formattedEmployees.length,
-        active: formattedEmployees.filter(e => e.status === 'active').length,
-        inactive: formattedEmployees.filter(e => e.status === 'inactive').length,
-        pending: 0
-      })
-
-      // 加载企业功能数据（仅企业用户）
       if (isEnterpriseUser()) {
-        const mockInvitations: EmployeeInvitation[] = [
-          {
-            id: 'inv1',
-            email: 'newemployee@example.com',
-            invitation_code: 'INV-2025-ABC123',
-            role: 'operator',
-            factory_name: '北京工厂',
-            department_name: '技术部',
-            status: 'pending',
-            expires_at: dayjs().add(7, 'day').toISOString(),
-            created_at: new Date().toISOString(),
-          },
-        ]
+        const [invResp, factoryResp, deptResp, quotaResp] = await Promise.all([
+          enterpriseService.getInvitations({ page: 1, page_size: 50 }),
+          enterpriseService.getFactories({ page: 1, page_size: 50 }),
+          enterpriseService.getDepartments({ page: 1, page_size: 50 }),
+          enterpriseService.getEmployeeQuota(),
+        ])
 
-        const mockFactories: Factory[] = [
-          {
-            id: 'f1',
-            name: '北京工厂',
-            code: 'BJ001',
-            address: '北京市朝阳区',
-            city: '北京',
-            contact_person: '张三',
-            contact_phone: '13800138001',
-            employee_count: 15,
-            is_headquarters: true,
-            is_active: true,
-          },
-          {
-            id: 'f2',
-            name: '上海工厂',
-            code: 'SH001',
-            address: '上海市浦东新区',
-            city: '上海',
-            contact_person: '王五',
-            contact_phone: '13800138003',
-            employee_count: 8,
-            is_headquarters: false,
-            is_active: true,
-          },
-        ]
+        setInvitations(pickList(invResp, ['items', 'invitations']))
+        setFactories(pickList(factoryResp, ['items', 'factories']))
+        setDepartments(pickList(deptResp, ['items', 'departments']))
 
-        const mockDepartments: Department[] = [
-          {
-            id: 'd1',
-            factory_id: 'f1',
-            department_code: 'TECH',
-            department_name: '技术部',
-            description: '负责技术研发和工艺设计',
-            manager_name: '张三',
-            employee_count: 8,
-          },
-          {
-            id: 'd2',
-            factory_id: 'f1',
-            department_code: 'PROD',
-            department_name: '生产部',
-            description: '负责生产制造',
-            manager_name: '赵六',
-            employee_count: 12,
-          },
-        ]
-
-        const mockQuota: EmployeeQuota = {
-          current: employees.length,
-          max: 20,
-          percentage: Math.round((employees.length / 20) * 100),
-          tier: 'enterprise',
+        const quotaData = pickObject(quotaResp)
+        if (quotaData && (quotaData.current != null || quotaData.max != null)) {
+          const current = Number(quotaData.current ?? formattedEmployees.length)
+          const max = Number(quotaData.max ?? 0)
+          setQuota({
+            current,
+            max,
+            percentage: Number(quotaData.percentage ?? (max > 0 ? Math.round((current / max) * 100) : 0)),
+            tier: quotaData.tier || 'enterprise',
+          })
         }
-
-        setInvitations(mockInvitations)
-        setFactories(mockFactories)
-        setDepartments(mockDepartments)
-        setQuota(mockQuota)
       }
     } catch (error) {
       message.error('数据加载失败')
@@ -352,72 +295,73 @@ const EmployeeManagement: React.FC = () => {
   const stats = getStatistics()
 
   // 处理函数
-  const handleCreateEmployee = () => {
-    form.validateFields().then(values => {
-      const newEmployee: Employee = {
-        id: Date.now().toString(),
-        employee_number: `EMP${String(employees.length + 1).padStart(3, '0')}`,
-        ...values,
-        status: 'pending',
-        location: values.location || '默认工厂',
-        joinDate: dayjs().format('YYYY-MM-DD'),
-        permissions: [],
-        performance: 0,
-        workSchedule: '9:00-18:00',
-        emergencyContact: '',
-      }
-      setEmployees([...employees, newEmployee])
+  const handleCreateEmployee = async () => {
+    try {
+      const values = await form.validateFields()
+      const factoryId = factories.find((item) => item.id === values.location || item.name === values.location)?.id
+        || values.location
+        || ''
+      await enterpriseService.createEmployee({
+        email: values.email,
+        name: values.name,
+        phone: values.phone,
+        password: values.password,
+        employee_number: values.employee_number,
+        position: values.position,
+        department: values.department,
+        factory_id: factoryId,
+        role: values.role === 'admin' ? 'admin' : 'employee',
+        data_access_scope: 'company',
+      })
       setModalVisible(false)
       form.resetFields()
       message.success('员工创建成功')
-    })
+      await loadData()
+    } catch {
+      message.error('员工创建失败')
+    }
   }
 
-  const handleInviteEmployee = () => {
-    form.validateFields().then(values => {
-      const newInvitation: EmployeeInvitation = {
-        id: Date.now().toString(),
-        invitation_code: `INV-${Date.now().toString(36).toUpperCase()}`,
-        status: 'pending',
-        expires_at: dayjs().add(7, 'day').toISOString(),
-        created_at: new Date().toISOString(),
-        ...values,
-      }
-      setInvitations([...invitations, newInvitation])
-      setModalVisible(false)
-      form.resetFields()
-      message.success('邀请已发送')
-    })
+  const handleInviteEmployee = async () => {
+    message.info('邀请邮件接口尚未开通，请使用「添加员工」直接创建账号')
   }
 
-  const handleCreateFactory = () => {
-    form.validateFields().then(values => {
-      const newFactory: Factory = {
-        id: Date.now().toString(),
-        employee_count: 0,
-        is_headquarters: false,
-        is_active: true,
-        ...values,
-      }
-      setFactories([...factories, newFactory])
+  const handleCreateFactory = async () => {
+    try {
+      const values = await form.validateFields()
+      await enterpriseService.createFactory({
+        name: values.name,
+        code: values.code,
+        address: values.address,
+        city: values.city,
+        contact_person: values.contact_person,
+        contact_phone: values.contact_phone,
+      })
       setModalVisible(false)
       form.resetFields()
       message.success('工厂创建成功')
-    })
+      await loadData()
+    } catch {
+      message.error('工厂创建失败')
+    }
   }
 
-  const handleCreateDepartment = () => {
-    form.validateFields().then(values => {
-      const newDepartment: Department = {
-        id: Date.now().toString(),
-        employee_count: 0,
-        ...values,
-      }
-      setDepartments([...departments, newDepartment])
+  const handleCreateDepartment = async () => {
+    try {
+      const values = await form.validateFields()
+      await enterpriseService.createDepartment({
+        department_name: values.department_name,
+        department_code: values.department_code,
+        factory_id: values.factory_id,
+        description: values.description,
+      })
       setModalVisible(false)
       form.resetFields()
       message.success('部门创建成功')
-    })
+      await loadData()
+    } catch {
+      message.error('部门创建失败')
+    }
   }
 
   // 过滤数据
@@ -1155,6 +1099,29 @@ const EmployeeManagement: React.FC = () => {
             </Col>
             <Col span={12}>
               <Form.Item
+                name="employee_number"
+                label="工号"
+                rules={[{ required: true, message: '请输入工号' }]}
+              >
+                <Input placeholder="例如：EMP001" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                name="password"
+                label="初始密码"
+                rules={[
+                  { required: true, message: '请输入初始密码' },
+                  { min: 6, message: '密码至少6位' },
+                ]}
+              >
+                <Input.Password placeholder="请设置初始密码（至少6位）" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
                 name="position"
                 label="职位"
                 rules={[{ required: true, message: '请输入职位' }]}
@@ -1209,7 +1176,7 @@ const EmployeeManagement: React.FC = () => {
                 >
                   <Select placeholder="请选择工厂">
                     {factories.map(factory => (
-                      <Option key={factory.id} value={factory.name}>
+                      <Option key={factory.id} value={factory.id}>
                         {factory.name}
                       </Option>
                     ))}

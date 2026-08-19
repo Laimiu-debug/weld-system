@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Space, Input, Select, Tag, Badge, Row, Col, message, Empty } from 'antd';
 import { SearchOutlined, ReloadOutlined, ExportOutlined, EyeOutlined, CreditCardOutlined, UserOutlined } from '@ant-design/icons';
 import apiService from '@/services/api';
+import { downloadCsv } from '@/utils/csv';
 
 const { Search } = Input;
 const { Option } = Select;
@@ -64,6 +65,22 @@ const SubscriptionManagement: React.FC = () => {
   const handleRefresh = () => {
     fetchSubscriptionData(currentPage, searchText);
     message.success('数据已刷新');
+  };
+
+  const handleExport = () => {
+    downloadCsv(
+      `subscriptions-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['用户名', '邮箱', '姓名', '会员等级', '订阅状态', '会员类型', '到期时间'],
+      subscriptionData.map((item) => [
+        item.username,
+        item.email,
+        item.full_name,
+        item.subscription_info?.tier || item.membership_tier,
+        item.subscription_info?.status || item.subscription_status,
+        item.subscription_info?.type || item.membership_type,
+        item.subscription_info?.expires_at || item.expires_at,
+      ]),
+    );
   };
 
   // 分页处理
@@ -232,7 +249,7 @@ const SubscriptionManagement: React.FC = () => {
           <Button icon={<ReloadOutlined />} onClick={handleRefresh}>
             刷新
           </Button>
-          <Button icon={<ExportOutlined />} onClick={() => message.info('导出功能开发中')}>
+          <Button icon={<ExportOutlined />} onClick={handleExport}>
             导出
           </Button>
         </Space>

@@ -99,6 +99,35 @@ class AdminUserService:
             "total_pages": (total + page_size - 1) // page_size
         }
 
+    def list_admins(self, db: Session) -> Dict[str, Any]:
+        """列出管理端账号，不返回密码哈希。"""
+        admins = db.query(Admin).order_by(Admin.id.asc()).all()
+        items = []
+        for admin in admins:
+            permissions = admin.permissions
+            if permissions is None:
+                permissions = ["all"] if admin.is_super_admin else []
+            elif isinstance(permissions, dict):
+                permissions = [key for key, enabled in permissions.items() if enabled]
+            elif not isinstance(permissions, list):
+                permissions = []
+            role = "super_admin" if admin.is_super_admin else (admin.admin_level or "admin")
+            items.append({
+                "id": admin.id,
+                "username": admin.username,
+                "email": admin.email,
+                "full_name": admin.full_name,
+                "role": role,
+                "permissions": permissions,
+                "status": "active" if admin.is_active else "inactive",
+                "last_login_at": admin.last_login_at.isoformat() if admin.last_login_at else None,
+                "created_at": admin.created_at.isoformat() if admin.created_at else None,
+            })
+        return {
+            "items": items,
+            "total": len(items),
+        }
+
     def get_user_by_id(self, db: Session, user_id: str) -> Optional[User]:
         """根据ID获取用户"""
         try:

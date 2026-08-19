@@ -14,6 +14,9 @@ import {
   message,
   Steps,
   Upload,
+  Modal,
+  Descriptions,
+  Spin,
 } from 'antd'
 import {
   SaveOutlined,
@@ -23,11 +26,11 @@ import {
   CheckOutlined,
   UploadOutlined,
 } from '@ant-design/icons'
-import { Welder } from '@/types'
-import { useAuthStore } from '@/store/authStore'
+import weldersService from '@/services/welders'
+import type { Welder } from '@/services/welders'
 import dayjs from 'dayjs'
 
-const { Title, Text } = Typography
+const { Title } = Typography
 const { Option } = Select
 const { Step } = Steps
 
@@ -61,9 +64,10 @@ const WeldersEdit: React.FC = () => {
   const navigate = useNavigate()
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
+  const [pageLoading, setPageLoading] = useState(true)
   const [currentStep, setCurrentStep] = useState(0)
   const [initialData, setInitialData] = useState<Welder | null>(null)
-  const { user } = useAuthStore()
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   // 步骤配置
   const steps = [
@@ -85,51 +89,44 @@ const WeldersEdit: React.FC = () => {
     },
   ]
 
-  // 模拟获取焊工详情数据
   useEffect(() => {
-    // 这里应该调用实际的API获取焊工详情
     const fetchWelderDetail = async () => {
+      if (!id) return
+      setPageLoading(true)
       try {
-        // 模拟数据
-        const mockData: Welder = {
-          id: id || '1',
-          user_id: 'user1',
-          welder_code: 'WLD-2024-001',
-          full_name: '张三',
-          id_number: '110101199001011234',
-          phone: '13800138000',
-          certification_number: 'GMAW-3G-2023-001',
-          certification_level: '高级',
-          certification_date: '2023-01-15',
-          expiry_date: '2025-01-14',
-          qualified_processes: ['GMAW', 'GTAW', 'SMAW'],
-          is_active: true,
-          created_at: '2024-01-15T10:30:00Z',
-          updated_at: '2024-01-15T10:30:00Z',
+        const response = await weldersService.getDetail(Number(id))
+        const data = ((response as any)?.data || response) as Welder
+        if (!data?.id) {
+          message.error('未找到焊工信息')
+          return
         }
-        
-        setInitialData(mockData)
-        
-        // 设置表单初始值
+        setInitialData(data)
+        const processes = data.qualified_processes
+          ? String(data.qualified_processes).split(',').map((item) => item.trim()).filter(Boolean)
+          : []
         form.setFieldsValue({
-          welder_code: mockData.welder_code,
-          full_name: mockData.full_name,
-          id_number: mockData.id_number,
-          phone: mockData.phone,
-          certification_number: mockData.certification_number,
-          certification_level: mockData.certification_level,
-          certification_date: dayjs(mockData.certification_date),
-          expiry_date: dayjs(mockData.expiry_date),
-          qualified_processes: mockData.qualified_processes,
+          welder_code: data.welder_code,
+          full_name: data.full_name,
+          id_number: data.id_number,
+          phone: data.phone,
+          email: data.email,
+          certification_number: data.primary_certification_number,
+          certification_level: data.primary_certification_level,
+          certification_date: data.primary_certification_date ? dayjs(data.primary_certification_date) : undefined,
+          expiry_date: data.primary_expiry_date ? dayjs(data.primary_expiry_date) : undefined,
+          issuing_authority: data.primary_issuing_authority,
+          qualified_processes: processes,
+          welding_position: data.qualified_positions,
+          base_material: data.qualified_materials,
+          notes: data.notes,
         })
-      } catch (error) {
+      } catch {
         message.error('获取焊工信息失败')
+      } finally {
+        setPageLoading(false)
       }
     }
-    
-    if (id) {
-      fetchWelderDetail()
-    }
+    void fetchWelderDetail()
   }, [id, form])
 
   // 处理步骤变化
@@ -181,33 +178,37 @@ const WeldersEdit: React.FC = () => {
 
   // 处理表单提交
   const handleSubmit = async () => {
+    if (!id) return
     setLoading(true)
     try {
-      // 获取所有表单数据
       const values = form.getFieldsValue()
-      
-      // 这里应该调用实际的API更新焊工信息
-      console.log('Updating Welder with data:', values)
-      
-      // 模拟API调用
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
+      await weldersService.update(Number(id), {
+        welder_code: values.welder_code,
+        full_name: values.full_name,
+        id_number: values.id_number,
+        phone: values.phone,
+        email: values.email,
+        primary_certification_number: values.certification_number,
+        primary_certification_level: values.certification_level,
+        primary_certification_date: values.certification_date ? dayjs(values.certification_date).format('YYYY-MM-DD') : undefined,
+        primary_expiry_date: values.expiry_date ? dayjs(values.expiry_date).format('YYYY-MM-DD') : undefined,
+        primary_issuing_authority: values.issuing_authority,
+        qualified_processes: Array.isArray(values.qualified_processes) ? values.qualified_processes.join(',') : values.qualified_processes,
+        qualified_positions: values.welding_position,
+        qualified_materials: values.base_material,
+        notes: values.notes,
+      })
       message.success('焊工信息更新成功')
       navigate(`/welders/${id}`)
-    } catch (error) {
+    } catch {
       message.error('更新失败，请稍后重试')
     } finally {
       setLoading(false)
     }
   }
 
-  // 处理预览
   const handlePreview = () => {
-    const values = form.getFieldsValue()
-    
-    // 这里可以打开一个预览模态框或新页面
-    console.log('Preview data:', values)
-    message.info('预览功能开发中')
+    setPreviewOpen(true)
   }
 
   // 处理文件上传
@@ -447,9 +448,19 @@ const WeldersEdit: React.FC = () => {
     }
   }
 
-  if (!initialData) {
-    return <div>加载中...</div>
+  if (pageLoading) {
+    return (
+      <div className="edit-welder-container flex justify-center items-center" style={{ minHeight: 320 }}>
+        <Spin size="large" />
+      </div>
+    )
   }
+
+  if (!initialData) {
+    return <div>未找到焊工信息</div>
+  }
+
+  const previewValues = form.getFieldsValue()
 
   return (
     <div className="edit-welder-container">
@@ -475,8 +486,12 @@ const WeldersEdit: React.FC = () => {
           form={form}
           layout="vertical"
           initialValues={{
-            certification_date: dayjs(initialData.certification_date),
-            expiry_date: dayjs(initialData.expiry_date),
+            certification_date: initialData.primary_certification_date
+              ? dayjs(initialData.primary_certification_date)
+              : undefined,
+            expiry_date: initialData.primary_expiry_date
+              ? dayjs(initialData.primary_expiry_date)
+              : undefined,
           }}
         >
           {renderStepForm()}
@@ -510,6 +525,28 @@ const WeldersEdit: React.FC = () => {
           </Space>
         </div>
       </Card>
+
+      <Modal
+        title="焊工信息预览"
+        open={previewOpen}
+        onCancel={() => setPreviewOpen(false)}
+        footer={<Button onClick={() => setPreviewOpen(false)}>关闭</Button>}
+      >
+        <Descriptions column={1} bordered size="small">
+          <Descriptions.Item label="焊工编号">{previewValues.welder_code || '-'}</Descriptions.Item>
+          <Descriptions.Item label="姓名">{previewValues.full_name || '-'}</Descriptions.Item>
+          <Descriptions.Item label="证件号">{previewValues.id_number || '-'}</Descriptions.Item>
+          <Descriptions.Item label="电话">{previewValues.phone || '-'}</Descriptions.Item>
+          <Descriptions.Item label="证书编号">{previewValues.certification_number || '-'}</Descriptions.Item>
+          <Descriptions.Item label="资质等级">{previewValues.certification_level || '-'}</Descriptions.Item>
+          <Descriptions.Item label="发证机构">{previewValues.issuing_authority || '-'}</Descriptions.Item>
+          <Descriptions.Item label="合格工艺">
+            {Array.isArray(previewValues.qualified_processes)
+              ? previewValues.qualified_processes.join('、')
+              : previewValues.qualified_processes || '-'}
+          </Descriptions.Item>
+        </Descriptions>
+      </Modal>
     </div>
   )
 }
