@@ -27,7 +27,31 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) {
+            return undefined
+          }
+          if (id.includes('echarts')) {
+            return 'echarts'
+          }
+          if (id.includes('@tiptap') || id.includes('prosemirror')) {
+            return 'editor'
+          }
+          if (
+            id.includes('react-dom') ||
+            id.includes('scheduler') ||
+            id.includes('node_modules/react/') ||
+            id.includes('node_modules\\react\\')
+          ) {
+            return 'react'
+          }
+          return 'vendor'
+        },
+      },
+    },
   },
   optimizeDeps: {
     include: [

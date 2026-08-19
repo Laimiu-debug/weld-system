@@ -53,6 +53,12 @@ backend/.env.dev
 # Backup files
 *.backup*
 backup*
+*.bak
+*_backup.sql
+
+# One-off local debug pages
+check_workspace.html
+check_*.html
 
 # Docker
 .docker/

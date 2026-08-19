@@ -641,36 +641,43 @@ class ApprovalService:
 
         return instance
 
-    def _can_approve(self, instance: ApprovalInstance, user: User) -> bool:
+    def load_approver_permissions(self, user: User) -> Dict[int, Dict[str, Any]]:
+        """一次性加载当前用户在各企业的角色权限，避免列表接口按行查询。"""
+        rows = (
+            self.db.query(CompanyEmployee, CompanyRole)
+            .outerjoin(CompanyRole, CompanyRole.id == CompanyEmployee.company_role_id)
+            .filter(
+                CompanyEmployee.user_id == user.id,
+                CompanyEmployee.status == "active",
+            )
+            .all()
+        )
+        permissions_by_company: Dict[int, Dict[str, Any]] = {}
+        for employee, role in rows:
+            permissions_by_company[employee.company_id] = (role.permissions or {}) if role else {}
+        return permissions_by_company
+
+    def _can_approve(
+        self,
+        instance: ApprovalInstance,
+        user: User,
+        permissions_by_company: Optional[Dict[int, Dict[str, Any]]] = None,
+    ) -> bool:
         """检查用户是否有权限审批"""
-        # 系统层面的管理员拥有所有权限
         if user.is_admin:
             return True
 
-        # 获取用户在企业中的角色
-        employee = self.db.query(CompanyEmployee).filter(
-            CompanyEmployee.user_id == user.id,
-            CompanyEmployee.company_id == instance.company_id,
-            CompanyEmployee.status == "active"
-        ).first()
+        if permissions_by_company is None:
+            permissions_by_company = self.load_approver_permissions(user)
 
-        if not employee or not employee.company_role_id:
+        company_id = getattr(instance, "company_id", None)
+        if company_id is None:
             return False
 
-        # 获取角色权限
-        role = self.db.query(CompanyRole).filter(
-            CompanyRole.id == employee.company_role_id
-        ).first()
-
-        if not role:
-            return False
-
-        # 检查是否有对应文档类型的审批权限
-        permissions = role.permissions or {}
+        permissions = permissions_by_company.get(company_id) or {}
         module_key = f"{instance.document_type}_management"
-        module_perms = permissions.get(module_key, {})
-
-        return module_perms.get('approve', False)
+        module_perms = permissions.get(module_key, {}) or {}
+        return bool(module_perms.get("approve", False))
 
     def _add_history(
         self,

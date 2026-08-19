@@ -130,6 +130,7 @@ def get_ppqr_list(
         approval_service = ApprovalService(db)
         latest, workflows = load_latest_approvals(db, "ppqr", [item.id for item in ppqr_list])
         can_submit_default = approval_service.should_require_approval("ppqr", workspace_context)
+        approver_perms = approval_service.load_approver_permissions(current_user)
         ppqr_summaries = []
         for ppqr in ppqr_list:
             approval_instance = latest.get(ppqr.id)
@@ -138,7 +139,9 @@ def get_ppqr_list(
             can_submit_approval = False
             if approval_instance:
                 if approval_instance.status in ["pending", "in_progress"]:
-                    can_approve = approval_service._can_approve(approval_instance, current_user)
+                    can_approve = approval_service._can_approve(
+                        approval_instance, current_user, approver_perms
+                    )
             else:
                 can_submit_approval = can_submit_default
 

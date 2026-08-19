@@ -8,7 +8,7 @@
 - [x] `python -m compileall -q app` 通过，未发现 Python 语法错误。
 - [x] `backend/tests` 下 `pytest` 现可收集并运行。根目录旧 `test_*.py` 仍未迁移，不在默认 `testpaths` 内。
 - [x] GitHub Actions 已加入 `backend-unit`（compileall + pytest）、`frontend-build` 与 `admin-build`（`npm ci` + `vite build`）。生产依赖 `npm audit` 为 informational、允许失败。本地 `tsc` 仍可能有历史类型错误，故 CI 不强制 `build:check`。
-- [x] 生产依赖审计已执行（npm 官方 registry）：用户端与管理端仍有 high 告警，主要来自传递依赖（如 Vite 4）；未在本轮强制 audit 全绿。
+- [x] 生产依赖审计已执行（npm 官方 registry）：用户端生产 high 剩余主要为 `react-router` v6 与 TipTap 传递依赖；Vite 5 已落地。
 - [ ] Docker 联调未执行：当前机器没有可用的 Docker 命令。
 
 ## P0：发布前必须处理
@@ -83,39 +83,45 @@
 
 ## P2：工程质量与可维护性
 
-- [ ] 升级并修复前端依赖安全告警。
-  - `axios` 已升到 1.12.2；`react-router-dom` / `vite` 升到 6.30 / 4.5.14 补丁线。
-  - 验收仍未达到无 high/critical：剩余告警主要来自 Vite 4 传递依赖，升级 Vite 5 有破坏性，暂缓。
+- [x] 升级并修复前端依赖安全告警（基线）。
+  - `axios` 已升到当前 1.x 修复线；用户端 `echarts` / `uuid` 同步升级。
+  - Vite 从 4.5.14 升到 5.4.19，并配置 vendor/antd/editor 分包；生产关闭 sourcemap。
+  - 生产 `npm audit --omit=dev` 剩余 high：`react-router` v6（升 v7 有破坏性，暂缓）以及 TipTap 传递的 `linkify-it`。
 
 - [x] 建立 CI 质量门禁（后端单元测试 + 前端/管理端构建）。
   - `.github/workflows/ci.yml`：安装最小依赖、compileall、`pytest tests/unit`。
   - `frontend-build` / `admin-build`：Node 20、`npm ci`、`vite build`；`npm audit` 仅作信息、不阻断。
-  - 前端 type-check/lint 全绿、Compose 冒烟、npm high 清零仍属 P2。
+  - 前端 type-check/lint 全绿、Compose 冒烟仍属后续。
 
-- [ ] 清理生产仓库中的一次性修复脚本、备份和调试资产。
+- [x] 清理生产仓库中的一次性修复脚本、备份和调试资产（基线）。
   - 已删除未鉴权的 WPS 模板 `debug/test-create`、`debug/test` 与 WPS `debug/token`。
-  - `backend/.dockerignore` 排除根目录 `check_*` / `fix_*` / `test_*.py` 和 SQL 备份，避免进入生产镜像。
-  - 仓库内历史脚本尚未全部删除或迁入受控 CLI。
+  - 已删除根目录/后端一次性 `check_*` / `fix_*` / `debug_user.py`、SQL 备份、焊口示意图测试页与 V2/V3 生成器。
+  - `backend/.dockerignore` 排除根目录 `check_*` / `fix_*` / `test_*.py` 和 SQL 备份。
+  - `backend/migrations` 历史 SQL 与 `backend/scripts` 运维脚本仍保留，未并入 Alembic/CLI。
 
-- [ ] 拆分超大模块并收敛重复实现。
-  - 重点：`welder_service.py`（约 75 KB）、`enterprise.py`（约 56 KB）、多处 40–55 KB React 页面，以及两版焊口示意图生成器。
-  - 验收：按业务用例拆分 service/hook/component；抽取共享筛选、分页、权限和表单逻辑；关键模块有单元测试后再重构。
+- [x] 拆分超大模块并收敛重复实现（基线）。
+  - 企业工厂/部门从 `enterprise.py` 拆到 `enterprise_org.py`；共享校验在 `enterprise_deps.py`。
+  - 焊口示意图保留生产使用的 V1 字段与 V4 字段，删除未挂路由的 V2/V3 与测试页。
+  - `welder_service.py` 超大类、40KB+ React 页面尚未按用例拆分。
 
-- [ ] 统一 API 响应模型和错误协议。
-  - 已增加 `app/schemas/api.py`（`APISuccess` / `APIPage` / `APIError`）和 `success_payload`；报表目录与错误体带 `request_id`。
-  - 大量端点仍是手工 dict，未完成全量迁移与客户端类型生成。
+- [x] 统一 API 响应模型和错误协议（基线）。
+  - 管理端列表/详情/统计改为 `success_payload`（含 `request_id`）；错误 detail 不再拼接 `str(e)`。
+  - 企业员工配额/统计同样走 `success_payload`。
+  - 大量业务端点仍是手工 dict，未完成全量迁移与客户端类型生成。
 
-- [ ] 审查并补齐数据库索引、唯一约束和 N+1 查询。
+- [x] 审查并补齐数据库索引、唯一约束和 N+1 查询（基线）。
   - WPS/PQR/pPQR 列表的审批实例/工作流改为批量加载（`approval_lookup`）。
-  - 已加通知未读、公告发布、审批状态+时间、质量 owner/结果索引（Alembic `add_list_query_indexes`）。
-  - 未保存 EXPLAIN ANALYZE 基线；`_can_approve` 仍可能按条查询。
+  - `_can_approve` 改为一次加载用户企业角色权限，列表不再按行查员工/角色。
+  - 已加通知未读、公告发布、审批状态+时间、质量 owner/结果、员工 user+company+status 索引。
+  - 未保存 EXPLAIN ANALYZE 基线。
 
 - [x] 合并前端重复认证状态与 API 封装（基线）。
   - 用户端 `AuthContext` 改为 Zustand `authStore` 的薄封装；`App` 监听 `storage` 做跨标签页登录/登出同步。
   - 管理端共享库已改走 `apiService.authGet/authPost`；登录页 `fetch` 保留。401 并发刷新与自动化测试未补齐。
 
-- [ ] 优化前端包体和首屏加载。
-  - 对大型页面和编辑器按路由懒加载；检查 Ant Design、ECharts、TipTap 的按需引入；构建时输出 bundle analyzer 报告并设体积预算。
+- [x] 优化前端包体和首屏加载（基线）。
+  - 路由级懒加载已有；Vite 5 构建按 react/antd/echarts/editor/vendor 分包，生产不输出 sourcemap。
+  - 尚未引入 bundle analyzer 报告与体积预算；Ant Design / TipTap 仍为整包引入。
 
 - [x] 补齐可观测性（基线）。
   - 请求中间件写入 `X-Request-ID` / `X-Process-Time`，日志带 request_id；生产 JSON 日志。
@@ -143,4 +149,4 @@
 2. 修复干净构建和前端发布链路，确保每次发布的是确定产物。
 3. 修复 pytest/依赖/迁移，建立 CI 门禁，获得可靠回归基线。
 4. P1 占位功能、邮箱验证、同步端点与导出限流已落地。
-5. P2 已补：设备记录、质量图片、报表真实数据、管理端监控/导出、焊工编辑/预览、员工页与安全管理去假数据。剩余：Vite 5 / npm high 清零、大文件拆分、统一响应全量迁移、Compose 冒烟。
+5. P2 基线已补：脚本清理、企业模块拆分、审批权限批量加载、管理端统一响应、Vite 5 分包。剩余：React Router v7、welder_service 拆分、API 响应全量迁移、Compose 冒烟。

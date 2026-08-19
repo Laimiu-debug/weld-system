@@ -107,6 +107,7 @@ def read_wps_list(
         approval_service = ApprovalService(db)
         latest, workflows = load_latest_approvals(db, "wps", [item.id for item in wps_list])
         can_submit_default = approval_service.should_require_approval("wps", workspace_context)
+        approver_perms = approval_service.load_approver_permissions(current_user)
         wps_summaries = []
         for wps in wps_list:
             approval_instance = latest.get(wps.id)
@@ -115,7 +116,9 @@ def read_wps_list(
             can_submit_approval = False
             if approval_instance:
                 if approval_instance.status in ["pending", "in_progress"]:
-                    can_approve = approval_service._can_approve(approval_instance, current_user)
+                    can_approve = approval_service._can_approve(
+                        approval_instance, current_user, approver_perms
+                    )
             else:
                 can_submit_approval = can_submit_default
 

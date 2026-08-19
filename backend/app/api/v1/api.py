@@ -6,8 +6,6 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     admin,
     admin_auth,
-    admin_simple,
-    admin_complete,
     auth,
     users,
     members,
@@ -33,6 +31,7 @@ from app.api.v1.endpoints import (
     membership_admin,
     upload,
     enterprise,
+    enterprise_org,
     company_roles,
     workspace,
     dashboard,
@@ -58,8 +57,6 @@ api_router.include_router(admin_auth.router, prefix="/admin/auth", tags=["管理
 
 # 管理员路由（最高优先级） - 使用我们的新管理员API
 api_router.include_router(admin.router, prefix="/admin", tags=["管理员功能"])
-# api_router.include_router(admin_complete.router, prefix="/admin", tags=["管理员功能"])
-# api_router.include_router(admin_simple.router, prefix="/admin", tags=["简化管理员功能"])
 api_router.include_router(system_admin.router, prefix="/admin/system", tags=["系统管理"])
 api_router.include_router(membership_admin.router, prefix="/admin/membership", tags=["会员管理"])
 
@@ -128,6 +125,7 @@ api_router.include_router(files.router, prefix="/files", tags=["文件管理"])
 
 # 企业管理路由
 api_router.include_router(enterprise.router, prefix="/enterprise", tags=["企业管理"])
+api_router.include_router(enterprise_org.router, prefix="/enterprise", tags=["企业组织"])
 
 # 企业角色管理路由
 api_router.include_router(company_roles.router, prefix="/enterprise", tags=["企业角色管理"])

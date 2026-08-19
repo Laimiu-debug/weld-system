@@ -13,6 +13,7 @@ from app.models.admin import Admin
 from app.core.database import get_db
 from app.services.admin_user_service import admin_user_service
 from app.api.v1.schemas.payment import ManualPaymentConfirmRequest
+from app.schemas.api import success_payload
 
 router = APIRouter()
 
@@ -51,10 +52,7 @@ def get_users_admin(
             sort_order=sort_order
         )
 
-        return {
-            "success": True,
-            "data": result
-        }
+        return success_payload(result)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -69,10 +67,7 @@ def list_admins(
 ) -> Any:
     """获取管理端账号列表（不含密码）。"""
     result = admin_user_service.list_admins(db)
-    return {
-        "success": True,
-        "data": result
-    }
+    return success_payload(result)
 
 
 @router.get("/users/{user_id}", response_model=Dict[str, Any])
@@ -94,19 +89,16 @@ def get_user_detail_admin(
 
         user_data = admin_user_service.get_user_detail_data(db, user)
 
-        return {
-            "success": True,
-            "data": user_data
-        }
+        return success_payload(user_data)
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="无效的用户ID格式"
         )
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"获取用户详情失败: {str(e)}"
+            detail="获取用户详情失败"
         )
 
 
@@ -155,10 +147,10 @@ def adjust_user_membership_admin(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="无效的用户ID格式"
         )
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"调整用户会员等级失败: {str(e)}"
+            detail="调整用户会员等级失败"
         )
 
 
@@ -227,11 +219,11 @@ def update_user_profile_admin(
         )
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"更新用户信息失败: {str(e)}"
+            detail="更新用户信息失败"
         )
 
 
@@ -271,10 +263,10 @@ def enable_user_admin(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="无效的用户ID格式"
         )
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"启用用户失败: {str(e)}"
+            detail="启用用户失败"
         )
 
 
@@ -321,10 +313,10 @@ def disable_user_admin(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="无效的用户ID格式"
         )
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"禁用用户失败: {str(e)}"
+            detail="禁用用户失败"
         )
 
 
@@ -364,10 +356,10 @@ def verify_user_email_admin(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="无效的用户ID格式"
         )
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"验证邮箱失败: {str(e)}"
+            detail="验证邮箱失败"
         )
 
 
@@ -411,10 +403,10 @@ def delete_user_admin(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="无效的用户ID格式"
         )
-    except Exception as e:
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"删除用户失败: {str(e)}"
+            detail="删除用户失败"
         )
 
 
@@ -435,14 +427,11 @@ def get_user_statistics_admin(
             end_date=end_date
         )
 
-        return {
-            "success": True,
-            "data": stats
-        }
-    except Exception as e:
+        return success_payload(stats)
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"获取用户统计数据失败: {str(e)}"
+            detail="获取用户统计数据失败"
         )
 
 
@@ -474,14 +463,11 @@ def get_enterprises_admin(
             search=search
         )
 
-        return {
-            "success": True,
-            "data": result
-        }
-    except Exception as e:
+        return success_payload(result)
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"获取企业用户列表失败: {str(e)}"
+            detail="获取企业用户列表失败"
         )
 
 
@@ -505,14 +491,11 @@ def get_subscriptions_admin(
             search=search
         )
 
-        return {
-            "success": True,
-            "data": result
-        }
-    except Exception as e:
+        return success_payload(result)
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"获取订阅用户列表失败: {str(e)}"
+            detail="获取订阅用户列表失败"
         )
 
 
@@ -533,14 +516,11 @@ def get_subscription_statistics_admin(
             end_date=end_date
         )
 
-        return {
-            "success": True,
-            "data": stats
-        }
-    except Exception as e:
+        return success_payload(stats)
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"获取订阅统计数据失败: {str(e)}"
+            detail="获取订阅统计数据失败"
         )
 
 
@@ -572,14 +552,11 @@ def get_system_status_admin(
             "uptime": "N/A"  # 可以添加实际的系统运行时间
         }
 
-        return {
-            "success": True,
-            "data": system_status
-        }
-    except Exception as e:
+        return success_payload(system_status)
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"获取系统状态失败: {str(e)}"
+            detail="获取系统状态失败"
         )
 
 
@@ -602,14 +579,11 @@ def get_error_logs_admin(
             "total_pages": 0
         }
 
-        return {
-            "success": True,
-            "data": mock_error_logs
-        }
-    except Exception as e:
+        return success_payload(mock_error_logs)
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"获取错误日志失败: {str(e)}"
+            detail="获取错误日志失败"
         )
 
 
@@ -669,10 +643,7 @@ def get_pending_payments_admin(
             "updated_at": t.updated_at.isoformat(),
         })
 
-    return {
-        "success": True,
-        "data": result
-    }
+    return success_payload(result)
 
 
 @router.post("/payments/confirm", response_model=Dict[str, Any])
