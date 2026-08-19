@@ -59,7 +59,7 @@ const WPSReport: React.FC = () => {
         limit: 200,
         status: statusFilter,
       })
-      const items = Array.isArray(payload)
+      const items: any[] = Array.isArray(payload)
         ? payload
         : Array.isArray((payload as any)?.items)
           ? (payload as any).items
@@ -216,7 +216,7 @@ const WPSReport: React.FC = () => {
             <Text strong>时间范围：</Text>
           </Col>
           <Col>
-            <RangePicker value={dateRange} onChange={setDateRange} />
+            <RangePicker value={dateRange} onChange={(dates) => { if (dates?.[0] && dates[1]) setDateRange([dates[0], dates[1]]) }} />
           </Col>
           <Col>
             <Select

@@ -28,6 +28,8 @@ import {
   Popconfirm,
   Transfer,
   TreeSelect,
+  Radio,
+  Typography,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
@@ -46,7 +48,6 @@ import {
   BranchesOutlined,
   HistoryOutlined,
   EyeOutlined,
-  ApproveOutlined,
   StopOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -56,6 +57,7 @@ const { Option } = Select
 const { RangePicker } = DatePicker
 const { TextArea } = Input
 const { Step } = Steps
+const { Title, Text } = Typography
 
 interface WorkflowDefinition {
   id: string
@@ -551,7 +553,7 @@ const WorkflowManagement: React.FC = () => {
               <Button
                 type="text"
                 size="small"
-                icon={<ApproveOutlined />}
+                icon={<CheckCircleOutlined />}
                 onClick={() => handleApprove(record)}
               />
             </Tooltip>
@@ -646,7 +648,7 @@ const WorkflowManagement: React.FC = () => {
             ? {
                 ...instance,
                 currentStep: instance.currentStep + 1,
-                status: values.action === 'approve' ? 'completed' : 'rejected',
+                status: (values.action === 'approve' ? 'completed' : 'rejected') as WorkflowInstance['status'],
                 history: [
                   ...instance.history,
                   {

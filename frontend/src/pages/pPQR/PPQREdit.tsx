@@ -17,8 +17,8 @@ interface PPQREditData {
   id: number
   title: string
   ppqr_number: string
-  revision: string
-  status: string
+  revision?: string
+  status?: string
   template_id?: string
   modules_data?: Record<string, any>
   document_html?: string

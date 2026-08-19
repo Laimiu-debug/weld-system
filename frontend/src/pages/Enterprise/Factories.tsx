@@ -441,7 +441,7 @@ const Factories: React.FC = () => {
       {/* 工厂列表 */}
       <Card title="工厂列表">
         <Table
-          columns={columns}
+          columns={columns as any}
           dataSource={filteredFactories}
           rowKey={(record) => `${record.id}_${record.code}`}
           loading={loading}
@@ -513,7 +513,7 @@ const Factories: React.FC = () => {
                   placeholder="请输入或选择城市"
                   options={CHINA_CITIES.map(city => ({ value: city, label: city }))}
                   filterOption={(inputValue, option) =>
-                    option?.value.toLowerCase().includes(inputValue.toLowerCase())
+                    Boolean(option?.value.toLowerCase().includes(inputValue.toLowerCase()))
                   }
                 />
               </Form.Item>

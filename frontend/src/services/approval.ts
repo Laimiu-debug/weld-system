@@ -10,6 +10,7 @@ export interface SubmitApprovalRequest {
 }
 
 export interface ApprovalActionRequest {
+  action?: 'approve' | 'reject' | 'return';
   comment: string;
   attachments?: string[];
 }
@@ -20,6 +21,8 @@ export interface BatchApprovalRequest {
 }
 
 export interface ApprovalWorkflowStep {
+  step_number?: number;
+  description?: string;
   step_name: string;
   approver_type: 'role' | 'user' | 'department';
   approver_id: number;

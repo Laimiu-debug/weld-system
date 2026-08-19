@@ -363,14 +363,14 @@ class ApiService {
     if (this.useMockData) {
       return Promise.resolve({ success: true, data: null } as T);
     }
-    return this.authApi.post(url, data, config);
+    return this.authApi.post(url, data, config) as unknown as T;
   }
 
   async authGet<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
     if (this.useMockData) {
       return Promise.resolve({ success: true, data: null } as T);
     }
-    return this.authApi.get(url, config);
+    return this.authApi.get(url, config) as unknown as T;
   }
 
   // 通用请求方法
@@ -378,28 +378,28 @@ class ApiService {
     if (this.useMockData) {
       return Promise.resolve({ success: true, data: null } as T);
     }
-    return this.api.get(url, config);
+    return this.api.get(url, config) as unknown as T;
   }
 
   async post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
     if (this.useMockData) {
       return Promise.resolve({ success: true, data: null } as T);
     }
-    return this.api.post(url, data, config);
+    return this.api.post(url, data, config) as unknown as T;
   }
 
   async put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
     if (this.useMockData) {
       return Promise.resolve({ success: true, data: null } as T);
     }
-    return this.api.put(url, data, config);
+    return this.api.put(url, data, config) as unknown as T;
   }
 
   async delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
     if (this.useMockData) {
       return Promise.resolve({ success: true, data: null } as T);
     }
-    return this.api.delete(url, config);
+    return this.api.delete(url, config) as unknown as T;
   }
 }
 

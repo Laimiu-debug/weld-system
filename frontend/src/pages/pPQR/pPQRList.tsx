@@ -46,6 +46,7 @@ import dayjs from 'dayjs'
 import { useAuthStore } from '@/store/authStore'
 import ppqrService, { PPQRSummary } from '@/services/ppqr'
 import { ApprovalButton } from '@/components/Approval/ApprovalButton'
+import { sanitizeDocumentHtml } from '@/utils/sanitizeHtml'
 
 const { Title, Text } = Typography
 const { Search } = Input
@@ -359,7 +360,7 @@ const PPQRList: React.FC = () => {
             {/* 审批按钮 */}
             <ApprovalButton
               documentType="ppqr"
-              documentId={parseInt(record.id)}
+              documentId={record.id}
               documentNumber={record.ppqr_number}
               documentTitle={record.title}
               instanceId={record.approval_instance_id}
@@ -559,7 +560,7 @@ const PPQRList: React.FC = () => {
           </style>
         </head>
         <body>
-          ${ppqrData.document_html || '<p>文档内容为空，请先在编辑页面使用文档编辑模式编辑内容</p>'}
+          ${sanitizeDocumentHtml(ppqrData.document_html) || '<p>文档内容为空，请先在编辑页面使用文档编辑模式编辑内容</p>'}
           <div class="footer">
             <p>打印日期: ${new Date().toLocaleString('zh-CN')}</p>
           </div>

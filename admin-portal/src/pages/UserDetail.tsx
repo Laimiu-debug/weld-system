@@ -26,6 +26,7 @@ import {
   PlayCircleOutlined,
   DeleteOutlined,
   SaveOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 import apiService from '@/services/api';
 import dayjs from 'dayjs';
@@ -91,7 +92,7 @@ const UserDetail: React.FC = () => {
     try {
       // API拦截器会自动提取data字段，所以这里直接接收用户数据对象
       const userData = await apiService.getUserDetail(userId);
-      setUser(userData as UserDetailData);
+      setUser(userData as unknown as UserDetailData);
     } catch (error: any) {
       console.error('获取用户详情失败:', error);
       setError(error.message || '获取用户详情失败');

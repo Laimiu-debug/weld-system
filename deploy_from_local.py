@@ -2,11 +2,11 @@
 # -*- coding: utf-8 -*-
 """从本地上传并部署到服务器"""
 
-import paramiko
 import os
 import sys
 from pathlib import Path
 import stat
+from deployment_ssh import connect_ssh, load_ssh_config
 
 def execute_command(ssh, command, description="", show_output=True):
     """执行SSH命令并显示输出"""
@@ -72,11 +72,9 @@ def upload_directory(sftp, local_path, remote_path, exclude_patterns):
             upload_directory(sftp, local_item, remote_item, exclude_patterns)
 
 def main():
-    hostname = "43.142.188.252"
-    username = "root"
-    password = "Weld2024"
-    key_file = "server-key.pem"
-    project_dir = "/home/ubuntu/weld-system"
+    config = load_ssh_config()
+    hostname = config.host
+    project_dir = config.project_dir
     
     print("=" * 60)
     print("🚀 从本地上传并部署到服务器")
@@ -85,15 +83,7 @@ def main():
     try:
         # 连接服务器
         print(f"\n📡 连接服务器 {hostname}...")
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(
-            hostname=hostname,
-            username=username,
-            password=password,
-            key_filename=key_file,
-            timeout=30
-        )
+        ssh = connect_ssh(config)
         print("✅ 连接成功！")
         
         # 1. 停止所有容器

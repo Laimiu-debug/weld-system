@@ -470,7 +470,7 @@ const MembershipUpgrade: React.FC = () => {
     ? subscriptionPlans.map(plan => ({
         id: plan.id,
         name: plan.name,
-        type: plan.id,
+        type: plan.id as MembershipPlan['type'],
         prices: {
           monthly: plan.monthly_price,
           quarterly: plan.quarterly_price,

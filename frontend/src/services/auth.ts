@@ -57,118 +57,10 @@ class AuthService {
 
   // 登录（兼容旧接口）
   async login(credentials: LoginCredentials): Promise<boolean> {
-    try {
-      // 测试账号逻辑
-      const testAccounts = [
-        {
-          email: 'test@test.com',
-          password: 'test123',
-          user: {
-            id: '1',
-            username: 'test',
-            email: 'test@test.com',
-            full_name: '测试用户',
-            phone: null,
-            is_admin: false,
-            membership_tier: 'free',
-            avatar_url: null,
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: '2024-01-01T00:00:00Z'
-          }
-        },
-        {
-          email: 'demo@test.com',
-          password: 'demo123',
-          user: {
-            id: '2',
-            username: 'demo',
-            email: 'demo@test.com',
-            full_name: '演示用户',
-            phone: null,
-            is_admin: false,
-            membership_tier: 'personal_flagship',
-            avatar_url: null,
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: '2024-01-01T00:00:00Z'
-          }
-        },
-        {
-          email: 'user@test.com',
-          password: 'user123',
-          user: {
-            id: '3',
-            username: 'user',
-            email: 'user@test.com',
-            full_name: '普通用户',
-            phone: null,
-            is_admin: false,
-            membership_tier: 'personal_pro',
-            avatar_url: null,
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: '2024-01-01T00:00:00Z'
-          }
-        },
-        {
-          email: 'enterprise@test.com',
-          password: 'enterprise123',
-          user: {
-            id: '4',
-            username: 'enterprise',
-            email: 'enterprise@test.com',
-            full_name: '企业用户',
-            phone: null,
-            is_admin: false,
-            membership_tier: 'enterprise',
-            avatar_url: null,
-            created_at: '2024-01-01T00:00:00Z',
-            updated_at: '2024-01-01T00:00:00Z'
-          }
-        }
-      ]
-
-      // 检查是否为测试账号
-      const testAccount = testAccounts.find(
-        account => account.email === credentials.email && account.password === credentials.password
-      )
-
-      if (testAccount) {
-        // 模拟登录成功
-        const mockToken = 'mock-access-token-' + Date.now()
-        const mockRefreshToken = 'mock-refresh-token-' + Date.now()
-
-        // 存储token和用户信息
-        localStorage.setItem(this.TOKEN_KEY, mockToken)
-        localStorage.setItem(this.REFRESH_TOKEN_KEY, mockRefreshToken)
-        localStorage.setItem(this.USER_KEY, JSON.stringify(testAccount.user))
-
-        return true
-      }
-
-      // 如果不是测试账号，尝试调用真实API
-      // 使用新的登录接口，支持邮箱或手机号
-      const loginRequest: LoginRequest = {
-        account: credentials.email,  // Use email field as account for compatibility
-        password: credentials.password
-      }
-
-      const response = await apiService.post<AuthResponse>('/auth/login-json', loginRequest)
-
-      if (response.success && response.data) {
-        const { access_token, refresh_token, user } = response.data
-
-        // 存储token和用户信息
-        localStorage.setItem(this.TOKEN_KEY, access_token)
-        localStorage.setItem(this.REFRESH_TOKEN_KEY, refresh_token)
-        localStorage.setItem(this.USER_KEY, JSON.stringify(user))
-
-        return true
-      }
-
-      return false
-    } catch (error) {
-      console.error('Login error:', error)
-      return false
-    }
+    return this.loginWithAccount({
+      account: credentials.email,
+      password: credentials.password,
+    })
   }
 
   // 支持邮箱/手机号的新登录方法
@@ -553,9 +445,10 @@ class AuthService {
     // 非企业管理权限的处理
     // 如果用户有明确的权限字段，使用权限字段（企业内部权限）
     // 注意：只有当permissions字段存在且不为空时才使用企业权限检查
-    if (user.permissions && user.permissions !== '' && user.permissions !== '{}') {
+    const rawPermissions = user.permissions as unknown
+    if (rawPermissions && rawPermissions !== '' && rawPermissions !== '{}') {
       // 处理权限字段可能是字符串的情况
-      let permissions: any = user.permissions
+      let permissions: any = rawPermissions
       if (typeof permissions === 'string') {
         try {
           permissions = JSON.parse(permissions)

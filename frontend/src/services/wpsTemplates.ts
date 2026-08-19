@@ -4,6 +4,9 @@
 import apiService from './api'
 import { ApiResponse, PaginatedResponse } from '@/types'
 
+type FieldSchema = Record<string, unknown>
+type UILayout = Record<string, unknown>
+
 // ==================== 类型定义 ====================
 // 注：已移除 FieldDefinition, TabDefinition, TopInfoDefinition, FieldSchema, UILayout
 // 这些类型在新的模块化系统中不再需要
@@ -16,13 +19,15 @@ export interface ModuleInstance {
   moduleId: string
   order: number
   customName?: string
+  rowIndex?: number
+  columnIndex?: number
 }
 
 /**
  * WPS模板
  */
 export interface WPSTemplate {
-  id: string
+  id?: string
   name: string
   description?: string
   welding_process: string
@@ -32,6 +37,8 @@ export interface WPSTemplate {
   // 注：已移除 field_schema, ui_layout, validation_rules, default_values
   // 现在仅使用 module_instances 基于模块的模板方式
   module_instances: ModuleInstance[]  // 基于模块的模板
+  default_values?: Record<string, any>
+  detail?: string
 
   // 数据隔离
   user_id?: number

@@ -48,6 +48,7 @@ import { useAuthStore } from '@/store/authStore'
 import wpsService, { WPSSummary } from '@/services/wps'
 import { approvalApi } from '@/services/approval'
 import ApprovalButton from '@/components/Approval/ApprovalButton'
+import { sanitizeDocumentHtml } from '@/utils/sanitizeHtml'
 
 const { Title, Text } = Typography
 const { Search } = Input
@@ -95,7 +96,7 @@ const WPSList: React.FC = () => {
   }
 
   // 计算WPS统计数据
-  const getWPSStats = (data: WPSSummary[] = []) => {
+  const getWPSStats = (data: Array<{ status: WPSStatus }> = []) => {
     const stats = {
       total: data.length,
       approved: data.filter(item => item.status === 'approved').length,
@@ -206,15 +207,13 @@ const WPSList: React.FC = () => {
         status: statusFilter,
         dateRange,
       }),
-    onSuccess: (data) => {
-      if (data.success && data.data) {
-        setPagination(prev => ({
-          ...prev,
-          total: data.data?.total || 0,
-        }))
-      }
-    },
   })
+
+  useEffect(() => {
+    if (wpsData?.success) {
+      setPagination(prev => ({ ...prev, total: wpsData.data.total }))
+    }
+  }, [wpsData])
 
   // 获取状态配置
   const getStatusConfig = (status: WPSStatus) => {
@@ -230,7 +229,7 @@ const WPSList: React.FC = () => {
   }
 
   // 渲染WPS卡片
-  const renderWPSCard = (record: WPSRecord) => (
+  const renderWPSCard = (record: any) => (
     <Card
       key={record.id}
       className="wps-card"
@@ -541,8 +540,8 @@ const WPSList: React.FC = () => {
   }
 
   // 处理日期范围筛选
-  const handleDateRangeChange = (dates: [dayjs.Dayjs, dayjs.Dayjs] | null) => {
-    setDateRange(dates)
+  const handleDateRangeChange = (dates: [dayjs.Dayjs | null, dayjs.Dayjs | null] | null) => {
+    setDateRange(dates?.[0] && dates?.[1] ? [dates[0], dates[1]] : null)
     setPagination(prev => ({ ...prev, current: 1 }))
   }
 
@@ -678,7 +677,7 @@ const WPSList: React.FC = () => {
           </style>
         </head>
         <body>
-          ${wpsData.document_html || '<p>文档内容为空，请先在编辑页面使用文档编辑模式编辑内容</p>'}
+          ${sanitizeDocumentHtml(wpsData.document_html) || '<p>文档内容为空，请先在编辑页面使用文档编辑模式编辑内容</p>'}
           <div class="footer">
             <p>打印日期: ${new Date().toLocaleString('zh-CN')}</p>
           </div>

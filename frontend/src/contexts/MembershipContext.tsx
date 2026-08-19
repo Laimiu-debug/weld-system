@@ -15,6 +15,9 @@ export interface CurrentMembershipInfo {
   quotas: any
   workspaceType: string
   lastUpdated: Date
+  nextTier?: string
+  nextTierName?: string
+  upgradePrice?: string | number
 }
 
 // 会员上下文类型

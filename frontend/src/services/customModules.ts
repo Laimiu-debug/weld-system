@@ -13,6 +13,7 @@ export interface CustomModuleCreate {
   repeatable: boolean
   fields: Record<string, any>
   is_shared?: boolean
+  module_type?: 'wps' | 'pqr' | 'ppqr'
   access_level?: 'private' | 'shared' | 'public'
 }
 

@@ -2,21 +2,15 @@
 # -*- coding: utf-8 -*-
 """快速检查服务器状态"""
 
-import paramiko
+from deployment_ssh import connect_ssh, load_ssh_config
 
-hostname = "43.142.188.252"
-username = "root"
-password = "Weld2024"
-key_file = "server-key.pem"
-
-ssh = paramiko.SSHClient()
-ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect(hostname=hostname, username=username, password=password, key_filename=key_file, timeout=10)
+config = load_ssh_config()
+ssh = connect_ssh(config, timeout=10)
 
 print("=" * 60)
 print("检查Docker容器状态")
 print("=" * 60)
-stdin, stdout, stderr = ssh.exec_command("cd /home/ubuntu/weld-system && docker-compose ps")
+stdin, stdout, stderr = ssh.exec_command(f"cd {config.project_dir} && docker-compose ps")
 print(stdout.read().decode('utf-8'))
 
 print("\n" + "=" * 60)

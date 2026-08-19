@@ -44,6 +44,7 @@ import dayjs from 'dayjs'
 import { useAuthStore } from '@/store/authStore'
 import pqrService, { PQRSummary } from '@/services/pqr'
 import { ApprovalButton } from '@/components/Approval/ApprovalButton'
+import { sanitizeDocumentHtml } from '@/utils/sanitizeHtml'
 
 const { Title, Text } = Typography
 const { Search } = Input
@@ -235,7 +236,7 @@ const PQRList: React.FC = () => {
           </style>
         </head>
         <body>
-          ${pqrData.document_html || '<p>文档内容为空，请先在编辑页面使用文档编辑模式编辑内容</p>'}
+          ${sanitizeDocumentHtml(pqrData.document_html) || '<p>文档内容为空，请先在编辑页面使用文档编辑模式编辑内容</p>'}
           <div class="footer">
             <p>打印日期: ${new Date().toLocaleString('zh-CN')}</p>
           </div>
@@ -303,7 +304,7 @@ const PQRList: React.FC = () => {
 
   // 渲染PQR卡片
   const renderPQRCard = (record: PQRSummary) => {
-    const qualificationConfig = getQualificationConfig(record.qualification_result)
+    const qualificationConfig = getQualificationConfig(record.qualification_result || '')
 
     return (
       <Card
@@ -535,7 +536,7 @@ const PQRList: React.FC = () => {
             {/* 审批按钮 */}
             <ApprovalButton
               documentType="pqr"
-              documentId={parseInt(record.id)}
+              documentId={record.id}
               documentNumber={record.pqr_number}
               documentTitle={record.title}
               instanceId={record.approval_instance_id}

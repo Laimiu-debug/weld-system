@@ -20,6 +20,7 @@ export interface Material {
   reorder_point?: number
   unit_price?: number
   storage_location?: string
+  warehouse?: string
   supplier?: string
   batch_number?: string
   production_date?: string
@@ -161,13 +162,13 @@ export interface MaterialListResponse {
     page_size: number
     total_pages: number
   }
-  message: string
+  message?: string
 }
 
 export interface MaterialResponse {
   success: boolean
   data: Material
-  message: string
+  message?: string
 }
 
 // ==================== API服务类 ====================
@@ -293,7 +294,7 @@ class MaterialsService {
     workspaceType: 'personal' | 'enterprise',
     companyId?: number,
     factoryId?: number
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message?: string }> {
     const params: any = {
       workspace_type: workspaceType,
     }
@@ -318,7 +319,7 @@ class MaterialsService {
     workspaceType: 'personal' | 'enterprise',
     companyId?: number,
     factoryId?: number
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message?: string }> {
     const params: any = {
       workspace_type: workspaceType,
     }

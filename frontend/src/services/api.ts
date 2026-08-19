@@ -61,7 +61,7 @@ class ApiService {
           success: true,
           data: response.data,
           timestamp: new Date().toISOString()
-        } as ApiResponse
+        } as unknown as AxiosResponse
       },
       (error) => {
         const { response } = error

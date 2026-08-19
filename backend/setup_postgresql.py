@@ -6,9 +6,14 @@ Creates weld_db database and weld_user user
 
 import psycopg2
 import sys
+import os
 
 def setup_postgresql():
     """Setup PostgreSQL database"""
+    postgres_password = os.environ.get("POSTGRES_ADMIN_PASSWORD")
+    app_password = os.environ.get("DATABASE_PASSWORD")
+    if not postgres_password or not app_password:
+        raise RuntimeError("POSTGRES_ADMIN_PASSWORD and DATABASE_PASSWORD are required")
 
     # Connect to PostgreSQL default database (usually postgres)
     try:
@@ -18,7 +23,7 @@ def setup_postgresql():
             port=5432,
             database='postgres',  # Default database
             user='postgres',
-            password='ghzzz123'
+            password=postgres_password
         )
         conn.autocommit = True  # Auto-commit for creating databases
         cursor = conn.cursor()
@@ -32,9 +37,7 @@ def setup_postgresql():
     try:
         # Create user if not exists
         try:
-            cursor.execute("""
-                CREATE USER weld_user WITH PASSWORD 'weld_password';
-            """)
+            cursor.execute("CREATE USER weld_user WITH PASSWORD %s", (app_password,))
             print("SUCCESS: Created user weld_user")
         except psycopg2.errors.DuplicateObject:
             print("INFO: User weld_user already exists")
@@ -61,7 +64,7 @@ def setup_postgresql():
             port=5432,
             database='weld_db',
             user='weld_user',
-            password='weld_password'
+            password=app_password
         )
         conn.autocommit = True
         cursor = conn.cursor()
@@ -82,7 +85,7 @@ def setup_postgresql():
         print("  Port: 5432")
         print("  Database: weld_db")
         print("  User: weld_user")
-        print("  Password: weld_password")
+        print("  Password: configured via DATABASE_PASSWORD")
 
         return True
 

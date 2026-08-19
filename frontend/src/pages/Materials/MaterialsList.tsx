@@ -89,9 +89,8 @@ const MaterialsList: React.FC = () => {
 
       const response = await materialsService.getMaterialsList(params)
 
-      // 后端返回的数据已经被api拦截器包装了一层，所以需要访问response.data.data
-      if (response.success && response.data?.success) {
-        const { items, total: totalCount } = response.data.data
+      if (response.success) {
+        const { items, total: totalCount } = response.data
         setMaterials(items || [])
         setTotal(totalCount || 0)
       } else {

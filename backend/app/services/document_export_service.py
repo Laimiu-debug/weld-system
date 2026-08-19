@@ -31,6 +31,8 @@ except (ImportError, OSError) as e:
 from app.models.wps import WPS
 from app.models.pqr import PQR
 from app.models.ppqr import PPQR
+from app.core.html_security import sanitize_document_html
+from app.core.remote_content import fetch_public_image, safe_weasyprint_url_fetcher
 
 
 class DocumentExportService:
@@ -69,7 +71,7 @@ class DocumentExportService:
         section.right_margin = Inches(0.79)
 
         # 获取HTML内容
-        html_content = wps.document_html or self._generate_default_html(wps)
+        html_content = sanitize_document_html(wps.document_html or self._generate_default_html(wps)) or ""
 
         # 解析HTML并转换为Word
         self._html_to_word(doc, html_content, style=style)
@@ -101,13 +103,13 @@ class DocumentExportService:
             raise ImportError("weasyprint未安装，请运行: pip install weasyprint")
         
         # 获取HTML内容
-        html_content = wps.document_html or self._generate_default_html(wps)
+        html_content = sanitize_document_html(wps.document_html or self._generate_default_html(wps)) or ""
         
         # 生成完整的HTML文档
         full_html = self._generate_pdf_html(wps, html_content)
         
         # 生成PDF
-        pdf_bytes = HTML(string=full_html).write_pdf()
+        pdf_bytes = HTML(string=full_html, url_fetcher=safe_weasyprint_url_fetcher).write_pdf()
         
         return io.BytesIO(pdf_bytes)
     
@@ -229,7 +231,6 @@ class DocumentExportService:
             doc: Word文档对象
             img_element: BeautifulSoup图片元素
         """
-        import requests
         import io
         from urllib.parse import urlparse
 
@@ -289,18 +290,14 @@ class DocumentExportService:
 
             elif img_src.startswith('http://') or img_src.startswith('https://'):
                 # 网络图片
-                response = requests.get(img_src, timeout=10)
-                if response.status_code == 200:
-                    image_stream = io.BytesIO(response.content)
+                image_data, _, _ = fetch_public_image(img_src)
+                image_stream = io.BytesIO(image_data)
 
-                    # 添加图片到Word
-                    para = doc.add_paragraph()
-                    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    run = para.add_run()
-                    run.add_picture(image_stream, width=Inches(5))
-                    print(f"[Word导出] 成功添加网络图片")
-                else:
-                    print(f"[Word导出] 下载图片失败，状态码: {response.status_code}")
+                # 添加图片到Word
+                para = doc.add_paragraph()
+                para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = para.add_run()
+                run.add_picture(image_stream, width=Inches(5))
 
             else:
                 # 本地文件路径（相对或绝对）
@@ -320,7 +317,6 @@ class DocumentExportService:
             cell: python-docx表格单元格对象
             img_element: BeautifulSoup图片元素
         """
-        import requests
         import io
         import base64
         import re
@@ -375,18 +371,14 @@ class DocumentExportService:
 
             elif img_src.startswith('http://') or img_src.startswith('https://'):
                 # 网络图片
-                response = requests.get(img_src, timeout=10)
-                if response.status_code == 200:
-                    image_stream = io.BytesIO(response.content)
+                image_data, _, _ = fetch_public_image(img_src)
+                image_stream = io.BytesIO(image_data)
 
-                    # 添加图片到单元格
-                    para = cell.paragraphs[0] if cell.paragraphs else cell.add_paragraph()
-                    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    run = para.add_run()
-                    run.add_picture(image_stream, width=Inches(3))
-                    print(f"[Word导出] 成功添加表格单元格网络图片")
-                else:
-                    print(f"[Word导出] 表格单元格下载图片失败，状态码: {response.status_code}")
+                # 添加图片到单元格
+                para = cell.paragraphs[0] if cell.paragraphs else cell.add_paragraph()
+                para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = para.add_run()
+                run.add_picture(image_stream, width=Inches(3))
 
             else:
                 # 本地文件路径
@@ -877,7 +869,9 @@ class DocumentExportService:
         section.right_margin = Inches(0.79)
 
         # 获取HTML内容
-        html_content = getattr(pqr, 'document_html', None) or self._generate_default_pqr_html(pqr)
+        html_content = sanitize_document_html(
+            getattr(pqr, 'document_html', None) or self._generate_default_pqr_html(pqr)
+        ) or ""
 
         # 解析HTML并转换为Word
         self._html_to_word(doc, html_content, style=style)
@@ -909,13 +903,15 @@ class DocumentExportService:
             raise ImportError("weasyprint未安装，请运行: pip install weasyprint")
 
         # 获取HTML内容
-        html_content = getattr(pqr, 'document_html', None) or self._generate_default_pqr_html(pqr)
+        html_content = sanitize_document_html(
+            getattr(pqr, 'document_html', None) or self._generate_default_pqr_html(pqr)
+        ) or ""
 
         # 生成完整的HTML文档
         full_html = self._generate_pdf_html_for_pqr(pqr, html_content)
 
         # 生成PDF
-        pdf_bytes = HTML(string=full_html).write_pdf()
+        pdf_bytes = HTML(string=full_html, url_fetcher=safe_weasyprint_url_fetcher).write_pdf()
 
         return io.BytesIO(pdf_bytes)
 
@@ -1082,7 +1078,9 @@ class DocumentExportService:
             section.right_margin = Inches(0.79)
 
             # 获取HTML内容
-            html_content = getattr(ppqr, 'document_html', None) or self._generate_default_ppqr_html(ppqr)
+            html_content = sanitize_document_html(
+                getattr(ppqr, 'document_html', None) or self._generate_default_ppqr_html(ppqr)
+            ) or ""
 
             # 解析HTML并转换为Word
             self._html_to_word(doc, html_content, style=style)
@@ -1121,13 +1119,15 @@ class DocumentExportService:
             raise ImportError("weasyprint未安装，请运行: pip install weasyprint")
 
         # 获取HTML内容
-        html_content = getattr(ppqr, 'document_html', None) or self._generate_default_ppqr_html(ppqr)
+        html_content = sanitize_document_html(
+            getattr(ppqr, 'document_html', None) or self._generate_default_ppqr_html(ppqr)
+        ) or ""
 
         # 生成完整的HTML文档
         full_html = self._generate_pdf_html_for_ppqr(ppqr, html_content)
 
         # 生成PDF
-        pdf_bytes = HTML(string=full_html).write_pdf()
+        pdf_bytes = HTML(string=full_html, url_fetcher=safe_weasyprint_url_fetcher).write_pdf()
 
         return io.BytesIO(pdf_bytes)
 

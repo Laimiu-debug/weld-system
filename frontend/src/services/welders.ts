@@ -28,6 +28,7 @@ export interface Welder {
   
   // 雇佣信息
   employment_date?: string
+  hire_date?: string
   employment_type?: string
   department?: string
   position?: string
@@ -45,6 +46,10 @@ export interface Welder {
   primary_certification_date?: string
   primary_expiry_date?: string
   primary_issuing_authority?: string
+  certification_number?: string
+  certification_level?: string
+  certification_date?: string
+  expiry_date?: string
   
   // 状态信息
   status: string

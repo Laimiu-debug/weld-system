@@ -76,6 +76,10 @@ interface ProductionTask {
   id: string
   taskNumber: string
   taskName: string
+  taskType?: string
+  description?: string
+  technicalRequirements?: string
+  qualityStandards?: string
   projectName: string
   projectCode: string
   wpsId: string
@@ -220,9 +224,7 @@ const ProductionList: React.FC = () => {
         workspace_type: apiWorkspaceType,
       })
 
-      if (response.success && response.data) {
-        setEquipments(response.data.items || [])
-      }
+      setEquipments(response.items || [])
     } catch (error) {
       console.error('获取设备列表失败:', error)
     } finally {
@@ -659,7 +661,7 @@ const ProductionList: React.FC = () => {
           item.id === currentTask!.id
             ? {
                 ...item,
-                status: 'in_progress',
+                status: 'in_progress' as const,
                 actualStartDate: dayjs().format('YYYY-MM-DD'),
                 progressPercentage: 5,
                 actualHours: 0,
@@ -675,7 +677,7 @@ const ProductionList: React.FC = () => {
           item.id === currentTask!.id
             ? {
                 ...item,
-                status: 'paused',
+                status: 'paused' as const,
               }
             : item
         )
@@ -688,7 +690,7 @@ const ProductionList: React.FC = () => {
           item.id === currentTask!.id
             ? {
                 ...item,
-                status: 'completed',
+                status: 'completed' as const,
                 actualEndDate: dayjs().format('YYYY-MM-DD'),
                 progressPercentage: 100,
               }

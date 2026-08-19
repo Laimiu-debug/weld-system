@@ -272,7 +272,6 @@ const EquipmentCategoryManagement: React.FC = () => {
             updatedAt: '2024-01-01',
           },
         ]
-      }
 
     setCategories(mockCategories)
     setFilteredCategories(mockCategories)

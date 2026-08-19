@@ -2,21 +2,16 @@
 # -*- coding: utf-8 -*-
 """持续监控构建进度"""
 
-import paramiko
 import time
+from deployment_ssh import connect_ssh, load_ssh_config
 
-hostname = "43.142.188.252"
-username = "root"
-password = "Weld2024"
-key_file = "server-key.pem"
+config = load_ssh_config()
 
 print("🔍 开始监控构建进度...\n")
 
 while True:
     try:
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(hostname=hostname, username=username, password=password, key_filename=key_file, timeout=10)
+        ssh = connect_ssh(config, timeout=10)
         
         # 检查构建进程
         stdin, stdout, stderr = ssh.exec_command("ps aux | grep 'docker-compose build' | grep -v grep")
@@ -29,7 +24,7 @@ while True:
             print("\n" + "=" * 60)
             print("检查容器状态")
             print("=" * 60)
-            stdin, stdout, stderr = ssh.exec_command("cd /home/ubuntu/weld-system && docker-compose ps")
+            stdin, stdout, stderr = ssh.exec_command(f"cd {config.project_dir} && docker-compose ps")
             print(stdout.read().decode('utf-8'))
             
             # 检查镜像

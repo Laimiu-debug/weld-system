@@ -183,7 +183,7 @@ const WeldJointDiagramGenerator: React.FC<WeldJointDiagramGeneratorProps> = ({ o
       'inner': '内坡口'
     }
     ctx.font = '12px Arial'
-    ctx.fillText(`${jointTypeLabel[p.jointType]} - ${grooveSideLabel[p.grooveSide]}${grooveTypeLabel[p.grooveType]}${groovePositionLabel[p.groovePosition]}`, centerX, 50)
+    ctx.fillText(`${jointTypeLabel[p.jointType]} - ${grooveSideLabel[p.weldingSide || 'single']}${grooveTypeLabel[p.grooveType]}${groovePositionLabel[p.groovePosition]}`, centerX, 50)
 
     // 绘制坡口
     ctx.strokeStyle = '#1890ff'
@@ -215,16 +215,16 @@ const WeldJointDiagramGenerator: React.FC<WeldJointDiagramGeneratorProps> = ({ o
         drawButtJoint(ctx, centerX, centerY, scaledParams)
         break
       case 'lap':
-        drawLapJoint(ctx, centerX, centerY, leftThickness, p.grooveType)
+        drawLapJoint(ctx, centerX, centerY, scaledParams.leftThickness, p.grooveType)
         break
       case 't_joint':
-        drawTJoint(ctx, centerX, centerY, leftThickness, grooveDepth, angle, p.grooveType)
+        drawTJoint(ctx, centerX, centerY, scaledParams.leftThickness, scaledParams.leftGrooveDepth, p.leftGrooveAngle, p.grooveType)
         break
       case 'corner':
-        drawCornerJoint(ctx, centerX, centerY, leftThickness, grooveDepth, angle, p.grooveType)
+        drawCornerJoint(ctx, centerX, centerY, scaledParams.leftThickness, scaledParams.leftGrooveDepth, p.leftGrooveAngle, p.grooveType)
         break
       case 'edge':
-        drawEdgeJoint(ctx, centerX, centerY, leftThickness, grooveDepth, angle, p.grooveType)
+        drawEdgeJoint(ctx, centerX, centerY, scaledParams.leftThickness, scaledParams.leftGrooveDepth, p.leftGrooveAngle, p.grooveType)
         break
     }
 
@@ -254,9 +254,9 @@ const WeldJointDiagramGenerator: React.FC<WeldJointDiagramGeneratorProps> = ({ o
     ctx.font = '10px Arial'
     ctx.fillStyle = '#555'
     ctx.fillText(`板厚: 左${p.leftThickness}mm 右${p.rightThickness}mm`, 20, labelY + 15)
-    ctx.fillText(`坡口角: ${p.grooveAngle}°`, 200, labelY + 15)
+    ctx.fillText(`坡口角: ${p.leftGrooveAngle + p.rightGrooveAngle}°`, 200, labelY + 15)
     ctx.fillText(`根部间隙: ${p.rootGap}mm`, 20, labelY + 30)
-    ctx.fillText(`坡口深: ${p.grooveDepth}mm`, 120, labelY + 30)
+    ctx.fillText(`坡口深: 左${p.leftGrooveDepth}mm 右${p.rightGrooveDepth}mm`, 120, labelY + 30)
     ctx.fillText(`钝边: ${p.bluntEdge}mm`, 220, labelY + 30)
 
     ctx.fillText(`焊层数: ${p.layerCount}`, 20, labelY + 45)

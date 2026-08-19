@@ -3,10 +3,12 @@ export interface User {
   email: string;
   username: string;
   full_name: string;
+  phone?: string;
   membership_tier: 'free' | 'personal_pro' | 'personal_advanced' | 'personal_flagship' | 'enterprise';
   membership_type: 'personal' | 'enterprise';
   is_active: boolean;
   is_admin: boolean;
+  is_verified?: boolean;
   created_at: string;
   last_login_at?: string;
   subscription_expires_at?: string;

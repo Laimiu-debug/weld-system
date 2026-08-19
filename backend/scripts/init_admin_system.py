@@ -75,6 +75,7 @@ def create_default_admin():
 
     from sqlalchemy.orm import sessionmaker
     from app.core.security import get_password_hash
+    from app.core.bootstrap_secrets import require_admin_initial_password
 
     engine = create_engine(settings.DATABASE_URL)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -92,11 +93,13 @@ def create_default_admin():
             print("⚠️  默认管理员用户已存在，跳过创建")
             return
 
+        admin_password = require_admin_initial_password()
+
         # 创建默认管理员用户
         default_admin = User(
             email="Laimiu.new@gmail.com",
             username="Laimiu",
-            hashed_password=get_password_hash("ghzzz123"),
+            hashed_password=get_password_hash(admin_password),
             full_name="系统管理员",
             is_active=True,
             is_verified=True,
@@ -131,8 +134,7 @@ def create_default_admin():
 
         print("✅ 默认管理员用户创建成功")
         print("   邮箱: Laimiu.new@gmail.com")
-        print("   密码: ghzzz123")
-        print("   ⚠️  请在首次登录后立即修改密码！")
+        print("   密码已从 ADMIN_INITIAL_PASSWORD 读取，不会输出")
 
     except Exception as e:
         print(f"❌ 创建默认管理员失败: {e}")
@@ -160,8 +162,8 @@ def main():
         print("3. 访问管理员门户: http://localhost:3001")
         print("4. 使用管理员账号登录")
         print("   邮箱: Laimiu.new@gmail.com")
-        print("   密码: ghzzz123")
-        print("5. 修改默认密码（建议）")
+        print("   密码: 使用 ADMIN_INITIAL_PASSWORD 中设置的值")
+        print("5. 首次登录后轮换初始化密码")
 
     except Exception as e:
         print(f"❌ 初始化失败: {e}")

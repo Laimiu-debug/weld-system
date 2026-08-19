@@ -19,7 +19,7 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install fastapi pydantic pydantic-settings sqlalchemy python-jose passlib python-multipart email-validator python-dotenv httpx starlette pytest psycopg2-binary asyncpg redis beautifulsoup4 pytz python-docx
+          pip install -e ".[dev]"
       - name: Compile
         run: python -m compileall -q app
       - name: Unit tests
@@ -41,11 +41,12 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install
         run: npm ci
+      - name: Type check
+        run: npm run type-check
       - name: Build
         run: npm run build
-      - name: Production audit (informational)
-        run: npm audit --omit=dev --audit-level=high
-        continue-on-error: true
+      - name: Dependency audit
+        run: npm audit --audit-level=moderate
 
   admin-build:
     runs-on: ubuntu-latest
@@ -61,8 +62,9 @@ jobs:
           cache-dependency-path: admin-portal/package-lock.json
       - name: Install
         run: npm ci
+      - name: Type check
+        run: npm run type-check
       - name: Build
         run: npm run build
-      - name: Production audit (informational)
-        run: npm audit --omit=dev --audit-level=high
-        continue-on-error: true
+      - name: Dependency audit
+        run: npm audit --audit-level=moderate

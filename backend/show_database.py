@@ -90,8 +90,8 @@ def show_login_credentials():
             if user.phone:
                 account = user.phone
                 account_type = "手机号"
-                password = "guohuAN123456" if user.phone == "13012410230" else "未知"
-                note = "推荐测试账号" if user.phone == "13012410230" else "需要验证密码"
+                password = "不显示"
+                note = "密码信息不可从数据库查看"
             else:
                 account = user.email
                 account_type = "邮箱"
@@ -104,7 +104,7 @@ def show_login_credentials():
             print(f"{account_type:<10} {account_display:<25} {password:<20} {note:<15}")
 
         print(f"\n特别说明:")
-        print(f"1. 手机号 13012410230 的确认密码是: guohuAN123456")
+        print("1. 密码为单向哈希，无法也不应通过本工具展示")
         print(f"2. 其他账号的密码可能需要重置或查看数据库哈希值")
         print(f"3. 推荐使用手机号 13012410230 进行测试登录")
 

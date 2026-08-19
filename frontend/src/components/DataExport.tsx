@@ -7,6 +7,7 @@ import {
   DatePicker,
   Checkbox,
   Input,
+  InputNumber,
   message,
   Space,
   Row,

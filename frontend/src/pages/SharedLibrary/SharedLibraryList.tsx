@@ -266,7 +266,7 @@ const SharedLibraryList: React.FC = () => {
             {module.dislike_count}
           </Button>
         </Tooltip>,
-        ...(user && module.uploader_id === user.id ? [
+        ...(user && String(module.uploader_id) === String(user.id) ? [
           <Tooltip key="delete" title="删除">
             <Button
               type="text"
@@ -298,7 +298,7 @@ const SharedLibraryList: React.FC = () => {
             {module.tags.length > 0 && (
               <div className="tags">
                 {module.tags.map(tag => (
-                  <Tag key={tag} size="small">{tag}</Tag>
+                  <Tag key={tag}>{tag}</Tag>
                 ))}
               </div>
             )}
@@ -359,7 +359,7 @@ const SharedLibraryList: React.FC = () => {
             {template.dislike_count}
           </Button>
         </Tooltip>,
-        ...(user && template.uploader_id === user.id ? [
+        ...(user && String(template.uploader_id) === String(user.id) ? [
           <Tooltip key="delete" title="删除">
             <Button
               type="text"
@@ -397,7 +397,7 @@ const SharedLibraryList: React.FC = () => {
             {template.tags.length > 0 && (
               <div className="tags">
                 {template.tags.map(tag => (
-                  <Tag key={tag} size="small">{tag}</Tag>
+                  <Tag key={tag}>{tag}</Tag>
                 ))}
               </div>
             )}

@@ -186,9 +186,9 @@ const TableFieldEditor: React.FC<TableFieldEditorProps> = ({ value, onChange }) 
   }
 
   const handleAddColumn = () => {
-    const newRows = tableData.rows.map((row) => ({
+    const newRows: TableRowDefinition[] = tableData.rows.map((row) => ({
       ...row,
-      cells: [...row.cells, { label: '', type: 'text' }]
+      cells: [...row.cells, { label: '', type: 'text' as const }]
     }))
     handleTableChange({
       ...tableData,

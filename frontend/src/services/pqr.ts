@@ -58,7 +58,8 @@ export interface PQRBase {
   qualification_date?: string
   qualified_by?: string
   qualified_by_title?: string
-  approved_by?: string
+  approved_by?: string | number
+  document_html?: string
   approved_date?: string
   failure_reason?: string
   corrective_action?: string
@@ -105,6 +106,15 @@ export interface PQRSummary {
   status: string
   test_date?: string
   qualification_result?: string
+  base_material_spec?: string
+  welding_process?: string
+  wps_number?: string
+  approval_instance_id?: number
+  approval_status?: string
+  workflow_name?: string
+  can_submit_approval?: boolean
+  can_approve?: boolean
+  submitter_id?: string
   created_at: string
   updated_at: string
 }

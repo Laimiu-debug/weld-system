@@ -5,6 +5,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, date
 
 from pydantic import BaseModel, ConfigDict, Field
+from app.core.html_security import SanitizedDocumentHTML
 
 
 # 基础信息 schemas
@@ -119,7 +120,7 @@ class PPQRUpdate(BaseModel):
     approved_by: Optional[int] = Field(None, description="批准人ID")
 
     # 文档编辑模式
-    document_html: Optional[str] = Field(None, description="文档HTML内容（用于文档编辑模式）")
+    document_html: SanitizedDocumentHTML = Field(None, description="文档HTML内容（用于文档编辑模式）")
 
 
 class PPQRResponse(PPQRBase):

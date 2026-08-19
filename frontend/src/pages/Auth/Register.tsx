@@ -93,7 +93,7 @@ const Register: React.FC = () => {
             setErrorInfo({
               type: 'email_exists',
               message: '该邮箱已被注册',
-              account: account
+              account: values.account
             })
             Modal.confirm({
               title: '邮箱已被注册',

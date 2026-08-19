@@ -228,7 +228,6 @@ const Invitations: React.FC = () => {
           <Badge
             status={status === 'pending' ? 'warning' : status === 'accepted' ? 'success' : status === 'expired' ? 'error' : 'default'}
             text={config.text}
-            icon={config.icon}
           />
         )
       },

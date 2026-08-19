@@ -285,7 +285,7 @@ const UserManagement: React.FC = () => {
       onFilter: (value, record) => {
         if (value === 'active') return record.is_active;
         if (value === 'inactive') return !record.is_active;
-        if (value === 'verified') return record.is_verified;
+        if (value === 'verified') return Boolean(record.is_verified);
         if (value === 'unverified') return !record.is_verified;
         return true;
       },

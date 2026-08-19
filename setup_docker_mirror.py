@@ -2,13 +2,11 @@
 """
 配置 Docker 镜像加速器
 """
-import paramiko
 import sys
+from deployment_ssh import connect_ssh, load_ssh_config
 
-SERVER_IP = "43.142.188.252"
-SSH_KEY = "server-key.pem"
-SSH_USER = "root"
-SSH_PASSWORD = "Weld2024"
+SSH_CONFIG = load_ssh_config()
+SERVER_IP = SSH_CONFIG.host
 
 def setup_docker_mirror():
     """配置 Docker 镜像加速"""
@@ -18,17 +16,9 @@ def setup_docker_mirror():
 
     # 连接服务器
     print(f"\n📡 连接服务器 {SERVER_IP}...")
-    ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
+    ssh = None
     try:
-        ssh.connect(
-            hostname=SERVER_IP,
-            username=SSH_USER,
-            password=SSH_PASSWORD,
-            key_filename=SSH_KEY,
-            timeout=30
-        )
+        ssh = connect_ssh(SSH_CONFIG)
         print("✅ 连接成功！\n")
         
         # Docker daemon 配置
@@ -86,7 +76,8 @@ def setup_docker_mirror():
         print(f"\n❌ 错误: {e}")
         sys.exit(1)
     finally:
-        ssh.close()
+        if ssh is not None:
+            ssh.close()
 
 if __name__ == "__main__":
     setup_docker_mirror()

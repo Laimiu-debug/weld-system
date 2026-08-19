@@ -106,7 +106,7 @@ export const ApprovalHistory: React.FC<ApprovalHistoryProps> = ({
       const response = await approvalApi.getHistory(instanceId);
       // 后端返回格式: { success: true, data: [...] }
       // response.data 是整个响应对象，response.data.data 才是历史记录数组
-      const historyData = response.data?.data || response.data || [];
+      const historyData = response.data || [];
       console.log('审批历史数据:', historyData);
       setHistory(Array.isArray(historyData) ? historyData : []);
     } catch (error) {

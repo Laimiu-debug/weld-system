@@ -16,6 +16,7 @@ export interface CompanyEmployee {
   factory_name?: string
   department_id?: string
   department_name?: string
+  department?: string
   position?: string
   permissions: Record<string, boolean>
   data_access_scope: 'factory' | 'company'
@@ -164,6 +165,7 @@ export interface CreateFactoryData {
   contact_person: string
   contact_phone: string
   is_headquarters?: boolean
+  is_active?: boolean
 }
 
 export interface CreateDepartmentData {

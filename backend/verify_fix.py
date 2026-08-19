@@ -4,6 +4,7 @@
 from app.core.database import SessionLocal
 from app.models.user import User
 from app.core.security import verify_password
+from getpass import getpass
 
 db = SessionLocal()
 
@@ -25,13 +26,13 @@ if user:
     
     # 验证密码
     print(f"\n密码验证:")
-    test_password = 'password123'
+    test_password = getpass('请输入要验证的密码: ')
     try:
         is_valid = verify_password(test_password, user.hashed_password)
         if is_valid:
-            print(f"  ✅ 密码 '{test_password}' 验证成功!")
+            print("  ✅ 密码验证成功!")
         else:
-            print(f"  ❌ 密码 '{test_password}' 验证失败")
+            print("  ❌ 密码验证失败")
     except Exception as e:
         print(f"  ❌ 验证出错: {str(e)}")
     

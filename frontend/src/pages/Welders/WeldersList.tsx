@@ -411,7 +411,7 @@ const WeldersList: React.FC = () => {
       title: '操作',
       key: 'actions',
       width: 180,
-      render: (_, record: Welder) => (
+      render: (_: unknown, record: Welder) => (
         <Space>
           <Tooltip title="查看">
             <Button

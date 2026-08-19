@@ -68,6 +68,10 @@ const EnterpriseManagement: React.FC = () => {
     fetchEnterpriseData(1, '');
   };
 
+  const handleRefresh = () => {
+    fetchEnterpriseData(currentPage, searchText);
+  };
+
   // 刷新数据
   const handleExport = () => {
     downloadCsv(
@@ -151,7 +155,7 @@ const EnterpriseManagement: React.FC = () => {
         <div style={{ fontSize: '12px' }}>
           <div><UserOutlined style={{ marginRight: 4 }} />{record.admin_user?.username || 'N/A'}</div>
           <div style={{ color: '#8c8c8c' }}>{record.admin_user?.email || 'N/A'}</div>
-          <Tag color="blue" size="small">管理员</Tag>
+          <Tag color="blue">管理员</Tag>
         </div>
       ),
     },

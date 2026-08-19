@@ -5,6 +5,7 @@ from typing import List, Optional
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
+from app.core.html_security import SanitizedDocumentHTML
 
 
 # 基础信息 schemas
@@ -280,7 +281,7 @@ class PQRUpdate(BaseModel):
     modules_data: Optional[dict] = Field(None, description="模块化数据")
 
     # 文档编辑模式
-    document_html: Optional[str] = Field(None, description="文档HTML内容（用于文档编辑模式）")
+    document_html: SanitizedDocumentHTML = Field(None, description="文档HTML内容（用于文档编辑模式）")
     status: Optional[str] = Field(None, description="状态")
 
 

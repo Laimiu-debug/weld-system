@@ -381,7 +381,7 @@ const ModuleFormRenderer: React.FC<ModuleFormRendererProps> = ({
             .filter(([key]) => key !== 'generated_diagram')
             .map(([fieldKey, field]) => (
               <div key={fieldKey}>
-                {renderField(fieldKey, field, module.id, instance.instanceId)}
+                {renderField(fieldKey, field as FieldDefinition, module.id, instance.instanceId)}
               </div>
             ))}
         </div>

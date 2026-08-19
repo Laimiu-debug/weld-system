@@ -189,7 +189,7 @@ const QualityCreate: React.FC = () => {
     {
       title: '操作',
       key: 'actions',
-      render: (_, record: DefectRecord) => (
+      render: (_: unknown, record: DefectRecord) => (
         <Button
           type="text"
           danger
@@ -250,6 +250,7 @@ const QualityCreate: React.FC = () => {
               </Form.Item>
             </Col>
           </Row>
+          <Row gutter={16}>
             <Col span={12}>
               <Form.Item
                 name="projectName"

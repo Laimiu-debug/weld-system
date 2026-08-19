@@ -45,6 +45,7 @@ import {
   ExportOutlined,
   ScheduleOutlined,
   FlagOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 

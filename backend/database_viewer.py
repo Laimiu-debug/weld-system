@@ -274,13 +274,13 @@ def test_login_credentials():
         for user in users:
             # 如果有手机号，显示手机号；否则显示邮箱
             identifier = user.phone if user.phone else user.email
-            password_hint = "guohuAN123456" if user.phone == "13012410230" else "未知"
+            password_hint = "不显示"
             user_type = "管理员" if user.is_superuser else "普通用户"
 
             print(f"{identifier:<25} {password_hint:<15} {user_type:<10}")
 
         print(f"\n特别注意:")
-        print(f"- 手机号 13012410230 的密码是: guohuAN123456")
+        print("- 密码为单向哈希，本工具不会展示或推测明文密码")
         print(f"- 其他用户的密码需要自行设置或查看数据库")
 
     finally:

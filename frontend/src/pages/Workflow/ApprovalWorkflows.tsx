@@ -79,17 +79,7 @@ const ApprovalWorkflows: React.FC = () => {
       const response = await approvalApi.getWorkflows()
       console.log('[审批工作流] 加载工作流响应:', response)
 
-      // 处理响应数据
-      if (response.data) {
-        // 如果后端返回了包装的数据
-        if (response.data.success && response.data.data) {
-          setWorkflows(response.data.data.items || [])
-        }
-        // 如果后端直接返回了数据
-        else if (response.data.items) {
-          setWorkflows(response.data.items || [])
-        }
-      }
+      setWorkflows(response.data.items || [])
     } catch (error: any) {
       console.error('[审批工作流] 加载失败:', error)
       message.error(error.response?.data?.detail || '加载工作流列表失败')
@@ -613,7 +603,7 @@ const ApprovalWorkflows: React.FC = () => {
                                     placeholder={approverType === 'user' ? '请选择用户' : '请选择审批角色'}
                                     showSearch
                                     filterOption={(input, option) =>
-                                      (option?.children as string)?.toLowerCase().includes(input.toLowerCase())
+                                      String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                                     }
                                   >
                                     {approverType === 'user' ? (

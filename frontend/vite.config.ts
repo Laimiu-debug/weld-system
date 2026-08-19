@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(import.meta.dirname, './src'),
     },
   },
   root: '.',
@@ -39,6 +39,12 @@ export default defineConfig({
           }
           if (id.includes('@tiptap') || id.includes('prosemirror')) {
             return 'editor'
+          }
+          if (id.includes('react-router')) {
+            return 'router'
+          }
+          if (id.includes('@tanstack/react-query')) {
+            return 'query'
           }
           if (
             id.includes('react-dom') ||

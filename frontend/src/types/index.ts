@@ -13,6 +13,7 @@ export interface User {
   email_verified: boolean;
   phone_verified: boolean;
   membership_tier: MembershipTier;
+  member_tier?: MembershipTier;
   membership_type: MembershipType;
   subscription_status: SubscriptionStatus;
   subscription_start_date?: string;
@@ -190,6 +191,8 @@ export interface WPSRecord {
   welder_qualification_requirement?: string;
   inspection_requirements?: Record<string, any>;
   notes?: string;
+  document_html?: string;
+  modules_data?: Record<string, any>;
   attachments?: Record<string, any>;
   tags?: string[];
   reviewed_by?: string;
@@ -465,7 +468,7 @@ export interface PaginatedResponse<T> {
 
 export interface ApiResponse<T = any> {
   success: boolean;
-  data?: T;
+  data: T;
   message?: string;
   error?: {
     code: string;

@@ -81,7 +81,7 @@ export interface FieldModule {
   name: string
   description: string
   icon: string
-  category: 'basic' | 'material' | 'gas' | 'electrical' | 'motion' | 'equipment' | 'calculation'
+  category: 'basic' | 'material' | 'materials' | 'gas' | 'electrical' | 'motion' | 'equipment' | 'calculation' | 'parameters' | 'tests' | 'analysis' | 'evaluation' | 'approval'
   repeatable: boolean  // 是否可重复（用于多层多道焊）
   fields: Record<string, FieldDefinition>
 }

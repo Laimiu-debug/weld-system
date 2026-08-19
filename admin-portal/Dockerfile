@@ -1,5 +1,5 @@
 # 构建阶段
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
@@ -13,7 +13,7 @@ COPY . .
 ARG VITE_API_BASE_URL
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 
-RUN chmod -R 755 node_modules/.bin 2>/dev/null || true && npm run build:check
+RUN chmod -R 755 node_modules/.bin 2>/dev/null || true && npm run build
 
 # 生产阶段
 FROM nginx:alpine

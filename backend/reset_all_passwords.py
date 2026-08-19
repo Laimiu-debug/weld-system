@@ -4,6 +4,7 @@
 from app.core.database import SessionLocal
 from app.models.user import User
 from app.core.security import get_password_hash
+from getpass import getpass
 
 db = SessionLocal()
 
@@ -16,34 +17,13 @@ all_users = db.query(User).all()
 
 print(f"\n总共 {len(all_users)} 个账户\n")
 
-print("选择重置密码:")
-print("1. 重置所有账户密码为: password123")
-print("2. 重置所有账户密码为: Welcome123!")
-print("3. 自定义密码")
-print("4. 取消")
-
-choice = input("\n请选择 (1-4): ").strip()
-
-if choice == '1':
-    new_password = 'password123'
-elif choice == '2':
-    new_password = 'Welcome123!'
-elif choice == '3':
-    new_password = input("请输入新密码: ").strip()
-    if not new_password:
-        print("密码不能为空，已取消")
-        db.close()
-        exit(0)
-elif choice == '4':
-    print("已取消")
-    db.close()
-    exit(0)
-else:
-    print("无效选择，已取消")
+new_password = getpass("请输入所有账户的新密码: ").strip()
+if len(new_password) < 12:
+    print("密码至少需要 12 个字符，已取消")
     db.close()
     exit(0)
 
-print(f"\n确认要将所有 {len(all_users)} 个账户的密码重置为: {new_password}")
+print(f"\n确认要重置所有 {len(all_users)} 个账户的密码")
 confirm = input("输入 'yes' 确认: ").strip().lower()
 
 if confirm != 'yes':
@@ -73,7 +53,6 @@ print("\n" + "=" * 80)
 print(f"重置完成! 成功: {success_count}/{len(all_users)}")
 print("=" * 80)
 
-print(f"\n所有账户的新密码: {new_password}")
 print("\n账户列表:")
 for user in all_users:
     print(f"  - {user.email} (用户名: {user.username})")

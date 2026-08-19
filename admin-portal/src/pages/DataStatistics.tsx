@@ -205,7 +205,9 @@ const DataStatistics: React.FC = () => {
           </Select>
           <RangePicker
             value={dateRange}
-            onChange={(dates) => setDateRange(dates)}
+            onChange={(dates) =>
+              setDateRange(dates?.[0] && dates?.[1] ? [dates[0], dates[1]] : null)
+            }
             style={{ width: 240 }}
           />
           <Button icon={<ReloadOutlined />} onClick={handleRefresh} loading={loading}>
@@ -303,7 +305,7 @@ const DataStatistics: React.FC = () => {
           <Card title="用户等级分布">
             {userStats?.by_tier && (
               <div style={{ padding: '16px 0' }}>
-                {Object.entries(userStats.by_tier).map(([tier, count]) => (
+                {Object.entries(userStats.by_tier as Record<string, number>).map(([tier, count]) => (
                   <div key={tier} style={{ marginBottom: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                       <span>
@@ -334,7 +336,7 @@ const DataStatistics: React.FC = () => {
           <Card title="订阅类型分布">
             {subscriptionStats?.by_type && (
               <div style={{ padding: '16px 0' }}>
-                {Object.entries(subscriptionStats.by_type).map(([type, count]) => (
+                {Object.entries(subscriptionStats.by_type as Record<string, number>).map(([type, count]) => (
                   <div key={type} style={{ marginBottom: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                       <span>

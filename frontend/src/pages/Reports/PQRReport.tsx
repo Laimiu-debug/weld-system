@@ -275,7 +275,7 @@ const PQRReport: React.FC = () => {
             <Text strong>时间范围：</Text>
           </Col>
           <Col>
-            <RangePicker value={dateRange} onChange={setDateRange} />
+            <RangePicker value={dateRange} onChange={(dates) => { if (dates?.[0] && dates[1]) setDateRange([dates[0], dates[1]]) }} />
           </Col>
           <Col>
             <Select placeholder="状态筛选" style={{ width: 120 }} allowClear>

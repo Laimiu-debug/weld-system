@@ -600,7 +600,7 @@ const PerformanceManagement: React.FC = () => {
               </div>
               <div>
                 <div className="flex justify-between mb-1">
-                  <Text>需改进 (<70分)</Text>
+                  <Text>需改进 ({'<'}70分)</Text>
                   <Text>{stats.poor}人</Text>
                 </div>
                 <Progress

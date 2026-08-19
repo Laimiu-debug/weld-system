@@ -1,18 +1,49 @@
-# HTTP 服务器 - 临时配置
+# 首次启动使用的 HTTP 配置。证书签发后重启 nginx 会自动切换到 HTTPS。
 server {
     listen 80;
-    server_name sdhaohan.cn laimiu.sdhaohan.cn api.sdhaohan.cn;
+    server_name sdhaohan.cn;
 
     # Let's Encrypt 验证路径
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
     }
 
-    # 用户门户
     location / {
-        root /usr/share/nginx/html/frontend;
-        try_files $uri $uri/ /index.html;
+        proxy_pass http://frontend:80;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
+}
+
+server {
+    listen 80;
+    server_name laimiu.sdhaohan.cn;
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / {
+        proxy_pass http://admin-portal:80;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+
+server {
+    listen 80;
+    server_name api.sdhaohan.cn;
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / {
+        proxy_pass http://backend:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+
+server {
+    listen 80;
+    server_name lifecard.sdhaohan.cn;
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { proxy_pass http://172.17.0.1:8080; }
 }
 
 # 健康检查

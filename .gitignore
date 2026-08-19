@@ -46,6 +46,12 @@ backend/.env.dev
 # Keep examples
 !.env.example
 
+# TLS/ACME private material (provisioned outside Git during deployment)
+nginx/ssl/
+nginx/certbot/conf/
+*.key
+*.pem
+
 # Database
 *.db
 *.sqlite

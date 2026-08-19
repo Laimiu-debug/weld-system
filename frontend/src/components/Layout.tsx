@@ -12,6 +12,7 @@ import {
   Drawer,
   Input,
   theme,
+  message,
 } from 'antd'
 import {
   DashboardOutlined,
@@ -166,9 +167,6 @@ const Layout: React.FC<LayoutProps> = () => {
           if (response && response.data) {
             setCurrentWorkspace(response.data)
             workspaceService.saveCurrentWorkspaceToStorage(response.data)
-          } else if (response && !response.success) {
-            setCurrentWorkspace(response)
-            workspaceService.saveCurrentWorkspaceToStorage(response)
           }
         } catch (error) {
           console.error('Layout 加载工作区失败:', error)
@@ -178,9 +176,6 @@ const Layout: React.FC<LayoutProps> = () => {
             if (response && response.data) {
               setCurrentWorkspace(response.data)
               workspaceService.saveCurrentWorkspaceToStorage(response.data)
-            } else if (response && !response.success) {
-              setCurrentWorkspace(response)
-              workspaceService.saveCurrentWorkspaceToStorage(response)
             }
           } catch (defaultError) {
             console.error('Layout 获取默认工作区失败:', defaultError)

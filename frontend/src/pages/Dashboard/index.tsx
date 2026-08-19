@@ -36,6 +36,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
 import { DashboardStats } from '@/types'
+import type { ColumnsType } from 'antd/es/table'
 import dashboardService, { RecentActivity } from '@/services/dashboard'
 
 const { Title, Text, Paragraph } = Typography
@@ -206,12 +207,12 @@ const Dashboard: React.FC = () => {
   }
 
   // WPS表格列配置
-  const wpsColumns = [
+  const wpsColumns: ColumnsType<RecentActivity> = [
     {
       title: 'WPS编号',
       dataIndex: 'wps_number',
       key: 'wps_number',
-      render: (text: string, record: WPSRecord) => (
+      render: (text: string, record: RecentActivity) => (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <Button
             type="link"
@@ -243,7 +244,7 @@ const Dashboard: React.FC = () => {
     {
       title: '操作',
       key: 'actions',
-      render: (_, record: WPSRecord) => (
+      render: (_: unknown, record: RecentActivity) => (
         <Space>
           <Tooltip title="查看">
             <Button
@@ -267,12 +268,12 @@ const Dashboard: React.FC = () => {
   ]
 
   // PQR表格列配置
-  const pqrColumns = [
+  const pqrColumns: ColumnsType<RecentActivity> = [
     {
       title: 'PQR编号',
       dataIndex: 'pqr_number',
       key: 'pqr_number',
-      render: (text: string, record: PQRRecord) => (
+      render: (text: string, record: RecentActivity) => (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <Button
             type="link"
@@ -304,7 +305,7 @@ const Dashboard: React.FC = () => {
     {
       title: '操作',
       key: 'actions',
-      render: (_, record: PQRRecord) => (
+      render: (_: unknown, record: RecentActivity) => (
         <Space>
           <Tooltip title="查看">
             <Button
@@ -557,14 +558,14 @@ const Dashboard: React.FC = () => {
                         <div className="overview-number">{stats?.wps_count || 0}</div>
                         <div className="overview-progress">
                           <Progress
-                            percent={stats?.membership_usage.wps_limit > 0 ? ((stats?.membership_usage.wps_usage || 0) / stats.membership_usage.wps_limit) * 100 : 0}
+                            percent={(stats?.membership_usage.wps_limit ?? 0) > 0 ? ((stats?.membership_usage.wps_usage || 0) / (stats?.membership_usage.wps_limit ?? 1)) * 100 : 0}
                             size="small"
                             showInfo={false}
                             strokeColor="#1890ff"
-                            status={stats?.membership_usage.wps_limit > 0 && ((stats?.membership_usage.wps_usage || 0) / stats.membership_usage.wps_limit) >= 0.8 ? 'exception' : 'normal'}
+                            status={(stats?.membership_usage.wps_limit ?? 0) > 0 && ((stats?.membership_usage.wps_usage || 0) / (stats?.membership_usage.wps_limit ?? 1)) >= 0.8 ? 'exception' : 'normal'}
                           />
                           <Text type="secondary" className="progress-text">
-                            {stats?.membership_usage.wps_limit > 0 ? `${stats?.membership_usage.wps_usage || 0}/${stats.membership_usage.wps_limit}` : '未开通'}
+                            {(stats?.membership_usage.wps_limit ?? 0) > 0 ? `${stats?.membership_usage.wps_usage || 0}/${stats?.membership_usage.wps_limit}` : '未开通'}
                           </Text>
                         </div>
                       </div>
@@ -582,14 +583,14 @@ const Dashboard: React.FC = () => {
                         <div className="overview-number">{stats?.pqr_count || 0}</div>
                         <div className="overview-progress">
                           <Progress
-                            percent={stats?.membership_usage.pqr_limit > 0 ? ((stats?.membership_usage.pqr_usage || 0) / stats.membership_usage.pqr_limit) * 100 : 0}
+                            percent={(stats?.membership_usage.pqr_limit ?? 0) > 0 ? ((stats?.membership_usage.pqr_usage || 0) / (stats?.membership_usage.pqr_limit ?? 1)) * 100 : 0}
                             size="small"
                             showInfo={false}
                             strokeColor="#52c41a"
-                            status={stats?.membership_usage.pqr_limit > 0 && ((stats?.membership_usage.pqr_usage || 0) / stats.membership_usage.pqr_limit) >= 0.8 ? 'exception' : 'normal'}
+                            status={(stats?.membership_usage.pqr_limit ?? 0) > 0 && ((stats?.membership_usage.pqr_usage || 0) / (stats?.membership_usage.pqr_limit ?? 1)) >= 0.8 ? 'exception' : 'normal'}
                           />
                           <Text type="secondary" className="progress-text">
-                            {stats?.membership_usage.pqr_limit > 0 ? `${stats?.membership_usage.pqr_usage || 0}/${stats.membership_usage.pqr_limit}` : '未开通'}
+                            {(stats?.membership_usage.pqr_limit ?? 0) > 0 ? `${stats?.membership_usage.pqr_usage || 0}/${stats?.membership_usage.pqr_limit}` : '未开通'}
                           </Text>
                         </div>
                       </div>
@@ -607,14 +608,14 @@ const Dashboard: React.FC = () => {
                         <div className="overview-number">{stats?.ppqr_count || 0}</div>
                         <div className="overview-progress">
                           <Progress
-                            percent={stats?.membership_usage.ppqr_limit > 0 ? ((stats?.membership_usage.ppqr_usage || 0) / stats.membership_usage.ppqr_limit) * 100 : 0}
+                            percent={(stats?.membership_usage.ppqr_limit ?? 0) > 0 ? ((stats?.membership_usage.ppqr_usage || 0) / (stats?.membership_usage.ppqr_limit ?? 1)) * 100 : 0}
                             size="small"
                             showInfo={false}
                             strokeColor="#722ed1"
-                            status={stats?.membership_usage.ppqr_limit > 0 && ((stats?.membership_usage.ppqr_usage || 0) / stats.membership_usage.ppqr_limit) >= 0.8 ? 'exception' : 'normal'}
+                            status={(stats?.membership_usage.ppqr_limit ?? 0) > 0 && ((stats?.membership_usage.ppqr_usage || 0) / (stats?.membership_usage.ppqr_limit ?? 1)) >= 0.8 ? 'exception' : 'normal'}
                           />
                           <Text type="secondary" className="progress-text">
-                            {stats?.membership_usage.ppqr_limit > 0 ? `${stats?.membership_usage.ppqr_usage || 0}/${stats.membership_usage.ppqr_limit}` : '未开通'}
+                            {(stats?.membership_usage.ppqr_limit ?? 0) > 0 ? `${stats?.membership_usage.ppqr_usage || 0}/${stats?.membership_usage.ppqr_limit}` : '未开通'}
                           </Text>
                         </div>
                       </div>

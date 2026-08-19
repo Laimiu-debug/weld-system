@@ -6,9 +6,11 @@ from sqlalchemy.orm import Session
 from app.core.database import SessionLocal, engine
 from app.models.admin import Admin
 from app.core.security import get_password_hash
+from app.core.bootstrap_secrets import require_admin_initial_password
 from datetime import datetime
 
 def create_admin():
+    admin_password = require_admin_initial_password()
     db = SessionLocal()
     try:
         # 检查是否已存在
@@ -16,7 +18,7 @@ def create_admin():
         
         if existing:
             print(f"管理员已存在，更新密码...")
-            existing.hashed_password = get_password_hash("ghzzz123")
+            existing.hashed_password = get_password_hash(admin_password)
             existing.is_active = True
             existing.is_super_admin = True
             existing.admin_level = "super_admin"
@@ -29,7 +31,7 @@ def create_admin():
                 email="Laimiu.new@gmail.com",
                 username="Laimiu.new@gmail.com",
                 full_name="超级管理员",
-                hashed_password=get_password_hash("ghzzz123"),
+                hashed_password=get_password_hash(admin_password),
                 is_active=True,
                 is_super_admin=True,
                 admin_level="super_admin",

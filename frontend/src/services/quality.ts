@@ -221,7 +221,7 @@ export interface QualityInspectionListResponse {
     page_size: number
     total_pages: number
   }
-  message: string
+  message?: string
 }
 
 // ==================== API服务类 ====================

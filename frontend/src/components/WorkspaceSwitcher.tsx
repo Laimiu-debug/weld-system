@@ -129,7 +129,7 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
           // 不再从服务器获取，避免覆盖本地存储的正确工作区
         } else {
           // 存储的工作区无效，清除并重新获取
-          workspaceService.clearCurrentWorkspaceStorage()
+          workspaceService.clearCurrentWorkspaceFromStorage()
           await fetchCurrentWorkspaceFromServer(workspaceData)
         }
       } else {
@@ -149,19 +149,7 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
     try {
       const currentResponse = await workspaceService.getCurrentWorkspace()
 
-      let newWorkspace: Workspace | null = null
-
-      // 处理直接对象格式
-      if (currentResponse && !currentResponse.success) {
-        // 直接是工作区对象
-        newWorkspace = currentResponse
-      } else if (currentResponse?.success && currentResponse?.data) {
-        // ApiResponse格式
-        newWorkspace = currentResponse.data
-      } else if (currentResponse?.data) {
-        // 其他格式
-        newWorkspace = currentResponse.data
-      }
+      const newWorkspace: Workspace | null = currentResponse.data || null
 
       if (newWorkspace) {
         setCurrentWorkspace(newWorkspace)
@@ -221,22 +209,7 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
 
       console.log('切换工作区响应:', response)
 
-      // 处理不同的响应格式
-      let newWorkspace: Workspace | null = null
-
-      if (response?.success && response?.data?.workspace) {
-        // ApiResponse格式
-        newWorkspace = response.data.workspace
-        console.log('使用ApiResponse格式，新工作区:', newWorkspace)
-      } else if (response?.success && response?.workspace) {
-        // 直接的WorkspaceSwitchResponse格式
-        newWorkspace = response.workspace
-        console.log('使用直接响应格式，新工作区:', newWorkspace)
-      } else if (response?.workspace) {
-        // 简化的响应格式
-        newWorkspace = response.workspace
-        console.log('使用简化格式，新工作区:', newWorkspace)
-      }
+      const newWorkspace: Workspace | null = response.data.workspace || null
 
       if (newWorkspace) {
         console.log('切换成功，保存工作区:', newWorkspace)
@@ -327,7 +300,7 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
               </div>
               <div style={{ fontSize: '12px', color: '#666' }}>
                 {typeInfo.text}
-                {formatRoles(workspace.all_roles, workspace.all_departments)}
+                {formatRoles(workspace.all_roles || [], workspace.all_departments || [])}
                 {tierInfo.text && ` • ${tierInfo.text}`}
                 {workspace.factory_name && ` • ${workspace.factory_name}`}
               </div>

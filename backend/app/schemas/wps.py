@@ -5,6 +5,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, date
 
 from pydantic import BaseModel, ConfigDict, Field
+from app.core.html_security import SanitizedDocumentHTML
 
 
 # 基础信息 schemas
@@ -109,7 +110,7 @@ class WPSBase(BaseModel):
     modules_data: Optional[Dict[str, Any]] = Field(None, description="所有模块数据（JSON格式），支持无限自定义")
 
     # 文档编辑模式字段
-    document_html: Optional[str] = Field(None, description="文档HTML内容（用于文档编辑模式）")
+    document_html: SanitizedDocumentHTML = Field(None, description="文档HTML内容（用于文档编辑模式）")
 
     # 保留以下字段用于向后兼容（逐步废弃）
     header_info: Optional[Dict[str, Any]] = Field(None, description="表头数据（JSON格式）- 已废弃，使用 modules_data")
@@ -205,7 +206,7 @@ class WPSUpdate(BaseModel):
     attachments: Optional[str] = Field(None, description="附件文件路径")
 
     # 文档编辑模式
-    document_html: Optional[str] = Field(None, description="文档HTML内容（用于文档编辑模式）")
+    document_html: SanitizedDocumentHTML = Field(None, description="文档HTML内容（用于文档编辑模式）")
 
     # 审核和批准
     reviewed_by: Optional[int] = Field(None, description="审核人ID")

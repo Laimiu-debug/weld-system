@@ -14,6 +14,7 @@ import {
   message,
   Alert,
   Dropdown,
+  Spin,
 } from 'antd'
 import {
   ArrowLeftOutlined,
@@ -26,13 +27,12 @@ import {
   UserOutlined,
   SafetyCertificateOutlined,
 } from '@ant-design/icons'
-import { Welder } from '@/types'
 import dayjs from 'dayjs'
 import WorkHistoryList from '../../components/Welders/WorkHistory/WorkHistoryList'
 import WorkRecordList from '../../components/Welders/WorkRecords/WorkRecordList'
 import TrainingRecordList from '../../components/Welders/TrainingRecords/TrainingRecordList'
 import AssessmentRecordList from '../../components/Welders/AssessmentRecords/AssessmentRecordList'
-import weldersService from '@/services/welders'
+import weldersService, { type Welder } from '@/services/welders'
 import { CertificationList } from '@/components/Welders/Certifications'
 
 const { Title, Text } = Typography
@@ -304,13 +304,7 @@ const WeldersDetail: React.FC = () => {
               <Descriptions.Item label="资质工艺" span={2}>
                 <Space wrap>
                   {welderData.qualified_processes ? (
-                    typeof welderData.qualified_processes === 'string'
-                      ? JSON.parse(welderData.qualified_processes).map((process: string) => (
-                          <Tag key={process} color="blue">
-                            {process}
-                          </Tag>
-                        ))
-                      : welderData.qualified_processes.map((process: string) => (
+                    JSON.parse(welderData.qualified_processes).map((process: string) => (
                           <Tag key={process} color="blue">
                             {process}
                           </Tag>

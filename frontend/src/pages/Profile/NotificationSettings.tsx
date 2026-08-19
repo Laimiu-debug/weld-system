@@ -298,7 +298,7 @@ const NotificationSettingsPage: React.FC = () => {
       title: '操作',
       key: 'actions',
       width: 120,
-      render: (_, record: NotificationRecord) => (
+      render: (_: unknown, record: NotificationRecord) => (
         <Space size="small">
           {!record.read && (
             <Button

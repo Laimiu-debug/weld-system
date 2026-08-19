@@ -901,7 +901,7 @@ const ModuleManagement: React.FC = () => {
 
           {/* 表格 */}
           <Table
-            columns={presetModuleColumns}
+            columns={presetModuleColumns as any}
             dataSource={filteredPresetModules}
             rowKey="id"
             pagination={{

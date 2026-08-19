@@ -122,14 +122,14 @@ const EquipmentList: React.FC = () => {
 
       const response = await equipmentService.getEquipmentList(queryParams)
 
-      if (response.success) {
-        setEquipment(response.data.items)
+      if (response) {
+        setEquipment(response.items)
         setPagination(prev => ({
           ...prev,
-          total: response.data.total
+          total: response.total
         }))
       } else {
-        message.error(response.message || '获取设备列表失败')
+        message.error('获取设备列表失败')
       }
     } catch (error: any) {
       console.error('获取设备列表失败:', error)

@@ -2,11 +2,13 @@
   "name": "welding-admin-portal",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "焊序 - 管理员门户",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "build:check": "tsc && vite build",
+    "type-check": "tsc --noEmit",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "lint:fix": "eslint . --ext ts,tsx --fix"
@@ -19,20 +21,20 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-query": "^3.39.3",
-    "react-router-dom": "^6.30.1",
+    "react-router-dom": "^7.8.2",
     "recharts": "^2.8.0",
     "zustand": "^4.4.1"
   },
   "devDependencies": {
     "@types/react": "^18.2.15",
     "@types/react-dom": "^18.2.7",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
-    "@vitejs/plugin-react": "^4.3.4",
-    "eslint": "^8.45.0",
+    "@typescript-eslint/eslint-plugin": "^8.67.0",
+    "@typescript-eslint/parser": "^8.67.0",
+    "@vitejs/plugin-react": "^6.0.5",
+    "eslint": "^8.57.1",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.3",
-    "typescript": "^5.0.2",
-    "vite": "^5.4.19"
+    "typescript": "^5.9.3",
+    "vite": "^8.2.1"
   }
 }

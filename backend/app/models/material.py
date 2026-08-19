@@ -157,63 +157,6 @@ class WeldingMaterial(Base):
         return f"<WeldingMaterial(id={self.id}, code={self.material_code}, name={self.material_name})>"
 
 
-class MaterialTransaction(Base):
-    """焊材交易记录模型"""
-    
-    __tablename__ = "material_transactions"
-    
-    # 主键
-    id = Column(Integer, primary_key=True, index=True)
-    
-    # ==================== 关联信息 ====================
-    material_id = Column(Integer, ForeignKey("welding_materials.id", ondelete="CASCADE"), nullable=False, index=True, comment="焊材ID")
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True, comment="操作用户ID")
-    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=True, index=True, comment="企业ID")
-    factory_id = Column(Integer, ForeignKey("factories.id", ondelete="SET NULL"), nullable=True, index=True, comment="工厂ID")
-    
-    # ==================== 交易信息 ====================
-    transaction_type = Column(String(50), nullable=False, comment="交易类型: purchase, consume, return, adjust, transfer")
-    transaction_date = Column(DateTime, default=datetime.utcnow, nullable=False, comment="交易日期")
-    quantity = Column(Float, nullable=False, comment="数量")
-    unit = Column(String(50), comment="单位")
-    
-    # ==================== 价格信息 ====================
-    unit_price = Column(Float, comment="单价")
-    total_price = Column(Float, comment="总价")
-    currency = Column(String(10), default="CNY", comment="货币")
-    
-    # ==================== 来源/目标信息 ====================
-    source = Column(String(255), comment="来源")
-    destination = Column(String(255), comment="目标")
-    reference_number = Column(String(100), comment="参考单号")
-    
-    # ==================== 关联业务 ====================
-    related_wps_id = Column(Integer, comment="关联WPS ID")
-    related_production_task_id = Column(Integer, comment="关联生产任务ID")
-    related_welder_id = Column(Integer, comment="关联焊工ID")
-    
-    # ==================== 库存影响 ====================
-    stock_before = Column(Float, comment="交易前库存")
-    stock_after = Column(Float, comment="交易后库存")
-    
-    # ==================== 附加信息 ====================
-    notes = Column(Text, comment="备注")
-    attachments = Column(Text, comment="附件")
-    
-    # ==================== 审计字段 ====================
-    created_by = Column(Integer, ForeignKey("users.id"), nullable=False, comment="创建人ID")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
-    
-    # ==================== 关系 ====================
-    # material = relationship("WeldingMaterial", back_populates="transactions")
-    # user = relationship("User", foreign_keys=[user_id])
-    # company = relationship("Company")
-    # factory = relationship("Factory")
-    
-    def __repr__(self):
-        return f"<MaterialTransaction(id={self.id}, type={self.transaction_type}, quantity={self.quantity})>"
-
-
 class MaterialCategory(Base):
     """焊材分类模型"""
     
@@ -251,8 +194,6 @@ class MaterialTransaction(Base):
     """焊材出入库记录模型"""
 
     __tablename__ = "material_transactions"
-    __table_args__ = {'extend_existing': True}
-
     # 主键
     id = Column(Integer, primary_key=True, index=True)
 

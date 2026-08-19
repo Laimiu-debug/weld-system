@@ -86,7 +86,7 @@ const SubscriptionHistory: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [detailModalVisible, setDetailModalVisible] = useState(false)
   const [selectedSubscription, setSelectedSubscription] = useState<SubscriptionRecord | null>(null)
-  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
+  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>([
     dayjs().subtract(1, 'year'),
     dayjs(),
   ])
@@ -266,7 +266,7 @@ const SubscriptionHistory: React.FC = () => {
       cancelled: { color: 'default', text: '已取消', icon: <ExclamationCircleOutlined /> },
       refunded: { color: 'warning', text: '已退款', icon: <ExclamationCircleOutlined /> },
     }
-    return statusMap[status] || { color: 'default', text: status, icon: null }
+    return statusMap[status as keyof typeof statusMap] || { color: 'default', text: status, icon: null }
   }
 
   // 获取支付方式配置
@@ -277,7 +277,7 @@ const SubscriptionHistory: React.FC = () => {
       bank: { color: 'orange', text: '银行转账', icon: <BankOutlined /> },
       credit_card: { color: 'purple', text: '信用卡', icon: <CreditCardOutlined /> },
     }
-    return methodMap[method] || { color: 'default', text: method, icon: null }
+    return methodMap[method as keyof typeof methodMap] || { color: 'default', text: method, icon: null }
   }
 
   // 获取套餐配置
@@ -288,7 +288,7 @@ const SubscriptionHistory: React.FC = () => {
       enterprise: { color: 'purple', text: '企业版' },
       custom: { color: 'orange', text: '定制版' },
     }
-    return planMap[type] || { color: 'default', text: type }
+    return planMap[type as keyof typeof planMap] || { color: 'default', text: type }
   }
 
   // 过滤数据
@@ -498,7 +498,7 @@ const SubscriptionHistory: React.FC = () => {
           <Col xs={24} sm={12} md={6}>
             <RangePicker
               value={dateRange}
-              onChange={setDateRange}
+              onChange={(dates) => setDateRange(dates?.[0] && dates?.[1] ? [dates[0], dates[1]] : null)}
               style={{ width: '100%' }}
             />
           </Col>

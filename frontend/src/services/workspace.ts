@@ -7,15 +7,19 @@ export interface Workspace {
   id: string
   name: string
   description: string
-  user_id: number
+  user_id?: number
   company_id?: number
   factory_id?: number
   factory_name?: string
-  is_default: boolean
+  is_default?: boolean
   role?: string
+  department?: string
   company_role_id?: number
   membership_tier: string
   quota_info: QuotaInfo
+  status?: 'active' | 'inactive'
+  member_count?: number
+  created_at?: string
 }
 
 export type WorkspaceType = 'personal' | 'enterprise'
@@ -167,7 +171,7 @@ class WorkspaceService {
       'enterprise_pro': { text: '企业版PRO', color: 'cyan' },
       'enterprise_pro_max': { text: '企业版PRO MAX', color: 'red' }
     }
-    return tierMap[tier] || { text: tier, color: 'default' }
+    return tierMap[tier as keyof typeof tierMap] || { text: tier, color: 'default' }
   }
 
   /**
@@ -181,7 +185,7 @@ class WorkspaceService {
       'manager': { text: '经理', color: 'orange' },
       'employee': { text: '员工', color: 'blue' }
     }
-    return roleMap[role] || { text: role, color: 'default' }
+    return roleMap[role as keyof typeof roleMap] || { text: role, color: 'default' }
   }
 
   /**

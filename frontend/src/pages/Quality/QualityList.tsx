@@ -84,8 +84,8 @@ const QualityList: React.FC = () => {
 
       const response = await qualityService.getQualityInspectionList(params)
 
-      if (response.success && response.data?.success) {
-        const { items, total: totalCount } = response.data.data
+      if (response.success) {
+        const { items, total: totalCount } = response.data
         setInspections(items || [])
         setTotal(totalCount || 0)
       } else {

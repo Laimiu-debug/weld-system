@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import engine, SessionLocal
 from app.core.security import get_password_hash
+from app.core.bootstrap_secrets import require_admin_initial_password
 
 
 def init_minimal_data():
@@ -39,7 +40,7 @@ def init_minimal_data():
 
         # 2. 确保管理员用户存在
         admin_email = "Laimiu.new@gmail.com"
-        admin_password = "ghzzz123"
+        admin_password = require_admin_initial_password()
 
         # 检查管理员用户是否存在
         result = db.execute(text("SELECT id FROM users WHERE email = :email"), {"email": admin_email}).fetchone()

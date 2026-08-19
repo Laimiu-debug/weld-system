@@ -15,6 +15,7 @@ import {
   Statistic,
   Alert,
   Select,
+  DatePicker,
   InputNumber,
   Descriptions,
   Progress,

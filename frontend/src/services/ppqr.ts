@@ -57,6 +57,8 @@ export interface PPQRBase {
   
   // JSONB字段 - 模块化数据
   module_data?: Record<string, any>
+  modules_data?: Record<string, any>
+  document_html?: string
   
   // 参数组数据（可能有多组）
   parameter_groups?: ParameterGroup[]

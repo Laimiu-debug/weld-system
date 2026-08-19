@@ -299,7 +299,7 @@ class EquipmentService {
    */
   async getEquipmentDetail(equipmentId: string): Promise<ApiResponse<Equipment>> {
     const response = await apiService.get<Equipment>(`/equipment/${equipmentId}`)
-    return response.data
+    return response
   }
 
   /**
@@ -315,7 +315,7 @@ class EquipmentService {
       `/equipment/?workspace_type=${workspaceType}`,
       data
     )
-    return response.data
+    return response
   }
 
   /**
@@ -343,7 +343,7 @@ class EquipmentService {
       `/equipment/${equipmentId}?workspace_type=${workspaceType}`,
       data
     )
-    return response.data
+    return response
   }
 
   /**
@@ -357,7 +357,7 @@ class EquipmentService {
     const response = await apiService.delete<void>(
       `/equipment/${equipmentId}?workspace_type=${workspaceType}`
     )
-    return response.data
+    return response
   }
 
   // ==================== 设备状态管理 ====================
@@ -367,7 +367,7 @@ class EquipmentService {
    */
   async updateEquipmentStatus(equipmentId: string, data: StatusUpdateData): Promise<ApiResponse<Equipment>> {
     const response = await apiService.put<Equipment>(`/equipment/${equipmentId}/status`, data)
-    return response.data
+    return response
   }
 
   // ==================== 设备统计和提醒 ====================
@@ -383,7 +383,7 @@ class EquipmentService {
     const response = await apiService.get<EquipmentStatistics>(
       `/equipment/statistics/overview?workspace_type=${workspaceType}`
     )
-    return response.data
+    return response
   }
 
   /**
@@ -391,7 +391,7 @@ class EquipmentService {
    */
   async getMaintenanceAlerts(days: number = 30): Promise<ApiResponse<{ items: MaintenanceAlert[], total: number }>> {
     const response = await apiService.get<{ items: MaintenanceAlert[], total: number }>(`/equipment/maintenance/alerts?days=${days}`)
-    return response.data
+    return response
   }
 
   async getMaintenanceRecords(params?: {
@@ -408,7 +408,7 @@ class EquipmentService {
     const response = await apiService.get<{ items: MaintenanceRecordItem[], total: number }>(
       `/equipment/maintenance-records?${queryParams.toString()}`
     )
-    return response.data
+    return response
   }
 
   async createMaintenanceRecord(
@@ -420,7 +420,7 @@ class EquipmentService {
       `/equipment/maintenance-records?workspace_type=${workspaceType}`,
       data
     )
-    return response.data
+    return response
   }
 
   async getUsageRecords(params?: {
@@ -437,7 +437,7 @@ class EquipmentService {
     const response = await apiService.get<{ items: UsageRecordItem[], total: number }>(
       `/equipment/usage-records?${queryParams.toString()}`
     )
-    return response.data
+    return response
   }
 
   async createUsageRecord(data: CreateUsageRecordData): Promise<ApiResponse<UsageRecordItem>> {
@@ -447,7 +447,7 @@ class EquipmentService {
       `/equipment/usage-records?workspace_type=${workspaceType}`,
       data
     )
-    return response.data
+    return response
   }
 
   // ==================== 工具方法 ====================

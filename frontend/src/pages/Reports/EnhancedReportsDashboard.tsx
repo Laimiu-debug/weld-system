@@ -335,7 +335,6 @@ const EnhancedReportsDashboard: React.FC = () => {
               title="PQR完成率"
               value={Number(stats.averageQualityRate)}
               precision={1}
-              suffix="%"
               prefix={<BarChartOutlined />}
               valueStyle={{ color: '#52c41a' }}
               suffix={
@@ -363,7 +362,6 @@ const EnhancedReportsDashboard: React.FC = () => {
             <Statistic
               title="质量检验通过率"
               value={Math.round((stats.passedInspections / stats.totalInspections) * 100)}
-              suffix="%"
               prefix={<TrophyOutlined />}
               valueStyle={{ color: '#fa8c16' }}
               suffix={
@@ -393,7 +391,6 @@ const EnhancedReportsDashboard: React.FC = () => {
               value={stats.totalMaterialCost}
               prefix="¥"
               precision={0}
-              prefix={<FireOutlined />}
               valueStyle={{ color: '#722ed1' }}
               suffix={
                 <span className="text-xs text-red-500">

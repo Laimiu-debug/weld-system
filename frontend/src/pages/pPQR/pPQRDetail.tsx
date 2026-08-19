@@ -56,8 +56,8 @@ interface PPQRDetailData {
   id: number
   title: string
   ppqr_number: string
-  revision: string
-  status: string
+  revision?: string
+  status?: string
   test_date?: string
   test_conclusion?: string
   convert_to_pqr?: string
@@ -391,7 +391,7 @@ const PPQRDetail: React.FC = () => {
 
   // 提取所有字段用于基本信息显示
   const allFields = extractAllFieldsFromModules(ppqrData.modules_data)
-  const statusConfig = getStatusConfig(ppqrData.status)
+  const statusConfig = getStatusConfig(ppqrData.status || 'draft')
 
   return (
     <div style={{ padding: '24px' }}>
@@ -506,9 +506,8 @@ const PPQRDetail: React.FC = () => {
                             console.warn('表格字段缺少 tableDefinition:', {
                               fieldKey,
                               fieldDef,
-                              moduleId,
+                              moduleId: moduleContent.moduleId,
                               module,
-                              customModule
                             })
                           }
 

@@ -4,6 +4,7 @@
 from app.core.database import SessionLocal
 from app.models.user import User
 from app.core.security import get_password_hash
+from getpass import getpass
 
 db = SessionLocal()
 
@@ -34,13 +35,14 @@ print(f"  是否激活: {user.is_active}")
 print(f"  是否验证: {user.is_verified}")
 
 # 输入新密码
-new_password = input("\n请输入新密码 (留空使用默认密码 'password123'): ").strip()
-
-if not new_password:
-    new_password = 'password123'
+new_password = getpass("\n请输入新密码: ").strip()
+if len(new_password) < 12:
+    print("密码至少需要 12 个字符")
+    db.close()
+    exit(0)
 
 # 确认
-print(f"\n确认要将账户 {email} 的密码重置为: {new_password}")
+print(f"\n确认要重置账户 {email} 的密码")
 confirm = input("输入 'yes' 确认: ").strip().lower()
 
 if confirm != 'yes':
@@ -58,7 +60,6 @@ try:
     print("✅ 密码重置成功!")
     print("=" * 80)
     print(f"\n账户: {user.email}")
-    print(f"新密码: {new_password}")
     
 except Exception as e:
     print(f"\n❌ 密码重置失败: {str(e)}")

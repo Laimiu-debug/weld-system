@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import engine, SessionLocal
 from app.core.security import get_password_hash
+from app.core.bootstrap_secrets import require_admin_initial_password
 
 
 def init_admin_data():
@@ -27,7 +28,7 @@ def init_admin_data():
 
         # 1. Ensure admin user exists in users table
         admin_email = "Laimiu.new@gmail.com"
-        admin_password = "ghzzz123"
+        admin_password = require_admin_initial_password()
 
         # Check if admin user exists in users table
         result = db.execute(text("SELECT id FROM users WHERE email = :email"), {"email": admin_email}).fetchone()

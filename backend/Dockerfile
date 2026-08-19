@@ -33,20 +33,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# 复制依赖文件
-COPY requirements.txt .
+# 只安装生产运行依赖
+COPY requirements.prod.txt .
 
 # 配置 pip 使用阿里云镜像源并安装 Python 依赖
 RUN pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/ && \
     pip config set install.trusted-host mirrors.aliyun.com && \
     pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.prod.txt
+
+# 使用非 root 用户运行应用
+RUN addgroup --system app && adduser --system --ingroup app app
 
 # 复制应用代码
-COPY . .
+COPY --chown=app:app . .
 
 # 创建上传目录
-RUN mkdir -p /app/storage/uploads
+RUN mkdir -p /app/storage/uploads && chown -R app:app /app/storage
+
+USER app
 
 # 暴露端口
 EXPOSE 8000

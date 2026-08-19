@@ -66,9 +66,6 @@ const WPSDocumentEditor: React.FC<WPSDocumentEditorProps> = ({
           loading: 'lazy',
           style: 'max-width: 100%; height: auto;'
         },
-        renderHTML({ HTMLAttributes }) {
-          return ['img', { ...HTMLAttributes, loading: 'lazy' }]
-        },
       }),
       TextAlign.configure({
         types: ['heading', 'paragraph'],

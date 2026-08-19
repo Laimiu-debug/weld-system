@@ -37,23 +37,13 @@ import {
 import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import { useAuthStore } from '@/store/authStore'
-import { workspaceService } from '@/services/workspace'
+import { workspaceService, type Workspace } from '@/services/workspace'
 import enterpriseService from '@/services/enterprise'
 import { triggerWorkspaceSwitch } from '@/contexts/MembershipContext'
 import { useMembership } from '@/contexts/MembershipContext'
 
 const { Title, Text } = Typography
 
-
-interface Workspace {
-  id: string
-  name: string
-  type: 'personal' | 'enterprise'
-  status: 'active' | 'inactive'
-  member_count: number
-  created_at: string
-  role: string
-}
 
 const PersonalCenter: React.FC = () => {
   const navigate = useNavigate()
@@ -277,19 +267,7 @@ const PersonalCenter: React.FC = () => {
         workspace_id: workspace.id
       })
 
-      // 处理不同的响应格式
-      let newWorkspace: Workspace | null = null
-
-      if (response?.success && response?.data?.workspace) {
-        // ApiResponse格式
-        newWorkspace = response.data.workspace
-      } else if (response?.success && response?.workspace) {
-        // 直接的WorkspaceSwitchResponse格式
-        newWorkspace = response.workspace
-      } else if (response?.workspace) {
-        // 简化的响应格式
-        newWorkspace = response.workspace
-      }
+      const newWorkspace: Workspace | null = response.data.workspace || null
 
       if (newWorkspace) {
         // 更新当前工作区
@@ -599,7 +577,7 @@ const PersonalCenter: React.FC = () => {
       <div>
         <div className="flex justify-between items-center mb-3">
           <Title level={5} className="mb-0">会员权益</Title>
-          {membershipInfo.nextTier && (
+          {membershipInfo?.nextTier && (
             <Button type="primary" size="small">
               升级到{membershipInfo.nextTierName}
             </Button>
@@ -613,7 +591,7 @@ const PersonalCenter: React.FC = () => {
             </div>
           ))}
         </div>
-        {membershipInfo.nextTier && (
+        {membershipInfo?.nextTier && (
           <Alert
             message={`升级到${membershipInfo.nextTierName}只需 ${membershipInfo.upgradePrice}`}
             type="info"
@@ -696,10 +674,10 @@ const PersonalCenter: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <span>{workspace.name}</span>
                     {workspace.type === 'enterprise' && (
-                      <Tag color="blue" size="small">企业</Tag>
+                      <Tag color="blue">企业</Tag>
                     )}
                     {currentWorkspace?.id === workspace.id && (
-                      <Tag color="green" size="small">当前</Tag>
+                      <Tag color="green">当前</Tag>
                     )}
                   </div>
                 }

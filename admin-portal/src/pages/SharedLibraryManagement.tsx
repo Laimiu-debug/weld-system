@@ -92,6 +92,8 @@ interface SharedTemplate {
   is_featured: boolean;
   featured_order: number;
   tags: string[];
+  difficulty_level?: string;
+  fields?: never;
   module_instances?: any;
 }
 
@@ -341,7 +343,7 @@ const SharedLibraryManagement: React.FC = () => {
     if (!currentItem) return;
 
     try {
-      const resourceType = 'name' in currentItem && currentItem.fields ? 'module' : 'template';
+      const resourceType = 'fields' in currentItem ? 'module' : 'template';
       await SharedLibraryService.reviewSharedResource(
         resourceType,
         currentItem.id,
@@ -385,7 +387,7 @@ const SharedLibraryManagement: React.FC = () => {
     if (!currentItem) return;
 
     try {
-      const resourceType = 'name' in currentItem && currentItem.fields ? 'module' : 'template';
+      const resourceType = 'fields' in currentItem ? 'module' : 'template';
       await SharedLibraryService.setFeaturedResource(
         resourceType,
         currentItem.id,
