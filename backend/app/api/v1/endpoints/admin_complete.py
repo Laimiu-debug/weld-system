@@ -97,7 +97,7 @@ def get_system_statistics(db: Session) -> Dict[str, Any]:
 
 
 @router.get("/dashboard")
-async def get_dashboard_data(
+def get_dashboard_data(
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:
@@ -164,7 +164,7 @@ async def get_dashboard_data(
 
 
 @router.get("/users")
-async def get_users(
+def get_users(
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
@@ -275,7 +275,7 @@ async def get_users(
 
 
 @router.get("/users/{user_id}")
-async def get_user_detail(
+def get_user_detail(
     user_id: str,
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -364,7 +364,7 @@ async def get_user_detail(
 
 
 @router.put("/users/{user_id}")
-async def update_user(
+def update_user(
     user_id: str,
     user_data: Dict[str, Any],
     db: Session = Depends(get_db),
@@ -449,7 +449,7 @@ async def update_user(
 
 
 @router.get("/system-stats")
-async def get_system_stats(
+def get_system_stats(
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:
@@ -495,7 +495,7 @@ async def get_system_stats(
 
 
 @router.get("/system-logs")
-async def get_system_logs(
+def get_system_logs(
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(50, ge=1, le=200, description="每页数量"),
@@ -564,7 +564,7 @@ async def get_system_logs(
 
 
 @router.post("/users/{user_id}/reset-quota")
-async def reset_user_quota(
+def reset_user_quota(
     user_id: str,
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)

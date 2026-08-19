@@ -18,6 +18,8 @@ import {
 import { SaveOutlined, ArrowLeftOutlined, UploadOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
+import { createProductionTask } from '@/services/production'
+import workspaceService from '@/services/workspace'
 
 const { Title } = Typography
 const { Option } = Select
@@ -31,8 +33,33 @@ const ProductionCreate: React.FC = () => {
   const handleSubmit = async (values: any) => {
     setLoading(true)
     try {
-      // 模拟API调用
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      const currentWorkspace = workspaceService.getCurrentWorkspaceFromStorage()
+      const workspaceType = currentWorkspace?.type === 'enterprise' ? 'enterprise' : 'personal'
+      const priority = values.priority === 'medium' ? 'normal' : values.priority
+      await createProductionTask(
+        {
+          task_number: `TASK-${dayjs().format('YYYYMMDDHHmmss')}`,
+          task_name: values.taskName,
+          task_type: values.taskType,
+          description: [
+            values.projectName ? `项目：${values.projectName}` : '',
+            values.assignedWelder ? `焊工：${values.assignedWelder}` : '',
+            values.equipment ? `设备：${values.equipment}` : '',
+            values.materialSpec ? `材料：${values.materialSpec}` : '',
+            values.description,
+            values.safetyRequirements ? `安全要求：${values.safetyRequirements}` : '',
+          ].filter(Boolean).join('\n'),
+          technical_requirements: values.technicalRequirements,
+          quality_standards: values.wpsStandard,
+          planned_start_date: values.startDate ? values.startDate.format('YYYY-MM-DD') : undefined,
+          planned_end_date: values.endDate ? values.endDate.format('YYYY-MM-DD') : undefined,
+          status: values.status === 'planning' ? 'pending' : (values.status || 'pending'),
+          priority,
+        },
+        workspaceType,
+        workspaceType === 'enterprise' ? currentWorkspace?.company_id : undefined,
+        currentWorkspace?.factory_id
+      )
       message.success('生产任务创建成功')
       navigate('/production')
     } catch (error) {

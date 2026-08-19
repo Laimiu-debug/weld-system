@@ -20,6 +20,9 @@ import {
 import { SaveOutlined, ArrowLeftOutlined, UploadOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
+import qualityService from '@/services/quality'
+import workspaceService from '@/services/workspace'
+import { useAuthStore } from '@/store/authStore'
 
 const { Title } = Typography
 const { Option } = Select
@@ -41,11 +44,39 @@ const QualityCreate: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [defects, setDefects] = useState<DefectRecord[]>([])
 
+  const { user } = useAuthStore()
+
   const handleSubmit = async (values: any) => {
     setLoading(true)
     try {
-      // 模拟API调用
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      const currentWorkspace = workspaceService.getCurrentWorkspaceFromStorage()
+      const workspaceType = currentWorkspace?.type === 'enterprise' ? 'enterprise' : 'personal'
+      const qualified = values.inspectionResult === 'qualified'
+      await qualityService.createQualityInspection(
+        {
+          inspection_number: values.inspectionNumber,
+          inspection_type: values.inspectionType,
+          inspection_date: values.inspectionDate ? values.inspectionDate.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD'),
+          inspector_id: Number(user?.id) || 0,
+          inspector_name: values.inspector,
+          welder_name: values.welder,
+          weld_location: values.projectName,
+          inspection_method: values.weldingMethod,
+          inspection_standard: values.wpsStandard,
+          result: values.inspectionResult,
+          is_qualified: qualified,
+          defects_found: defects.length,
+          defect_details: JSON.stringify(defects),
+          other_defect_description: [
+            values.inspectionDescription,
+            values.conclusion ? `结论：${values.conclusion}` : '',
+          ].filter(Boolean).join('\n'),
+          corrective_actions: values.recommendations,
+        },
+        workspaceType,
+        workspaceType === 'enterprise' ? currentWorkspace?.company_id : undefined,
+        currentWorkspace?.factory_id
+      )
       message.success('质量检验记录创建成功')
       navigate('/quality')
     } catch (error) {

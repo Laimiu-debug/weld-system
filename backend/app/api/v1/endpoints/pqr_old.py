@@ -10,7 +10,7 @@ router = APIRouter()
 
 
 @router.get("/")
-async def get_pqr_list(
+def get_pqr_list(
     current_user: dict = Depends(deps.get_current_user)
 ) -> Any:
     del current_user
@@ -18,7 +18,7 @@ async def get_pqr_list(
 
 
 @router.post("/")
-async def create_pqr(
+def create_pqr(
     current_user: dict = Depends(deps.get_current_user)
 ) -> Any:
     del current_user

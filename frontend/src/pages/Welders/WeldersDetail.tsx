@@ -13,7 +13,7 @@ import {
   Modal,
   message,
   Alert,
-  Spin,
+  Dropdown,
 } from 'antd'
 import {
   ArrowLeftOutlined,
@@ -138,9 +138,55 @@ const WeldersDetail: React.FC = () => {
     return phone
   }
 
-  // 导出焊工信息
-  const handleExport = () => {
-    message.info('导出功能开发中...')
+  const handleExport = (format: 'csv' | 'json') => {
+    if (!welderData) return
+    const extra = welderData as Welder & {
+      primary_certification_number?: string
+      primary_certification_level?: string
+      primary_certification_date?: string
+      primary_expiry_date?: string
+    }
+    const payload: Record<string, string> = {
+      welder_code: extra.welder_code || '',
+      full_name: extra.full_name || '',
+      phone: extra.phone || '',
+      certification_number: extra.primary_certification_number || extra.certification_number || '',
+      certification_level: extra.primary_certification_level || extra.certification_level || '',
+      certification_date: extra.primary_certification_date || extra.certification_date || '',
+      expiry_date: extra.primary_expiry_date || extra.expiry_date || '',
+      is_active: extra.is_active ? '在职' : '离职',
+    }
+    const filename = `${extra.welder_code || 'welder'}-${dayjs().format('YYYYMMDD')}`
+    switch (format) {
+      case 'json': {
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `${filename}.json`
+        link.click()
+        URL.revokeObjectURL(url)
+        message.success('已导出 JSON')
+        return
+      }
+      case 'csv': {
+        const rows = [['字段', '值'], ...Object.entries(payload)]
+        const csv = `\uFEFF${rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n')}`
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `${filename}.csv`
+        link.click()
+        URL.revokeObjectURL(url)
+        message.success('已导出 CSV')
+        return
+      }
+      default: {
+        const exhaustive: never = format
+        return exhaustive
+      }
+    }
   }
 
   if (loading) {
@@ -185,12 +231,18 @@ const WeldersDetail: React.FC = () => {
             <Title level={2} style={{ margin: 0 }}>焊工详情</Title>
           </Space>
           <Space>
-            <Button
-              icon={<DownloadOutlined />}
-              onClick={handleExport}
+            <Dropdown
+              menu={{
+                items: [
+                  { key: 'csv', label: '导出 CSV', onClick: () => handleExport('csv') },
+                  { key: 'json', label: '导出 JSON', onClick: () => handleExport('json') },
+                ],
+              }}
             >
-              导出信息
-            </Button>
+              <Button icon={<DownloadOutlined />}>
+                导出信息
+              </Button>
+            </Dropdown>
             <Button
               icon={<DeleteOutlined />}
               danger

@@ -17,7 +17,7 @@ router = APIRouter()
 
 
 @router.get("/")
-async def get_notifications(
+def get_notifications(
     unread_only: bool = Query(False, description="只获取未读通知"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
@@ -123,7 +123,7 @@ async def get_notifications(
 
 
 @router.get("/unread-count")
-async def get_unread_count(
+def get_unread_count(
     current_user = Depends(deps.get_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
@@ -188,7 +188,7 @@ async def get_unread_count(
 
 
 @router.post("/{notification_id}/mark-read")
-async def mark_notification_as_read(
+def mark_notification_as_read(
     notification_id: int,
     current_user = Depends(deps.get_current_user),
     db: Session = Depends(get_db)
@@ -235,7 +235,7 @@ async def mark_notification_as_read(
 
 
 @router.post("/mark-all-read")
-async def mark_all_notifications_as_read(
+def mark_all_notifications_as_read(
     current_user = Depends(deps.get_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
@@ -296,7 +296,7 @@ async def mark_all_notifications_as_read(
 
 
 @router.delete("/{notification_id}")
-async def delete_notification(
+def delete_notification(
     notification_id: int,
     current_user = Depends(deps.get_current_user),
     db: Session = Depends(get_db)

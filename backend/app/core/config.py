@@ -93,6 +93,8 @@ class Settings(BaseSettings):
     EMAILS_FROM_EMAIL: str = "noreply@yourdomain.com"
     EMAILS_FROM_NAME: str = "焊序"
     EMAIL_RESET_TOKEN_EXPIRE_HOURS: int = 4
+    EMAIL_VERIFY_TOKEN_EXPIRE_HOURS: int = 48
+    FRONTEND_URL: str = "http://localhost:3000"
 
     # SendGrid配置（可选）
     SENDGRID_API_KEY: Optional[str] = None

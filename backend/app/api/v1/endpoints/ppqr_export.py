@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.core.document_access import require_document_access
+from app.core.rate_limit import enforce_export_limit
 from app.models.user import User
 from app.models.ppqr import PPQR
 from app.services.document_export_service import DocumentExportService
@@ -20,7 +21,7 @@ router = APIRouter()
 
 
 @router.post("/{ppqr_id}/export/word")
-async def export_ppqr_to_word(
+def export_ppqr_to_word(
     ppqr_id: int,
     style: str = "blue_white",
     db: Session = Depends(get_db),
@@ -41,6 +42,7 @@ async def export_ppqr_to_word(
     Returns:
         Word文档文件流
     """
+    enforce_export_limit(current_user.id)
     ppqr = require_document_access(db, PPQR, ppqr_id, current_user, "pPQR不存在")
 
     try:
@@ -64,7 +66,7 @@ async def export_ppqr_to_word(
 
 
 @router.post("/{ppqr_id}/export/pdf")
-async def export_ppqr_to_pdf(
+def export_ppqr_to_pdf(
     ppqr_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -80,6 +82,7 @@ async def export_ppqr_to_pdf(
     Returns:
         PDF文档文件流
     """
+    enforce_export_limit(current_user.id)
     ppqr = require_document_access(db, PPQR, ppqr_id, current_user, "pPQR不存在")
 
     try:

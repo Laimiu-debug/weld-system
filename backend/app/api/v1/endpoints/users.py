@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 @router.get("/", response_model=List[UserResponse])
-async def read_users(
+def read_users(
     db: Session = Depends(deps.get_db),
     skip: int = 0,
     limit: int = 100,
@@ -28,7 +28,7 @@ async def read_users(
 
 
 @router.post("/", response_model=UserResponse)
-async def create_user(
+def create_user(
     user_in: UserCreate,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_admin_user)
@@ -39,7 +39,7 @@ async def create_user(
 
 
 @router.get("/me", response_model=UserResponse)
-async def read_user_me(
+def read_user_me(
     current_user: User = Depends(deps.get_current_user),
     db: Session = Depends(deps.get_db)
 ) -> Any:
@@ -55,7 +55,7 @@ async def read_user_me(
 
 
 @router.put("/me", response_model=UserResponse)
-async def update_user_me(
+def update_user_me(
     user_in: UserUpdate,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user)
@@ -72,7 +72,7 @@ async def update_user_me(
 
 
 @router.get("/me-membership")
-async def get_user_membership_info(
+def get_user_membership_info(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user)
 ) -> Any:
@@ -108,7 +108,7 @@ async def get_user_membership_info(
 
 
 @router.get("/me-usage")
-async def get_user_usage_stats(
+def get_user_usage_stats(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user)
 ) -> Any:
@@ -123,7 +123,7 @@ async def get_user_usage_stats(
 
 
 @router.get("/{user_id}", response_model=UserResponse)
-async def read_user(
+def read_user(
     user_id: int = Path(..., ge=1, description="用户ID,必须是正整数"),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_admin_user)
@@ -139,7 +139,7 @@ async def read_user(
 
 
 @router.put("/{user_id}", response_model=UserResponse)
-async def update_user(
+def update_user(
     *,
     user_id: int = Path(..., ge=1, description="用户ID,必须是正整数"),
     user_in: UserUpdate,

@@ -47,7 +47,7 @@ class PricePreviewRequest(BaseModel):
 
 
 @router.post("/preview-price", response_model=Dict[str, Any])
-async def preview_upgrade_price(
+def preview_upgrade_price(
     request: PricePreviewRequest,
     db: Session = Depends(deps.get_db),
     current_user = Depends(deps.get_current_user)
@@ -124,7 +124,7 @@ async def preview_upgrade_price(
 
 
 @router.post("/create", response_model=Dict[str, Any])
-async def create_payment(
+def create_payment(
     payment_data: PaymentCreateRequest,
     request: Request,
     db: Session = Depends(deps.get_db),
@@ -190,7 +190,7 @@ async def create_payment(
 
 
 @router.get("/status/{order_id}", response_model=Dict[str, Any])
-async def get_payment_status(
+def get_payment_status(
     order_id: str,
     db: Session = Depends(deps.get_db),
     current_user = Depends(deps.get_current_user)
@@ -222,7 +222,7 @@ async def get_payment_status(
 
 
 @router.post("/mock-complete/{order_id}", response_model=Dict[str, Any])
-async def mock_complete_payment(
+def mock_complete_payment(
     order_id: str,
     db: Session = Depends(deps.get_db),
     current_user = Depends(deps.get_current_user)
@@ -322,7 +322,7 @@ async def payment_callback(
 
 
 @router.post("/refund/{transaction_id}", response_model=Dict[str, Any])
-async def refund_payment(
+def refund_payment(
     transaction_id: str,
     refund_amount: float = Form(...),
     reason: str = Form(...),
@@ -370,7 +370,7 @@ async def refund_payment(
 # ==================== 手动支付相关接口 ====================
 
 @router.post("/manual-confirm", response_model=Dict[str, Any])
-async def submit_manual_payment(
+def submit_manual_payment(
     request: ManualPaymentRequest,
     db: Session = Depends(deps.get_db),
     current_user = Depends(deps.get_current_user)
@@ -423,7 +423,7 @@ async def submit_manual_payment(
 
 
 @router.get("/pending", response_model=Dict[str, Any])
-async def get_pending_payments(
+def get_pending_payments(
     status_filter: str = 'pending_confirm',
     db: Session = Depends(deps.get_db),
     current_user = Depends(deps.get_current_user)
@@ -483,7 +483,7 @@ async def get_pending_payments(
 
 
 @router.post("/admin/confirm-payment", response_model=Dict[str, Any])
-async def confirm_manual_payment(
+def confirm_manual_payment(
     request: ManualPaymentConfirmRequest,
     db: Session = Depends(deps.get_db),
     current_user = Depends(deps.get_current_user)
@@ -521,7 +521,7 @@ async def confirm_manual_payment(
 
 
 @router.post("/admin/reject-payment", response_model=Dict[str, Any])
-async def reject_manual_payment(
+def reject_manual_payment(
     request: ManualPaymentConfirmRequest,
     db: Session = Depends(deps.get_db),
     current_user = Depends(deps.get_current_user)

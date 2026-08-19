@@ -26,7 +26,7 @@ router = APIRouter()
 
 
 @router.get("/tasks", response_model=dict)
-async def get_production_tasks(
+def get_production_tasks(
     db: Session = Depends(deps.get_db),
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -100,7 +100,7 @@ async def get_production_tasks(
 
 
 @router.post("/tasks", response_model=dict)
-async def create_production_task(
+def create_production_task(
     task_in: ProductionTaskCreate,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -148,7 +148,7 @@ async def create_production_task(
 
 
 @router.get("/tasks/{task_id}", response_model=dict)
-async def get_production_task_detail(
+def get_production_task_detail(
     task_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -197,7 +197,7 @@ async def get_production_task_detail(
 
 
 @router.put("/tasks/{task_id}", response_model=dict)
-async def update_production_task(
+def update_production_task(
     task_id: int,
     task_in: ProductionTaskUpdate,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
@@ -248,7 +248,7 @@ async def update_production_task(
 
 
 @router.delete("/tasks/{task_id}", response_model=dict)
-async def delete_production_task(
+def delete_production_task(
     task_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -296,7 +296,7 @@ async def delete_production_task(
 
 
 @router.put("/tasks/{task_id}/progress")
-async def update_task_progress(
+def update_task_progress(
     task_id: int,
     progress_data: ProductionProgressUpdate,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
@@ -329,7 +329,7 @@ async def update_task_progress(
 
 
 @router.post("/tasks/{task_id}/records")
-async def create_production_record(
+def create_production_record(
     task_id: int,
     record_in: ProductionRecordCreate,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
@@ -360,7 +360,7 @@ async def create_production_record(
 
 
 @router.get("/tasks/{task_id}/records")
-async def get_production_records(
+def get_production_records(
     task_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -396,7 +396,7 @@ async def get_production_records(
 
 
 @router.get("/statistics/overview")
-async def get_production_statistics(
+def get_production_statistics(
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
     factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
@@ -419,7 +419,7 @@ async def get_production_statistics(
 
 
 @router.get("/statistics/efficiency")
-async def get_production_efficiency(
+def get_production_efficiency(
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
     factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),

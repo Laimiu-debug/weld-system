@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 @router.get("/", response_model=dict)
-async def get_materials_list(
+def get_materials_list(
     db: Session = Depends(deps.get_db),
     workspace_type: str = Query(..., description="??????personal/enterprise"),
     company_id: Optional[int] = Query(None, description="??ID?????????"),
@@ -90,7 +90,7 @@ async def get_materials_list(
 
 
 @router.post("/", response_model=dict)
-async def create_material(
+def create_material(
     material_in: MaterialCreate,
     workspace_type: str = Query(..., description="??????personal/enterprise"),
     company_id: Optional[int] = Query(None, description="??ID?????????"),
@@ -138,7 +138,7 @@ async def create_material(
 
 
 @router.get("/{material_id}", response_model=dict)
-async def get_material_detail(
+def get_material_detail(
     material_id: int,
     workspace_type: str = Query(..., description="??????personal/enterprise"),
     company_id: Optional[int] = Query(None, description="??ID?????????"),
@@ -187,7 +187,7 @@ async def get_material_detail(
 
 
 @router.put("/{material_id}", response_model=dict)
-async def update_material(
+def update_material(
     material_id: int,
     material_in: MaterialUpdate,
     workspace_type: str = Query(..., description="??????personal/enterprise"),
@@ -238,7 +238,7 @@ async def update_material(
 
 
 @router.delete("/{material_id}", response_model=dict)
-async def delete_material(
+def delete_material(
     material_id: int,
     workspace_type: str = Query(..., description="??????personal/enterprise"),
     company_id: Optional[int] = Query(None, description="??ID?????????"),
@@ -298,7 +298,7 @@ async def delete_material(
 
 
 @router.post("/{material_id}/stock-in")
-async def material_stock_in_by_id(
+def material_stock_in_by_id(
     material_id: int,
     transaction_data: dict,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
@@ -340,7 +340,7 @@ async def material_stock_in_by_id(
 
 
 @router.post("/{material_id}/stock-out")
-async def material_stock_out_by_id(
+def material_stock_out_by_id(
     material_id: int,
     transaction_data: dict,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
@@ -381,7 +381,7 @@ async def material_stock_out_by_id(
 
 
 @router.get("/{material_id}/transactions")
-async def get_material_transactions_by_id(
+def get_material_transactions_by_id(
     material_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID"),
@@ -414,7 +414,7 @@ async def get_material_transactions_by_id(
 
 
 @router.get("/low-stock/alerts")
-async def get_low_stock_alerts(
+def get_low_stock_alerts(
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID"),
     factory_id: Optional[int] = Query(None, description="工厂ID"),
@@ -441,7 +441,7 @@ async def get_low_stock_alerts(
 
 
 @router.get("/statistics/overview")
-async def get_materials_statistics(
+def get_materials_statistics(
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID"),
     factory_id: Optional[int] = Query(None, description="工厂ID"),
@@ -466,7 +466,7 @@ async def get_materials_statistics(
 # ==================== ????? ====================
 
 @router.post("/stock-in", response_model=dict)
-async def material_stock_in(
+def material_stock_in(
     workspace_type: str = Query(..., description="??????personal/enterprise"),
     company_id: Optional[int] = Query(None, description="??ID?????????"),
     factory_id: Optional[int] = Query(None, description="??ID????"),
@@ -538,7 +538,7 @@ async def material_stock_in(
 
 
 @router.post("/stock-out", response_model=dict)
-async def material_stock_out(
+def material_stock_out(
     workspace_type: str = Query(..., description="??????personal/enterprise"),
     company_id: Optional[int] = Query(None, description="??ID?????????"),
     factory_id: Optional[int] = Query(None, description="??ID????"),
@@ -607,7 +607,7 @@ async def material_stock_out(
 
 
 @router.get("/transactions", response_model=dict)
-async def get_material_transactions(
+def get_material_transactions(
     workspace_type: str = Query(..., description="??????personal/enterprise"),
     company_id: Optional[int] = Query(None, description="??ID?????????"),
     factory_id: Optional[int] = Query(None, description="??ID????"),

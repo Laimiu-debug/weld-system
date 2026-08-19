@@ -8,6 +8,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.observability import get_request_id
+
 logger = logging.getLogger(__name__)
 
 SENSITIVE_PATTERN = re.compile(
@@ -20,7 +22,7 @@ SENSITIVE_PATTERN = re.compile(
 def error_body(code: str, message: str, **extra: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {"code": code, "message": message}
     payload.update(extra)
-    return {"detail": payload}
+    return {"detail": payload, "request_id": get_request_id()}
 
 
 def not_implemented(feature: str) -> None:
@@ -55,7 +57,11 @@ def client_error_detail(exc: BaseException) -> str:
 
 
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    del request
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail, "request_id": get_request_id()},
+    )
 
 
 async def validation_exception_handler(

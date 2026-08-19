@@ -3,7 +3,7 @@ User notification read status model for the welding system backend.
 """
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -22,6 +22,11 @@ class UserNotificationReadStatus(Base):
     read_at = Column(DateTime, nullable=True)
     deleted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_unrs_user_unread", "user_id", "is_read", "is_deleted"),
+        Index("ix_unrs_user_announcement", "user_id", "announcement_id"),
+    )
 
     # 关系
     user = relationship("User", backref="notification_read_status")

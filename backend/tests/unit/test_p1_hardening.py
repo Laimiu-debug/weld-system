@@ -41,6 +41,7 @@ def test_redact_value_hides_password_text():
 def test_error_body_shape():
     body = error_body("NOT_IMPLEMENTED", "报表尚未开放")
     assert body["detail"]["code"] == "NOT_IMPLEMENTED"
+    assert "request_id" in body
 
 
 def test_memory_rate_limit_trips():
@@ -97,3 +98,115 @@ def test_reports_catalog_is_available():
     response = client.get("/reports/")
     assert response.status_code == 200
     assert response.json()["data"]["items"]
+
+
+def test_email_verify_token_cannot_reset_password():
+    from app.core.security import (
+        generate_email_verification_token,
+        verify_email_verification_token,
+        verify_password_reset_token,
+    )
+
+    token = generate_email_verification_token("user@example.com")
+    assert verify_email_verification_token(token) == "user@example.com"
+    assert verify_password_reset_token(token) is None
+
+
+def test_verify_email_requires_json_body():
+    client = _auth_client()
+    response = client.post("/auth/verify-email?token=abc")
+    assert response.status_code == 422
+
+
+def test_verify_email_rejects_invalid_token():
+    client = _auth_client()
+    response = client.post("/auth/verify-email", json={"token": "not-a-jwt"})
+    assert response.status_code == 400
+
+
+def test_resend_verification_does_not_enumerate():
+    client = _auth_client()
+    with patch("app.api.v1.endpoints.auth.user_service") as users:
+        users.get_by_email.return_value = None
+        response = client.post(
+            "/auth/resend-verification",
+            json={"email": "missing@example.com"},
+        )
+    assert response.status_code == 200
+    assert "如果该邮箱" in response.json()["message"]
+
+
+def test_export_limit_trips_after_window():
+    from app.core.rate_limit import enforce_export_limit
+
+    user_id = 880017
+    for _ in range(20):
+        enforce_export_limit(user_id)
+    with pytest.raises(HTTPException) as exc:
+        enforce_export_limit(user_id)
+    assert exc.value.status_code == 429
+
+
+def test_file_upload_rejects_disallowed_type(tmp_path, monkeypatch):
+    from app.api.v1.endpoints import files
+
+    monkeypatch.setattr(files.settings, "UPLOAD_DIR", str(tmp_path))
+    app = FastAPI()
+    app.include_router(files.router, prefix="/files")
+    app.dependency_overrides[deps.get_current_user] = lambda: SimpleNamespace(id=1)
+    client = TestClient(app)
+    response = client.post(
+        "/files/upload",
+        files={"file": ("payload.exe", b"binary", "application/octet-stream")},
+    )
+    assert response.status_code == 400
+
+
+def test_file_upload_and_download_roundtrip(tmp_path, monkeypatch):
+    from app.api.v1.endpoints import files
+
+    monkeypatch.setattr(files.settings, "UPLOAD_DIR", str(tmp_path))
+    app = FastAPI()
+    app.include_router(files.router, prefix="/files")
+    app.dependency_overrides[deps.get_current_user] = lambda: SimpleNamespace(id=1)
+    client = TestClient(app)
+    uploaded = client.post(
+        "/files/upload",
+        files={"file": ("note.png", b"png-bytes", "image/png")},
+    )
+    assert uploaded.status_code == 200
+    file_id = uploaded.json()["data"]["file_id"]
+    downloaded = client.get(f"/files/{file_id}")
+    assert downloaded.status_code == 200
+    assert downloaded.content == b"png-bytes"
+    blocked = client.get("/files/..%2Fsecret.png")
+    assert blocked.status_code in (400, 404)
+
+
+def test_request_id_header_roundtrip():
+    from app.core.observability import RequestContextMiddleware, get_request_id
+
+    app = FastAPI()
+    app.add_middleware(RequestContextMiddleware)
+
+    @app.get("/ping")
+    def ping():
+        return {"id": get_request_id()}
+
+    client = TestClient(app)
+    response = client.get("/ping", headers={"X-Request-ID": "req-1"})
+    assert response.status_code == 200
+    assert response.headers["X-Request-ID"] == "req-1"
+    assert response.json()["id"] == "req-1"
+    assert "X-Process-Time" in response.headers
+
+
+def test_load_latest_approvals_skips_empty():
+    from app.services.approval_lookup import load_latest_approvals
+
+    db = MagicMock()
+    latest, workflows = load_latest_approvals(db, "wps", [])
+    assert latest == {}
+    assert workflows == {}
+    db.query.assert_not_called()
+

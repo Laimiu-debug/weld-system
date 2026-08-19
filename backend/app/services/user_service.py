@@ -66,8 +66,7 @@ class UserService:
             phone=phone or obj_in.phone,
             company=obj_in.company,
             is_active=True,
-            is_verified=True,  # 临时设置为True，跳过邮箱验证
-            # TODO: 实现邮箱验证功能后改回False
+            is_verified=False,
         )
         db.add(db_obj)
         db.commit()

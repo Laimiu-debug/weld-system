@@ -96,7 +96,7 @@ def get_workspace_context(
 # ==================== 提交审批 ====================
 
 @router.post("/submit")
-async def submit_for_approval(
+def submit_for_approval(
     request: SubmitForApprovalRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -178,7 +178,7 @@ async def submit_for_approval(
 # ==================== 审批操作 ====================
 
 @router.post("/{instance_id}/approve")
-async def approve_document(
+def approve_document(
     instance_id: int,
     request: ApprovalActionRequest,
     db: Session = Depends(get_db),
@@ -205,7 +205,7 @@ async def approve_document(
 
 
 @router.post("/{instance_id}/reject")
-async def reject_document(
+def reject_document(
     instance_id: int,
     request: ApprovalActionRequest,
     db: Session = Depends(get_db),
@@ -232,7 +232,7 @@ async def reject_document(
 
 
 @router.post("/{instance_id}/return")
-async def return_document(
+def return_document(
     instance_id: int,
     request: ApprovalActionRequest,
     db: Session = Depends(get_db),
@@ -259,7 +259,7 @@ async def return_document(
 
 
 @router.post("/{instance_id}/cancel")
-async def cancel_approval(
+def cancel_approval(
     instance_id: int,
     comment: str = Query("", description="取消原因（可选）"),
     db: Session = Depends(get_db),
@@ -287,7 +287,7 @@ async def cancel_approval(
 # ==================== 批量操作 ====================
 
 @router.post("/batch/approve")
-async def batch_approve(
+def batch_approve(
     request: BatchApprovalRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -312,7 +312,7 @@ async def batch_approve(
 
 
 @router.post("/batch/reject")
-async def batch_reject(
+def batch_reject(
     request: BatchApprovalRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -339,7 +339,7 @@ async def batch_reject(
 # ==================== 查询接口 ====================
 
 @router.get("/pending")
-async def get_pending_approvals(
+def get_pending_approvals(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -371,7 +371,7 @@ async def get_pending_approvals(
 
 
 @router.get("/my-submissions")
-async def get_my_submissions(
+def get_my_submissions(
     status_filter: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -405,7 +405,7 @@ async def get_my_submissions(
 
 
 @router.get("/{instance_id}/history")
-async def get_approval_history(
+def get_approval_history(
     instance_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -441,7 +441,7 @@ async def get_approval_history(
 
 
 @router.get("/statistics")
-async def get_approval_statistics(
+def get_approval_statistics(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     workspace_context: WorkspaceContext = Depends(get_workspace_context)
@@ -464,7 +464,7 @@ async def get_approval_statistics(
 # 注意: 必须放在 /{instance_id} 路由之前,避免路由冲突
 
 @router.get("/workflows", response_model=None)
-async def get_workflows(
+def get_workflows(
     document_type: Optional[str] = Query(None),
     is_active: Optional[bool] = Query(None),
     page: int = Query(1, ge=1),
@@ -540,7 +540,7 @@ async def get_workflows(
 
 
 @router.get("/workflows/{workflow_id}", response_model=None)
-async def get_workflow(
+def get_workflow(
     workflow_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -583,7 +583,7 @@ async def get_workflow(
 
 
 @router.post("/workflows", response_model=None)
-async def create_workflow(
+def create_workflow(
     request: WorkflowDefinitionCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -665,7 +665,7 @@ async def create_workflow(
 
 
 @router.put("/workflows/{workflow_id}", response_model=None)
-async def update_workflow(
+def update_workflow(
     workflow_id: int,
     request: WorkflowDefinitionCreate,
     db: Session = Depends(get_db),
@@ -745,7 +745,7 @@ async def update_workflow(
 
 
 @router.delete("/workflows/{workflow_id}")
-async def delete_workflow(
+def delete_workflow(
     workflow_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -806,7 +806,7 @@ async def delete_workflow(
 
 
 @router.patch("/workflows/{workflow_id}/set-default")
-async def set_default_workflow(
+def set_default_workflow(
     workflow_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
@@ -882,7 +882,7 @@ async def set_default_workflow(
 
 
 @router.patch("/workflows/{workflow_id}/toggle")
-async def toggle_workflow_status(
+def toggle_workflow_status(
     workflow_id: int,
     is_active: bool = Query(...),
     db: Session = Depends(get_db),
@@ -956,7 +956,7 @@ async def toggle_workflow_status(
 # 注意: 这个路由必须放在最后,因为 /{instance_id} 会匹配任何路径
 
 @router.get("/{instance_id}")
-async def get_approval_detail(
+def get_approval_detail(
     instance_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)

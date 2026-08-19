@@ -944,10 +944,45 @@ const ProductionList: React.FC = () => {
             key: 'logs',
             label: '生产日志',
             children: (
-              <Card>
-                <div className="text-center text-gray-500 py-8">
-                  生产日志功能开发中...
-                </div>
+              <Card
+                extra={
+                  filteredData.length > 0 ? (
+                    <Button type="link" onClick={() => navigate(`/production/${filteredData[0].id}?tab=logs`)}>
+                      打开最近任务日志
+                    </Button>
+                  ) : null
+                }
+              >
+                <Table
+                  rowKey="id"
+                  dataSource={filteredData}
+                  pagination={{ pageSize: 10, showTotal: (total) => `共 ${total} 个任务` }}
+                  columns={[
+                    { title: '任务编号', dataIndex: 'taskNumber', key: 'taskNumber', width: 160 },
+                    { title: '任务名称', dataIndex: 'taskName', key: 'taskName' },
+                    {
+                      title: '状态',
+                      dataIndex: 'status',
+                      key: 'status',
+                      width: 120,
+                      render: (status: ProductionTask['status']) => {
+                        const config = getStatusConfig(status)
+                        return <Tag color={config.color}>{config.text}</Tag>
+                      },
+                    },
+                    { title: '更新时间', dataIndex: 'updatedDate', key: 'updatedDate', width: 180 },
+                    {
+                      title: '操作',
+                      key: 'actions',
+                      width: 140,
+                      render: (_: unknown, record: ProductionTask) => (
+                        <Button type="link" onClick={() => navigate(`/production/${record.id}?tab=logs`)}>
+                          查看日志
+                        </Button>
+                      ),
+                    },
+                  ]}
+                />
               </Card>
             ),
           },

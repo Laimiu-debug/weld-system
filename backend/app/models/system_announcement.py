@@ -4,7 +4,7 @@ System announcement model for the welding system backend.
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -41,6 +41,10 @@ class SystemAnnouncement(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    __table_args__ = (
+        Index("ix_announcements_published_at", "is_published", "publish_at"),
+    )
 
     # 关系
     creator = relationship("User", foreign_keys=[created_by])

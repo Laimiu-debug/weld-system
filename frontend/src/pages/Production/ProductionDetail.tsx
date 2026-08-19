@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Card,
   Typography,
@@ -70,7 +70,8 @@ const formatDate = (value?: string | null) => (value ? dayjs(value).format('YYYY
 const ProductionDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState('info')
+  const [searchParams] = useSearchParams()
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') === 'logs' ? 'logs' : 'info')
   const [loading, setLoading] = useState(false)
   const [taskData, setTaskData] = useState<APIProductionTask | null>(null)
   const [records, setRecords] = useState<ProductionRecord[]>([])

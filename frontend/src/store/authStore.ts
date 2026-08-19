@@ -237,3 +237,24 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 )
+
+let authCrossTabBound = false
+
+export function bindAuthCrossTabSync(): void {
+  if (authCrossTabBound || typeof window === 'undefined') {
+    return
+  }
+  authCrossTabBound = true
+  window.addEventListener('storage', (event: StorageEvent) => {
+    if (event.key !== 'token' && event.key !== 'user' && event.key !== 'auth-storage') {
+      return
+    }
+    const token = localStorage.getItem('token')
+    const stored = authService.getCurrentUserFromStorage()
+    if (!token || !stored) {
+      useAuthStore.setState({ user: null, isAuthenticated: false })
+      return
+    }
+    useAuthStore.setState({ user: stored, isAuthenticated: true })
+  })
+}

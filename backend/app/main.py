@@ -3,10 +3,8 @@ Main application entry point for the welding system backend.
 """
 import logging
 import os
-import time
-import uuid
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -15,11 +13,9 @@ from app.api.v1.api import api_router
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
 from app.core.health import assert_ready_or_raise, liveness, readiness
+from app.core.observability import RequestContextMiddleware, configure_logging
 
-logging.basicConfig(
-    level=getattr(logging, settings.LOG_LEVEL),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+configure_logging()
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
@@ -32,16 +28,7 @@ app = FastAPI(
 )
 
 register_exception_handlers(app)
-
-
-@app.middleware("http")
-async def add_request_context(request: Request, call_next):
-    request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
-    start_time = time.time()
-    response = await call_next(request)
-    response.headers["X-Request-ID"] = request_id
-    response.headers["X-Process-Time"] = str(time.time() - start_time)
-    return response
+app.add_middleware(RequestContextMiddleware)
 
 
 if not settings.DEVELOPMENT:

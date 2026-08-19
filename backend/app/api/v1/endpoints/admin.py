@@ -18,7 +18,7 @@ router = APIRouter()
 
 
 @router.get("/users", response_model=Dict[str, Any])
-async def get_users_admin(
+def get_users_admin(
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
@@ -63,7 +63,7 @@ async def get_users_admin(
 
 
 @router.get("/users/{user_id}", response_model=Dict[str, Any])
-async def get_user_detail_admin(
+def get_user_detail_admin(
     user_id: str,
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -98,7 +98,7 @@ async def get_user_detail_admin(
 
 
 @router.post("/users/{user_id}/adjust-membership")
-async def adjust_user_membership_admin(
+def adjust_user_membership_admin(
     user_id: str,
     adjustment_data: Dict[str, Any],
     db: Session = Depends(get_db),
@@ -150,7 +150,7 @@ async def adjust_user_membership_admin(
 
 
 @router.post("/users/{user_id}/update-profile")
-async def update_user_profile_admin(
+def update_user_profile_admin(
     user_id: str,
     profile_data: Dict[str, Any],
     db: Session = Depends(get_db),
@@ -223,7 +223,7 @@ async def update_user_profile_admin(
 
 
 @router.post("/users/{user_id}/enable")
-async def enable_user_admin(
+def enable_user_admin(
     user_id: str,
     enable_data: Optional[Dict[str, Any]] = None,
     db: Session = Depends(get_db),
@@ -266,7 +266,7 @@ async def enable_user_admin(
 
 
 @router.post("/users/{user_id}/disable")
-async def disable_user_admin(
+def disable_user_admin(
     user_id: str,
     disable_data: Dict[str, Any],
     db: Session = Depends(get_db),
@@ -316,7 +316,7 @@ async def disable_user_admin(
 
 
 @router.post("/users/{user_id}/verify-email")
-async def verify_user_email_admin(
+def verify_user_email_admin(
     user_id: str,
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -359,7 +359,7 @@ async def verify_user_email_admin(
 
 
 @router.delete("/users/{user_id}")
-async def delete_user_admin(
+def delete_user_admin(
     user_id: str,
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -406,7 +406,7 @@ async def delete_user_admin(
 
 
 @router.get("/statistics/users")
-async def get_user_statistics_admin(
+def get_user_statistics_admin(
     start_date: Optional[date] = Query(None, description="开始日期"),
     end_date: Optional[date] = Query(None, description="结束日期"),
     db: Session = Depends(get_db),
@@ -434,7 +434,7 @@ async def get_user_statistics_admin(
 
 
 @router.get("/test-enterprise")
-async def test_enterprise_endpoint(
+def test_enterprise_endpoint(
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:
     """Test endpoint to verify router is working"""
@@ -442,7 +442,7 @@ async def test_enterprise_endpoint(
 
 
 @router.get("/enterprises")
-async def get_enterprises_admin(
+def get_enterprises_admin(
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
@@ -473,7 +473,7 @@ async def get_enterprises_admin(
 
 
 @router.get("/subscriptions")
-async def get_subscriptions_admin(
+def get_subscriptions_admin(
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
@@ -504,7 +504,7 @@ async def get_subscriptions_admin(
 
 
 @router.get("/statistics/subscriptions")
-async def get_subscription_statistics_admin(
+def get_subscription_statistics_admin(
     start_date: Optional[date] = Query(None, description="开始日期"),
     end_date: Optional[date] = Query(None, description="结束日期"),
     db: Session = Depends(get_db),
@@ -532,7 +532,7 @@ async def get_subscription_statistics_admin(
 
 
 @router.get("/system/status")
-async def get_system_status_admin(
+def get_system_status_admin(
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:
     """
@@ -571,7 +571,7 @@ async def get_system_status_admin(
 
 
 @router.get("/logs/errors")
-async def get_error_logs_admin(
+def get_error_logs_admin(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(10, ge=1, le=100, description="每页数量"),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -603,7 +603,7 @@ async def get_error_logs_admin(
 # ==================== 支付管理端点 ====================
 
 @router.get("/payments/pending", response_model=Dict[str, Any])
-async def get_pending_payments_admin(
+def get_pending_payments_admin(
     status_filter: str = Query('pending_confirm', description="状态筛选"),
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -663,7 +663,7 @@ async def get_pending_payments_admin(
 
 
 @router.post("/payments/confirm", response_model=Dict[str, Any])
-async def confirm_manual_payment_admin(
+def confirm_manual_payment_admin(
     request: ManualPaymentConfirmRequest,
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -776,7 +776,7 @@ async def confirm_manual_payment_admin(
 
 
 @router.post("/payments/reject", response_model=Dict[str, Any])
-async def reject_manual_payment_admin(
+def reject_manual_payment_admin(
     request: ManualPaymentConfirmRequest,
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)

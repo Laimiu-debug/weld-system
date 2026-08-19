@@ -5,7 +5,7 @@ Quality models for the welding system backend.
 from datetime import datetime, date
 from typing import Optional
 
-from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, Date, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, Date, ForeignKey, Enum as SQLEnum, Index
 from sqlalchemy.orm import relationship
 import enum
 
@@ -121,6 +121,11 @@ class QualityInspection(Base):
     # ==================== 审计字段 ====================
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间")
+
+    __table_args__ = (
+        Index("ix_quality_owner_created", "owner_id", "created_at"),
+        Index("ix_quality_company_result", "company_id", "inspection_result"),
+    )
 
     # 添加一些模型中需要但数据库表中没有的虚拟字段（使用property）
     @property

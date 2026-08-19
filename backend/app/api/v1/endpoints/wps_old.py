@@ -10,7 +10,7 @@ router = APIRouter()
 
 
 @router.get("/")
-async def get_wps_list(
+def get_wps_list(
     current_user: dict = Depends(deps.get_current_user)
 ) -> Any:
     del current_user
@@ -18,7 +18,7 @@ async def get_wps_list(
 
 
 @router.post("/")
-async def create_wps(
+def create_wps(
     current_user: dict = Depends(deps.get_current_user)
 ) -> Any:
     del current_user

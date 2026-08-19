@@ -17,6 +17,8 @@ from app.schemas.wps import (
 from app.services.wps_service import WPSService
 from app.services.user_service import user_service
 from app.services.workspace_service import WorkspaceService
+from app.services.approval_service import ApprovalService
+from app.services.approval_lookup import load_latest_approvals
 from app.core.data_access import WorkspaceContext, WorkspaceType
 
 router = APIRouter()
@@ -85,20 +87,7 @@ def read_wps_list(
     - 企业工作区：只返回企业内的WPS
     """
     try:
-        # Get workspace context
-        print(f"DEBUG WPS: 开始获取工作区上下文, workspace_id={workspace_id}")
         workspace_context = get_workspace_context(db, current_user, workspace_id)
-        print(f"DEBUG WPS: 工作区上下文获取成功: type={workspace_context.workspace_type}, user_id={workspace_context.user_id}")
-
-        # Debug information
-        print(f"DEBUG WPS: User {current_user.id}, membership_type={current_user.membership_type}, workspace_id={workspace_id}")
-
-        # For now, allow all authenticated users to access WPS
-        # TODO: Implement proper permission checking
-        print(f"DEBUG WPS: User authenticated, allowing access")
-
-        # Get WPS list with workspace filtering
-        print(f"DEBUG WPS: 开始查询WPS列表, skip={skip}, limit={limit}")
         wps_service_instance = WPSService(db)
         wps_list = wps_service_instance.get_multi(
             db,
@@ -112,46 +101,20 @@ def read_wps_list(
         )
         print(f"DEBUG WPS: 查询完成, 返回 {len(wps_list)} 条记录")
 
-        # Convert to summary format with approval workflow info
-        from app.models.approval import ApprovalInstance, ApprovalWorkflowDefinition
-        from app.services.approval_service import ApprovalService
-
         approval_service = ApprovalService(db)
+        latest, workflows = load_latest_approvals(db, "wps", [item.id for item in wps_list])
+        can_submit_default = approval_service.should_require_approval("wps", workspace_context)
         wps_summaries = []
         for wps in wps_list:
-            # 查询关联的审批实例
-            approval_instance = db.query(ApprovalInstance).filter(
-                ApprovalInstance.document_type == "wps",
-                ApprovalInstance.document_id == wps.id
-            ).order_by(ApprovalInstance.created_at.desc()).first()
-
-            # 获取工作流名称
-            workflow_name = None
-            approval_status = None
-            approval_instance_id = None
-            submitter_id = None
+            approval_instance = latest.get(wps.id)
+            workflow = workflows.get(approval_instance.workflow_id) if approval_instance else None
             can_approve = False
             can_submit_approval = False
-
             if approval_instance:
-                approval_instance_id = approval_instance.id
-                approval_status = approval_instance.status
-                submitter_id = approval_instance.submitter_id
-
-                # 查询工作流定义
-                workflow = db.query(ApprovalWorkflowDefinition).filter(
-                    ApprovalWorkflowDefinition.id == approval_instance.workflow_id
-                ).first()
-
-                if workflow:
-                    workflow_name = workflow.name
-
-                # 检查当前用户是否可以审批
-                if approval_instance.status in ['pending', 'in_progress']:
+                if approval_instance.status in ["pending", "in_progress"]:
                     can_approve = approval_service._can_approve(approval_instance, current_user)
             else:
-                # 没有审批实例，检查是否可以提交审批
-                can_submit_approval = approval_service.should_require_approval('wps', workspace_context)
+                can_submit_approval = can_submit_default
 
             wps_summaries.append(WPSSummary(
                 id=wps.id,
@@ -168,25 +131,21 @@ def read_wps_list(
                 modules_data=wps.modules_data,
                 created_at=wps.created_at,
                 updated_at=wps.updated_at,
-                approval_instance_id=approval_instance_id,
-                approval_status=approval_status,
-                workflow_name=workflow_name,
+                approval_instance_id=approval_instance.id if approval_instance else None,
+                approval_status=approval_instance.status if approval_instance else None,
+                workflow_name=workflow.name if workflow else None,
                 can_approve=can_approve,
                 can_submit_approval=can_submit_approval,
-                submitter_id=submitter_id
+                submitter_id=approval_instance.submitter_id if approval_instance else None,
             ))
 
-        print(f"DEBUG WPS: 返回 {len(wps_summaries)} 条WPS摘要")
         return wps_summaries
     except HTTPException:
         raise
-    except Exception as e:
-        import traceback
-        print(f"ERROR in read_wps_list: {str(e)}")
-        traceback.print_exc()
+    except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"获取WPS列表失败: {str(e)}"
+            detail="获取WPS列表失败",
         )
 
 
@@ -594,22 +553,6 @@ def search_wps(
         ))
 
     return wps_summaries
-
-
-@router.get("/debug/token", response_model=dict)
-def debug_token(
-    current_user: User = Depends(deps.get_current_active_user)
-) -> Any:
-    """
-    Debug endpoint to check current user and token validity.
-    """
-    return {
-        "user_id": current_user.id,
-        "username": current_user.username,
-        "membership_type": current_user.membership_type,
-        "member_tier": current_user.member_tier,
-        "is_active": current_user.is_active
-    }
 
 
 @router.get("/statistics/overview", response_model=dict)

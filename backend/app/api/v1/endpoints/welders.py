@@ -26,7 +26,7 @@ router = APIRouter()
 
 
 @router.get("/", response_model=dict)
-async def get_welders_list(
+def get_welders_list(
     db: Session = Depends(deps.get_db),
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -109,7 +109,7 @@ async def get_welders_list(
 
 
 @router.post("/", response_model=dict)
-async def create_welder(
+def create_welder(
     welder_in: WelderCreate,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -157,7 +157,7 @@ async def create_welder(
 
 
 @router.get("/{welder_id}", response_model=dict)
-async def get_welder_detail(
+def get_welder_detail(
     welder_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -206,7 +206,7 @@ async def get_welder_detail(
 
 
 @router.put("/{welder_id}", response_model=dict)
-async def update_welder(
+def update_welder(
     welder_id: int,
     welder_in: WelderUpdate,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
@@ -257,7 +257,7 @@ async def update_welder(
 
 
 @router.delete("/{welder_id}", response_model=dict)
-async def delete_welder(
+def delete_welder(
     welder_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -308,7 +308,7 @@ async def delete_welder(
 
 
 @router.get("/{welder_id}/certifications", response_model=dict)
-async def get_welder_certifications(
+def get_welder_certifications(
     welder_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -360,7 +360,7 @@ async def get_welder_certifications(
 
 
 @router.post("/{welder_id}/certifications", response_model=dict)
-async def add_welder_certification(
+def add_welder_certification(
     welder_id: int,
     certification_data: WelderCertificationCreate,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
@@ -412,7 +412,7 @@ async def add_welder_certification(
 
 
 @router.put("/{welder_id}/certifications/{certification_id}", response_model=dict)
-async def update_welder_certification(
+def update_welder_certification(
     welder_id: int,
     certification_id: int,
     certification_data: WelderCertificationUpdate,
@@ -467,7 +467,7 @@ async def update_welder_certification(
 
 
 @router.delete("/{welder_id}/certifications/{certification_id}", response_model=dict)
-async def delete_welder_certification(
+def delete_welder_certification(
     welder_id: int,
     certification_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
@@ -522,7 +522,7 @@ async def delete_welder_certification(
 
 
 @router.get("/statistics/overview", response_model=dict)
-async def get_welders_statistics(
+def get_welders_statistics(
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
     factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
@@ -570,7 +570,7 @@ async def get_welders_statistics(
 # ==================== 工作经历管理 ====================
 
 @router.get("/{welder_id}/work-records", response_model=dict)
-async def get_welder_work_records(
+def get_welder_work_records(
     welder_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -615,7 +615,7 @@ async def get_welder_work_records(
 
 
 @router.post("/{welder_id}/work-records", response_model=dict)
-async def add_welder_work_record(
+def add_welder_work_record(
     welder_id: int,
     record_data: WelderWorkRecordCreate,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
@@ -656,7 +656,7 @@ async def add_welder_work_record(
 
 
 @router.delete("/{welder_id}/work-records/{record_id}", response_model=dict)
-async def delete_welder_work_record(
+def delete_welder_work_record(
     welder_id: int,
     record_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
@@ -698,7 +698,7 @@ async def delete_welder_work_record(
 # ==================== 培训记录管理 ====================
 
 @router.get("/{welder_id}/training-records", response_model=dict)
-async def get_welder_training_records(
+def get_welder_training_records(
     welder_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -743,7 +743,7 @@ async def get_welder_training_records(
 
 
 @router.post("/{welder_id}/training-records", response_model=dict)
-async def add_welder_training_record(
+def add_welder_training_record(
     welder_id: int,
     record_data: WelderTrainingCreate,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
@@ -784,7 +784,7 @@ async def add_welder_training_record(
 
 
 @router.delete("/{welder_id}/training-records/{record_id}", response_model=dict)
-async def delete_welder_training_record(
+def delete_welder_training_record(
     welder_id: int,
     record_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
@@ -826,7 +826,7 @@ async def delete_welder_training_record(
 # ==================== 考核记录管理 ====================
 
 @router.get("/{welder_id}/assessment-records", response_model=dict)
-async def get_welder_assessment_records(
+def get_welder_assessment_records(
     welder_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -871,7 +871,7 @@ async def get_welder_assessment_records(
 
 
 @router.post("/{welder_id}/assessment-records", response_model=dict)
-async def add_welder_assessment_record(
+def add_welder_assessment_record(
     welder_id: int,
     record_data: WelderAssessmentCreate,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
@@ -912,7 +912,7 @@ async def add_welder_assessment_record(
 
 
 @router.delete("/{welder_id}/assessment-records/{record_id}", response_model=dict)
-async def delete_welder_assessment_record(
+def delete_welder_assessment_record(
     welder_id: int,
     record_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
@@ -954,7 +954,7 @@ async def delete_welder_assessment_record(
 # ==================== 工作履历管理 ====================
 
 @router.get("/{welder_id}/work-histories", response_model=dict)
-async def get_welder_work_histories(
+def get_welder_work_histories(
     welder_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -997,7 +997,7 @@ async def get_welder_work_histories(
 
 
 @router.post("/{welder_id}/work-histories", response_model=dict)
-async def add_welder_work_history(
+def add_welder_work_history(
     welder_id: int,
     history_data: WelderWorkHistoryCreate,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
@@ -1039,7 +1039,7 @@ async def add_welder_work_history(
 
 
 @router.delete("/{welder_id}/work-histories/{history_id}", response_model=dict)
-async def delete_welder_work_history(
+def delete_welder_work_history(
     welder_id: int,
     history_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),

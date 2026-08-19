@@ -20,7 +20,7 @@ router = APIRouter()
 
 
 @router.get("/system/status")
-async def get_system_status(
+def get_system_status(
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:
@@ -37,7 +37,7 @@ async def get_system_status(
 
 
 @router.get("/statistics/overview")
-async def get_overview_statistics(
+def get_overview_statistics(
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:
@@ -66,7 +66,7 @@ async def get_overview_statistics(
 
 
 @router.get("/statistics/users")
-async def get_user_statistics_admin(
+def get_user_statistics_admin(
     start_date: Optional[date] = Query(None, description="开始日期"),
     end_date: Optional[date] = Query(None, description="结束日期"),
     db: Session = Depends(get_db),
@@ -89,7 +89,7 @@ async def get_user_statistics_admin(
 
 
 @router.get("/statistics/subscriptions")
-async def get_subscription_statistics_admin(
+def get_subscription_statistics_admin(
     start_date: Optional[date] = Query(None, description="开始日期"),
     end_date: Optional[date] = Query(None, description="结束日期"),
     db: Session = Depends(get_db),
@@ -112,7 +112,7 @@ async def get_subscription_statistics_admin(
 
 
 @router.get("/logs/errors")
-async def get_error_logs_admin(
+def get_error_logs_admin(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(50, ge=1, le=100, description="每页数量"),
     level: Optional[str] = Query(None, description="日志级别筛选"),
@@ -144,7 +144,7 @@ async def get_error_logs_admin(
 
 
 @router.get("/config")
-async def get_system_config_admin(
+def get_system_config_admin(
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:
@@ -161,7 +161,7 @@ async def get_system_config_admin(
 
 
 @router.put("/config")
-async def update_system_config_admin(
+def update_system_config_admin(
     config_data: Dict[str, Any],
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -189,7 +189,7 @@ async def update_system_config_admin(
 
 # 公告管理
 @router.get("/announcements")
-async def get_announcements_admin(
+def get_announcements_admin(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     is_published: Optional[bool] = Query(None, description="发布状态筛选"),
@@ -253,7 +253,7 @@ async def get_announcements_admin(
 
 
 @router.post("/announcements")
-async def create_announcement_admin(
+def create_announcement_admin(
     announcement_data: Dict[str, Any],
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -300,7 +300,7 @@ async def create_announcement_admin(
 
 
 @router.put("/announcements/{announcement_id}")
-async def update_announcement_admin(
+def update_announcement_admin(
     announcement_id: int,
     announcement_data: Dict[str, Any],
     db: Session = Depends(get_db),
@@ -363,7 +363,7 @@ async def update_announcement_admin(
 
 
 @router.post("/announcements/{announcement_id}/publish")
-async def publish_announcement_admin(
+def publish_announcement_admin(
     announcement_id: int,
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -408,7 +408,7 @@ async def publish_announcement_admin(
 
 
 @router.delete("/announcements/{announcement_id}")
-async def delete_announcement_admin(
+def delete_announcement_admin(
     announcement_id: int,
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -448,7 +448,7 @@ async def delete_announcement_admin(
 
 
 @router.post("/announcements/{announcement_id}/unpublish")
-async def unpublish_announcement_admin(
+def unpublish_announcement_admin(
     announcement_id: int,
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -493,7 +493,7 @@ async def unpublish_announcement_admin(
 # ==================== 自动通知任务 ====================
 
 @router.post("/notifications/tasks/daily")
-async def run_daily_notification_tasks(
+def run_daily_notification_tasks(
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:
@@ -552,7 +552,7 @@ async def run_daily_notification_tasks(
 
 
 @router.post("/notifications/tasks/expiring")
-async def run_expiring_notification_task(
+def run_expiring_notification_task(
     days_ahead: int = Query(7, ge=1, le=30, description="提前多少天通知"),
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -592,7 +592,7 @@ async def run_expiring_notification_task(
 
 
 @router.post("/notifications/tasks/quota")
-async def run_quota_notification_task(
+def run_quota_notification_task(
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:

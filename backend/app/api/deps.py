@@ -96,20 +96,13 @@ async def get_current_verified_user(
     Raises:
         HTTPException: 如果用户未验证邮箱
     """
-    print(f"[DEBUG] get_current_verified_user called for user: {current_user.email}, is_verified: {current_user.is_verified}")
-
-    # 开发环境豁免邮箱验证要求
     if settings.DEVELOPMENT:
-        print(f"[DEBUG] Development environment, bypassing email verification for user: {current_user.email}")
         return current_user
 
-    # 企业用户豁免邮箱验证要求
     if current_user.membership_type == "enterprise":
-        print(f"[DEBUG] User {current_user.email} is enterprise user, bypassing email verification")
         return current_user
 
     if not current_user.is_verified:
-        print(f"[DEBUG] User {current_user.email} is not verified, raising exception")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="请先验证邮箱地址"

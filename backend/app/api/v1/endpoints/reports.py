@@ -11,27 +11,25 @@ from app.api import deps
 from app.api.v1.endpoints.dashboard import get_workspace_context
 from app.models.user import User
 from app.services.report_service import ReportService
+from app.schemas.api import success_payload
 
 router = APIRouter()
 
 
 @router.get("/")
-async def get_reports(
+def get_reports(
     current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     """获取可用报表目录."""
     del current_user
-    return {
-        "success": True,
-        "data": {
-            "items": ReportService.get_catalog(),
-        },
-        "message": "获取报表目录成功",
-    }
+    return success_payload(
+        {"items": ReportService.get_catalog()},
+        "获取报表目录成功",
+    )
 
 
 @router.get("/statistics")
-async def get_statistics(
+def get_statistics(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
     workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),

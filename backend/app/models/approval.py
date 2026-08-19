@@ -148,6 +148,7 @@ class ApprovalInstance(Base):
         Index('ix_approval_document', 'document_type', 'document_id'),
         Index('ix_approval_company_status', 'company_id', 'status'),
         Index('ix_approval_submitter', 'submitter_id', 'status'),
+        Index('ix_approval_status_created', 'status', 'created_at'),
     )
 
 

@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 @router.get("/users", response_model=Dict[str, Any])
-async def get_users_admin_simple(
+def get_users_admin_simple(
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
@@ -120,7 +120,7 @@ async def get_users_admin_simple(
 
 
 @router.get("/users/{user_id}", response_model=Dict[str, Any])
-async def get_user_detail_admin_simple(
+def get_user_detail_admin_simple(
     user_id: str,
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -241,7 +241,7 @@ def _get_ppqr_limit(tier: str) -> int:
 
 
 @router.post("/init-database")
-async def init_database_columns(
+def init_database_columns(
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:

@@ -18,7 +18,7 @@ router = APIRouter()
 
 
 @router.post("/login", response_model=AdminLoginResponse)
-async def admin_login(
+def admin_login(
     db: Session = Depends(get_db),
     form_data: OAuth2PasswordRequestForm = Depends()
 ) -> Any:
@@ -66,6 +66,6 @@ async def admin_login(
 
 
 @router.post("/logout")
-async def admin_logout() -> Any:
+def admin_logout() -> Any:
     """Admin logout endpoint."""
     return {"message": "已成功退出登录"}

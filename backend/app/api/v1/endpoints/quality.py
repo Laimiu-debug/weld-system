@@ -26,7 +26,7 @@ router = APIRouter()
 
 
 @router.get("/inspections", response_model=dict)
-async def get_quality_inspections(
+def get_quality_inspections(
     db: Session = Depends(deps.get_db),
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -100,7 +100,7 @@ async def get_quality_inspections(
 
 
 @router.post("/inspections", response_model=dict)
-async def create_quality_inspection(
+def create_quality_inspection(
     inspection_in: QualityInspectionCreate,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -155,7 +155,7 @@ async def create_quality_inspection(
 
 
 @router.get("/inspections/{inspection_id}", response_model=dict)
-async def get_quality_inspection_detail(
+def get_quality_inspection_detail(
     inspection_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -204,7 +204,7 @@ async def get_quality_inspection_detail(
 
 
 @router.put("/inspections/{inspection_id}", response_model=dict)
-async def update_quality_inspection(
+def update_quality_inspection(
     inspection_id: int,
     inspection_in: QualityInspectionUpdate,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
@@ -255,7 +255,7 @@ async def update_quality_inspection(
 
 
 @router.delete("/inspections/{inspection_id}", response_model=dict)
-async def delete_quality_inspection(
+def delete_quality_inspection(
     inspection_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -303,7 +303,7 @@ async def delete_quality_inspection(
 
 
 @router.get("/nonconformance")
-async def get_nonconformance_records(
+def get_nonconformance_records(
     db: Session = Depends(deps.get_db),
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -346,7 +346,7 @@ async def get_nonconformance_records(
 
 
 @router.post("/nonconformance")
-async def create_nonconformance_record(
+def create_nonconformance_record(
     record_in: NonconformanceRecordCreate,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -375,7 +375,7 @@ async def create_nonconformance_record(
 
 
 @router.get("/nonconformance/{record_id}")
-async def get_nonconformance_detail(
+def get_nonconformance_detail(
     record_id: int,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
@@ -404,7 +404,7 @@ async def get_nonconformance_detail(
 
 
 @router.put("/nonconformance/{record_id}")
-async def update_nonconformance_record(
+def update_nonconformance_record(
     record_id: int,
     record_in: NonconformanceRecordUpdate,
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
@@ -435,7 +435,7 @@ async def update_nonconformance_record(
 
 
 @router.get("/statistics/overview")
-async def get_quality_statistics(
+def get_quality_statistics(
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
     factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
@@ -458,7 +458,7 @@ async def get_quality_statistics(
 
 
 @router.get("/statistics/trends")
-async def get_quality_trends(
+def get_quality_trends(
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
     company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
     factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),

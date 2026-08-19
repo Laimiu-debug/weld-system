@@ -6,11 +6,10 @@
 
 - [x] 完成项目结构、入口、配置、路由、依赖和部署文件的首轮检查。
 - [x] `python -m compileall -q app` 通过，未发现 Python 语法错误。
-- [x] `backend/tests` 下 `pytest` 现可收集并运行：44 个单元测试通过。根目录旧 `test_*.py` 仍未迁移，不在默认 `testpaths` 内。
-- [ ] 用户端和管理端尚未完成 TypeScript、ESLint、Vite 构建验证：`npm ci` 长时间无进展后已中止，导致 `tsc`、`eslint`、`vite` 尚不可用。需要在 Node 18/20 LTS 的干净环境或 CI 中复测。
-- [x] 生产依赖审计已执行（npm 官方 registry）：用户端 10 项告警（6 high、4 moderate），管理端 9 项告警（8 high、1 moderate）。
+- [x] `backend/tests` 下 `pytest` 现可收集并运行。根目录旧 `test_*.py` 仍未迁移，不在默认 `testpaths` 内。
+- [x] GitHub Actions 已加入 `backend-unit`（compileall + pytest）、`frontend-build` 与 `admin-build`（`npm ci` + `vite build`）。生产依赖 `npm audit` 为 informational、允许失败。本地 `tsc` 仍可能有历史类型错误，故 CI 不强制 `build:check`。
+- [x] 生产依赖审计已执行（npm 官方 registry）：用户端与管理端仍有 high 告警，主要来自传递依赖（如 Vite 4）；未在本轮强制 audit 全绿。
 - [ ] Docker 联调未执行：当前机器没有可用的 Docker 命令。
-- [x] GitHub Actions `backend-unit` 已加入：compileall + `pytest tests/unit`。
 
 ## P0：发布前必须处理
 
@@ -44,7 +43,7 @@
 
 - [x] 重建后端测试体系，使 `pytest` 可重复运行。
   - `[tool.pytest.ini_options]`、`testpaths = ["tests"]`、`norecursedirs` 已配置。
-  - 单元测试无需外部服务即可运行（44 passed）。根目录旧 `test_*.py` 尚未迁移，默认不收集。
+  - 单元测试无需外部服务即可运行（64 passed）。根目录旧 `test_*.py` 尚未迁移，默认不收集。
 
 - [x] 统一 Python 依赖来源并补齐运行依赖。
   - `pyproject.toml` 为依赖真源（含 pytz、psycopg2-binary、导出库）；`[project.optional-dependencies] dev` 放测试/格式化工具。
@@ -62,66 +61,76 @@
   - `GET /health`：liveness；`GET /ready` 与 `GET /api/v1/health`：readiness（Postgres + Redis，失败 503）。
   - 生产启动时依赖不可用则拒绝启动。
 
-- [ ] 修正异步路由中使用同步 SQLAlchemy Session 的阻塞问题。
-  - 现状：大量 `async def` 端点内部执行同步 ORM 查询，会阻塞事件循环。
-  - 验收：统一改为同步端点 + 同步 Session，或完整迁移到 AsyncSession；用并发压测确认延迟和吞吐改善。
+- [x] 修正异步路由中使用同步 SQLAlchemy Session 的阻塞问题。
+  - 无 `await` 的 `async def` 端点已改为同步 `def` + 同步 Session。
+  - 仍保持 async：支付回调（读取 request body）与头像上传（`await file.read()`）。
+  - 未做 AsyncSession 全量迁移，也未做并发压测。
 
 - [x] 完成或下线返回占位数据的业务接口。
-  - 质量不合格品/统计、生产进度/记录/统计、pPQR 转换/统计、报表改为真实聚合；旧 files 上传仍为 501。
+  - 质量不合格品/统计、生产进度/记录/统计、pPQR 转换/统计、报表改为真实聚合。
+  - `files` 上传/下载改为本地 `UPLOAD_DIR/files`，校验扩展名、大小与路径穿越。
+  - 邮箱验证、忘记/重置密码、质量/生产创建与编辑页、焊工导出、生产日志入口已接到真实接口。
   - 会员支付与续费：创单使用 `transaction_id`；状态查询读库；回调按商户订单号激活；续费/自动续费不再未扣款即延期。
 
 - [x] 将密码重置、修改密码、邮箱验证等敏感参数从 query string 移到请求体。
   - `change-password` / `forgot-password` / `reset-password` / `verify-email` / `resend-verification` 使用 JSON body。
   - 忘记密码不再枚举邮箱，也不再返回 reset_token。
 
-- [x] 为登录、验证码、找回密码增加限流（导出限流仍待做）。
+- [x] 为登录、验证码、找回密码、导出增加限流。
   - 按 IP + 账号组合限流；Redis 优先，失败回退内存。
   - 支付创单与回调已按 IP/用户限流。
+  - WPS/PQR/pPQR Word/PDF 导出：`enforce_export_limit`，每用户每分钟 20 次。
 
 ## P2：工程质量与可维护性
 
 - [ ] 升级并修复前端依赖安全告警。
-  - 优先直接依赖：`axios`、`react-router-dom`，用户端还包括 `echarts`；更新 lockfile 后重新运行生产和全量 `npm audit`。
-  - 验收：无 high/critical；对无法立即升级的告警记录可利用性判断、缓解措施和到期时间。
+  - `axios` 已升到 1.12.2；`react-router-dom` / `vite` 升到 6.30 / 4.5.14 补丁线。
+  - 验收仍未达到无 high/critical：剩余告警主要来自 Vite 4 传递依赖，升级 Vite 5 有破坏性，暂缓。
 
-- [x] 建立 CI 质量门禁（后端单元测试）。
+- [x] 建立 CI 质量门禁（后端单元测试 + 前端/管理端构建）。
   - `.github/workflows/ci.yml`：安装最小依赖、compileall、`pytest tests/unit`。
-  - 前端 type-check/lint/build/audit 与 Compose 冒烟尚未加入。
+  - `frontend-build` / `admin-build`：Node 20、`npm ci`、`vite build`；`npm audit` 仅作信息、不阻断。
+  - 前端 type-check/lint 全绿、Compose 冒烟、npm high 清零仍属 P2。
 
 - [ ] 清理生产仓库中的一次性修复脚本、备份和调试资产。
-  - 重点：后端根目录大量 `check_*`、`fix_*`、`reset_*`、`test_*`，已提交的 SQL 备份、静态 OpenAPI 快照和公开 HTML 调试页。
-  - 验收：保留的运维命令移入受控 CLI，默认只读、要求显式环境和确认；备份不入 Git，调试页面不进入生产镜像。
+  - 已删除未鉴权的 WPS 模板 `debug/test-create`、`debug/test` 与 WPS `debug/token`。
+  - `backend/.dockerignore` 排除根目录 `check_*` / `fix_*` / `test_*.py` 和 SQL 备份，避免进入生产镜像。
+  - 仓库内历史脚本尚未全部删除或迁入受控 CLI。
 
 - [ ] 拆分超大模块并收敛重复实现。
   - 重点：`welder_service.py`（约 75 KB）、`enterprise.py`（约 56 KB）、多处 40–55 KB React 页面，以及两版焊口示意图生成器。
   - 验收：按业务用例拆分 service/hook/component；抽取共享筛选、分页、权限和表单逻辑；关键模块有单元测试后再重构。
 
 - [ ] 统一 API 响应模型和错误协议。
-  - 现状：大量端点使用 `response_model=dict` 和手工 `{success,data,message}`，类型约束弱且错误格式不一致。
-  - 验收：定义泛型分页/成功/错误模型，生成的 OpenAPI 可直接产出两套前端客户端类型。
+  - 已增加 `app/schemas/api.py`（`APISuccess` / `APIPage` / `APIError`）和 `success_payload`；报表目录与错误体带 `request_id`。
+  - 大量端点仍是手工 dict，未完成全量迁移与客户端类型生成。
 
 - [ ] 审查并补齐数据库索引、唯一约束和 N+1 查询。
-  - 重点：所有 tenant/workspace/company/factory 过滤列，文档编号，状态 + 时间排序，审批待办，通知未读和报表聚合。
-  - 验收：对主要列表与仪表盘保存 `EXPLAIN ANALYZE` 基线，设定查询数和 P95 延迟预算。
+  - WPS/PQR/pPQR 列表的审批实例/工作流改为批量加载（`approval_lookup`）。
+  - 已加通知未读、公告发布、审批状态+时间、质量 owner/结果索引（Alembic `add_list_query_indexes`）。
+  - 未保存 EXPLAIN ANALYZE 基线；`_can_approve` 仍可能按条查询。
 
 - [ ] 合并前端重复认证状态与 API 封装。
-  - 现状：用户端同时存在 AuthContext 和 Zustand authStore，管理端认证又有独立 fetch/apiService 路径，容易产生 token 和用户状态不一致。
-  - 验收：每个应用只有一个认证真源；刷新、登出、401 并发、跨标签页同步都有自动化测试。
+  - 用户端 `AuthContext` 改为 Zustand `authStore` 的薄封装；`App` 监听 `storage` 做跨标签页登录/登出同步。
+  - 管理端仍有部分页面直接 `fetch`；401 并发刷新与自动化测试未补齐。
 
 - [ ] 优化前端包体和首屏加载。
   - 对大型页面和编辑器按路由懒加载；检查 Ant Design、ECharts、TipTap 的按需引入；构建时输出 bundle analyzer 报告并设体积预算。
 
-- [ ] 补齐可观测性。
-  - 使用 request ID、结构化日志、统一耗时指标；采集 API 错误率、数据库池、Redis、Celery、导出任务和支付回调指标；配置告警阈值。
+- [x] 补齐可观测性（基线）。
+  - 请求中间件写入 `X-Request-ID` / `X-Process-Time`，日志带 request_id；生产 JSON 日志。
+  - `/ready` 增加数据库连接池快照。
+  - 尚未采集 Celery/导出/支付的独立指标与告警。
 
-- [ ] 修正文档与环境声明。
-  - README 引用了当前仓库不存在的部署文档/脚本，并声明 Node >=16；应以实际支持的 Node LTS、Python、Compose 版本和可复制命令为准。
-  - 增加“本地开发”“测试”“迁移”“备份恢复”“密钥轮换”“故障排查”文档。
+- [x] 修正文档与环境声明。
+  - README 改为实际支持的 Python 3.11、Node 20、PostgreSQL 15、Redis 7、Compose v2。
+  - 运维步骤见 `docs/OPERATIONS.md`（本地开发、测试、迁移、备份、密钥轮换、故障排查）。
+  - 删除对仓库中不存在的 `deploy.sh` / `DEPLOYMENT_GUIDE.md` 的引用。
 
 ## 建议执行顺序
 
 1. 先处理越权、凭据/JWT、默认密钥与调试入口（P0 安全项）。
 2. 修复干净构建和前端发布链路，确保每次发布的是确定产物。
 3. 修复 pytest/依赖/迁移，建立 CI 门禁，获得可靠回归基线。
-4. 完成占位功能和异常/健康检查，再进行异步模型、查询和包体优化。
-5. 最后拆分大文件、统一响应模型与认证状态，持续补齐可观测性和文档。
+4. P1 占位功能、邮箱验证、同步端点与导出限流已落地。
+5. P2 基线（可观测、文档、列表 N+1、索引、认证归并）已起步；剩余：Vite 5 / npm high 清零、大文件拆分、统一响应全量迁移、管理端 fetch 收敛、Compose 冒烟。

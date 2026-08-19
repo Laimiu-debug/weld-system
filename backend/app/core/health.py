@@ -5,6 +5,7 @@ from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.database import engine, redis_client
+from app.core.observability import pool_snapshot
 
 
 def liveness() -> dict[str, Any]:
@@ -52,6 +53,7 @@ def readiness() -> dict[str, Any]:
             "postgres": {"ok": postgres_ok, "detail": postgres_detail},
             "redis": {"ok": redis_ok, "detail": redis_detail},
             "alembic_revision": _alembic_revision(),
+            "db_pool": pool_snapshot(),
         },
         "app_name": settings.APP_NAME,
         "version": settings.APP_VERSION,

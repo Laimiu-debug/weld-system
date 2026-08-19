@@ -20,7 +20,7 @@ router = APIRouter()
 
 
 @router.get("/subscription-plans")
-async def get_subscription_plans_admin(
+def get_subscription_plans_admin(
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:
@@ -64,7 +64,7 @@ async def get_subscription_plans_admin(
 
 
 @router.post("/subscription-plans")
-async def create_subscription_plan_admin(
+def create_subscription_plan_admin(
     plan_data: Dict[str, Any],
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -124,7 +124,7 @@ async def create_subscription_plan_admin(
 
 
 @router.put("/subscription-plans/{plan_id}")
-async def update_subscription_plan_admin(
+def update_subscription_plan_admin(
     plan_id: str,
     plan_data: Dict[str, Any],
     db: Session = Depends(get_db),
@@ -202,7 +202,7 @@ async def update_subscription_plan_admin(
 
 
 @router.post("/subscription-plans/batch-discount")
-async def batch_set_discount_admin(
+def batch_set_discount_admin(
     discount_data: Dict[str, Any],
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -310,7 +310,7 @@ async def batch_set_discount_admin(
 
 
 @router.delete("/subscription-plans/{plan_id}")
-async def delete_subscription_plan_admin(
+def delete_subscription_plan_admin(
     plan_id: str,
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -355,7 +355,7 @@ async def delete_subscription_plan_admin(
 
 
 @router.get("/subscriptions")
-async def get_subscriptions_admin(
+def get_subscriptions_admin(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     status: Optional[str] = Query(None, description="订阅状态筛选"),
@@ -423,7 +423,7 @@ async def get_subscriptions_admin(
 
 
 @router.get("/subscriptions/{subscription_id}")
-async def get_subscription_detail_admin(
+def get_subscription_detail_admin(
     subscription_id: int,
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -484,7 +484,7 @@ async def get_subscription_detail_admin(
 
 
 @router.post("/users/{user_id}/upgrade-membership")
-async def upgrade_user_membership_admin(
+def upgrade_user_membership_admin(
     user_id: int,
     upgrade_data: Dict[str, Any],
     db: Session = Depends(get_db),
@@ -550,7 +550,7 @@ async def upgrade_user_membership_admin(
 
 
 @router.get("/expiring-subscriptions")
-async def get_expiring_subscriptions_admin(
+def get_expiring_subscriptions_admin(
     days_ahead: int = Query(7, ge=1, le=30, description="提前天数"),
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
@@ -572,7 +572,7 @@ async def get_expiring_subscriptions_admin(
 
 
 @router.post("/subscriptions/{subscription_id}/process-renewal")
-async def process_subscription_renewal_admin(
+def process_subscription_renewal_admin(
     subscription_id: int,
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)

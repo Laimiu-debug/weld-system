@@ -13,6 +13,7 @@ import {
   Row,
   Col,
   Tabs,
+  Modal,
   message,
 } from 'antd'
 import {
@@ -48,6 +49,8 @@ const Login: React.FC = () => {
   const [sendingCode, setSendingCode] = useState(false)
   const [error, setError] = useState<string>('')
   const [countdown, setCountdown] = useState(0)
+  const [resendOpen, setResendOpen] = useState(false)
+  const [resendLoading, setResendLoading] = useState(false)
   const navigate = useNavigate()
   const { login } = useAuthStore()
 
@@ -406,6 +409,9 @@ const Login: React.FC = () => {
               <Link to="/register" className="text-blue-600 font-medium">
                 立即注册
               </Link>
+              <Button type="link" onClick={() => setResendOpen(true)}>
+                重新发送验证邮件
+              </Button>
             </Space>
           </div>
 
@@ -423,6 +429,44 @@ const Login: React.FC = () => {
             </Space>
           </div>
         </Card>
+        <Modal
+          title="重新发送验证邮件"
+          open={resendOpen}
+          onCancel={() => setResendOpen(false)}
+          footer={null}
+        >
+          <Form
+            layout="vertical"
+            onFinish={async (values: { email: string }) => {
+              setResendLoading(true)
+              try {
+                const ok = await authService.resendVerificationEmail(values.email)
+                if (ok) {
+                  message.success('如果该邮箱已注册且未验证，将收到验证邮件')
+                  setResendOpen(false)
+                } else {
+                  message.error('发送失败，请稍后重试')
+                }
+              } finally {
+                setResendLoading(false)
+              }
+            }}
+          >
+            <Form.Item
+              name="email"
+              label="注册邮箱"
+              rules={[
+                { required: true, message: '请输入邮箱' },
+                { type: 'email', message: '请输入有效邮箱' },
+              ]}
+            >
+              <Input prefix={<MailOutlined />} placeholder="you@example.com" />
+            </Form.Item>
+            <Button type="primary" htmlType="submit" loading={resendLoading} block>
+              发送
+            </Button>
+          </Form>
+        </Modal>
         </div>
     </div>
   )

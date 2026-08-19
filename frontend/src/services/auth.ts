@@ -279,7 +279,7 @@ class AuthService {
       // API服务已经将响应包装成 {success: true, data: {...}}
       // 后端实际返回：{message: '注册成功'}
       // 经过拦截器后：{success: true, data: {message: '注册成功'}}
-      if (response.success && response.data?.message === '注册成功') {
+      if (response.success && String(response.data?.message || '').includes('注册成功')) {
         console.log('✅ 注册成功')
         return true
       }
@@ -387,9 +387,9 @@ class AuthService {
   }
 
   // 重新发送验证邮件
-  async resendVerificationEmail(): Promise<boolean> {
+  async resendVerificationEmail(email: string): Promise<boolean> {
     try {
-      const response = await apiService.post('/auth/resend-verification')
+      const response = await apiService.post('/auth/resend-verification', { email })
       return response.success
     } catch (error) {
       console.error('Resend verification error:', error)

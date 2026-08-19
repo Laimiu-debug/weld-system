@@ -145,7 +145,7 @@ def generate_password_reset_token(email: str) -> str:
     expires = now + delta
     exp = expires.timestamp()
     encoded_jwt = jwt.encode(
-        {"exp": exp, "nbf": now, "sub": email},
+        {"exp": exp, "nbf": now, "sub": email, "purpose": "password_reset"},
         settings.SECRET_KEY,
         algorithm=settings.ALGORITHM,
     )
@@ -168,7 +168,42 @@ def verify_password_reset_token(token: str) -> Optional[str]:
             settings.SECRET_KEY,
             algorithms=[settings.ALGORITHM]
         )
-        return decoded_token["sub"]
+        purpose = decoded_token.get("purpose")
+        if purpose and purpose != "password_reset":
+            return None
+        return decoded_token.get("sub")
+    except jwt.JWTError:
+        return None
+
+
+def generate_email_verification_token(email: str) -> str:
+    """生成邮箱验证令牌。"""
+    delta = timedelta(hours=getattr(settings, "EMAIL_VERIFY_TOKEN_EXPIRE_HOURS", 48))
+    now = datetime.utcnow()
+    encoded_jwt = jwt.encode(
+        {
+            "exp": (now + delta).timestamp(),
+            "nbf": now,
+            "sub": email,
+            "purpose": "email_verify",
+        },
+        settings.SECRET_KEY,
+        algorithm=settings.ALGORITHM,
+    )
+    return encoded_jwt
+
+
+def verify_email_verification_token(token: str) -> Optional[str]:
+    """校验邮箱验证令牌，返回邮箱。"""
+    try:
+        decoded_token = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM],
+        )
+        if decoded_token.get("purpose") != "email_verify":
+            return None
+        return decoded_token.get("sub")
     except jwt.JWTError:
         return None
 

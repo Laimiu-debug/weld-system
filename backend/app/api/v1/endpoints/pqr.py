@@ -26,6 +26,8 @@ from app.services.document_export_service import DocumentExportService
 from app.services.pqr_service import PQRService
 from app.services.user_service import user_service
 from app.services.workspace_service import WorkspaceService
+from app.services.approval_service import ApprovalService
+from app.services.approval_lookup import load_latest_approvals
 
 router = APIRouter()
 
@@ -140,46 +142,20 @@ def read_pqr_list(
             search_term=actual_search_term
         )
 
-        # Convert to summary format with approval workflow info
-        from app.models.approval import ApprovalInstance, ApprovalWorkflowDefinition
-        from app.services.approval_service import ApprovalService
-
         approval_service = ApprovalService(db)
+        latest, workflows = load_latest_approvals(db, "pqr", [item.id for item in pqr_list])
+        can_submit_default = approval_service.should_require_approval("pqr", workspace_context)
         pqr_summaries = []
         for pqr in pqr_list:
-            # 查询关联的审批实例
-            approval_instance = db.query(ApprovalInstance).filter(
-                ApprovalInstance.document_type == "pqr",
-                ApprovalInstance.document_id == pqr.id
-            ).order_by(ApprovalInstance.created_at.desc()).first()
-
-            # 获取工作流名称
-            workflow_name = None
-            approval_status = None
-            approval_instance_id = None
-            submitter_id = None
+            approval_instance = latest.get(pqr.id)
+            workflow = workflows.get(approval_instance.workflow_id) if approval_instance else None
             can_approve = False
             can_submit_approval = False
-
             if approval_instance:
-                approval_instance_id = approval_instance.id
-                approval_status = approval_instance.status
-                submitter_id = approval_instance.submitter_id
-
-                # 查询工作流定义
-                workflow = db.query(ApprovalWorkflowDefinition).filter(
-                    ApprovalWorkflowDefinition.id == approval_instance.workflow_id
-                ).first()
-
-                if workflow:
-                    workflow_name = workflow.name
-
-                # 检查当前用户是否可以审批
-                if approval_instance.status in ['pending', 'in_progress']:
+                if approval_instance.status in ["pending", "in_progress"]:
                     can_approve = approval_service._can_approve(approval_instance, current_user)
             else:
-                # 没有审批实例，检查是否可以提交审批
-                can_submit_approval = approval_service.should_require_approval('pqr', workspace_context)
+                can_submit_approval = can_submit_default
 
             pqr_summaries.append(PQRSummary(
                 id=pqr.id,
@@ -194,12 +170,12 @@ def read_pqr_list(
                 status=pqr.status,
                 created_at=pqr.created_at,
                 updated_at=pqr.updated_at,
-                approval_instance_id=approval_instance_id,
-                approval_status=approval_status,
-                workflow_name=workflow_name,
+                approval_instance_id=approval_instance.id if approval_instance else None,
+                approval_status=approval_instance.status if approval_instance else None,
+                workflow_name=workflow.name if workflow else None,
                 can_approve=can_approve,
                 can_submit_approval=can_submit_approval,
-                submitter_id=submitter_id
+                submitter_id=approval_instance.submitter_id if approval_instance else None,
             ))
 
         # 计算总页数

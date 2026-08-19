@@ -76,7 +76,7 @@ def check_enterprise_membership(current_user: User) -> User:
 
 
 @router.post("/employees", response_model=Dict[str, Any])
-async def create_enterprise_employee(
+def create_enterprise_employee(
     employee_data: Dict[str, Any],
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -194,7 +194,7 @@ async def create_enterprise_employee(
 
 
 @router.get("/employees", response_model=Dict[str, Any])
-async def get_enterprise_employees(
+def get_enterprise_employees(
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
@@ -293,7 +293,7 @@ async def get_enterprise_employees(
 
 
 @router.get("/employees/{employee_id}", response_model=Dict[str, Any])
-async def get_enterprise_employee_detail(
+def get_enterprise_employee_detail(
     employee_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -363,7 +363,7 @@ async def get_enterprise_employee_detail(
 
 
 @router.put("/employees/{employee_id}")
-async def update_enterprise_employee(
+def update_enterprise_employee(
     employee_id: int,
     employee_data: Dict[str, Any],
     db: Session = Depends(get_db),
@@ -457,7 +457,7 @@ async def update_enterprise_employee(
 
 
 @router.post("/employees/{employee_id}/disable")
-async def disable_enterprise_employee(
+def disable_enterprise_employee(
     employee_id: int,
     disable_data: Dict[str, Any],
     db: Session = Depends(get_db),
@@ -513,7 +513,7 @@ async def disable_enterprise_employee(
 
 
 @router.post("/employees/{employee_id}/enable")
-async def enable_enterprise_employee(
+def enable_enterprise_employee(
     employee_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -568,7 +568,7 @@ async def enable_enterprise_employee(
 
 
 @router.delete("/employees/{employee_id}")
-async def delete_enterprise_employee(
+def delete_enterprise_employee(
     employee_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -630,7 +630,7 @@ async def delete_enterprise_employee(
 
 
 @router.get("/quota/employees")
-async def get_enterprise_employee_quota(
+def get_enterprise_employee_quota(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ) -> Any:
@@ -698,7 +698,7 @@ async def get_enterprise_employee_quota(
 
 
 @router.get("/statistics/employees")
-async def get_enterprise_employee_statistics(
+def get_enterprise_employee_statistics(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ) -> Any:
@@ -790,7 +790,7 @@ async def get_enterprise_employee_statistics(
 # ==================== 工厂管理API ====================
 
 @router.get("/factories")
-async def get_enterprise_factories(
+def get_enterprise_factories(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     is_active: Optional[bool] = Query(None),
@@ -895,7 +895,7 @@ async def get_enterprise_factories(
 
 
 @router.post("/factories")
-async def create_enterprise_factory(
+def create_enterprise_factory(
     factory_data: Dict[str, Any],
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -962,7 +962,7 @@ async def create_enterprise_factory(
 
 
 @router.put("/factories/{factory_id}")
-async def update_enterprise_factory(
+def update_enterprise_factory(
     factory_id: int,
     factory_data: Dict[str, Any],
     db: Session = Depends(get_db),
@@ -1041,7 +1041,7 @@ async def update_enterprise_factory(
 
 
 @router.delete("/factories/{factory_id}")
-async def delete_enterprise_factory(
+def delete_enterprise_factory(
     factory_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -1116,7 +1116,7 @@ async def delete_enterprise_factory(
 # ==================== 部门管理API ====================
 
 @router.get("/departments")
-async def get_enterprise_departments(
+def get_enterprise_departments(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     factory_id: Optional[int] = Query(None),
@@ -1245,7 +1245,7 @@ async def get_enterprise_departments(
 
 
 @router.post("/departments")
-async def create_enterprise_department(
+def create_enterprise_department(
     department_data: Dict[str, Any],
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -1331,7 +1331,7 @@ async def create_enterprise_department(
 
 
 @router.put("/departments/{department_id}")
-async def update_enterprise_department(
+def update_enterprise_department(
     department_id: str,
     department_data: Dict[str, Any],
     db: Session = Depends(get_db),
@@ -1422,7 +1422,7 @@ async def update_enterprise_department(
 
 
 @router.delete("/departments/{department_id}")
-async def delete_enterprise_department(
+def delete_enterprise_department(
     department_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)

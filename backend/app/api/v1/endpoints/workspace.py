@@ -46,7 +46,7 @@ class WorkspaceSwitchResponse(BaseModel):
 
 
 @router.get("/workspaces", response_model=List[WorkspaceResponse])
-async def get_user_workspaces(
+def get_user_workspaces(
     current_user: User = Depends(get_current_verified_user),
     db: Session = Depends(get_db)
 ):
@@ -61,7 +61,7 @@ async def get_user_workspaces(
 
 
 @router.get("/workspaces/default", response_model=WorkspaceResponse)
-async def get_default_workspace(
+def get_default_workspace(
     current_user: User = Depends(get_current_verified_user),
     db: Session = Depends(get_db)
 ):
@@ -83,7 +83,7 @@ async def get_default_workspace(
 
 
 @router.post("/workspaces/switch", response_model=WorkspaceSwitchResponse)
-async def switch_workspace(
+def switch_workspace(
     request: WorkspaceSwitchRequest,
     current_user: User = Depends(get_current_verified_user),
     db: Session = Depends(get_db)
@@ -125,7 +125,7 @@ async def switch_workspace(
 
 
 @router.get("/workspaces/current", response_model=WorkspaceResponse)
-async def get_current_workspace(
+def get_current_workspace(
     current_user: User = Depends(get_current_verified_user),
     db: Session = Depends(get_db)
 ):
@@ -171,7 +171,7 @@ async def get_current_workspace(
 
 
 @router.get("/workspaces/{workspace_id}", response_model=WorkspaceResponse)
-async def get_workspace_detail(
+def get_workspace_detail(
     workspace_id: str,
     current_user: User = Depends(get_current_verified_user),
     db: Session = Depends(get_db)
@@ -208,7 +208,7 @@ async def get_workspace_detail(
 
 
 @router.get("/workspaces/{workspace_id}/quota")
-async def get_workspace_quota(
+def get_workspace_quota(
     workspace_id: str,
     current_user: User = Depends(get_current_verified_user),
     db: Session = Depends(get_db)
@@ -251,7 +251,7 @@ async def get_workspace_quota(
 
 
 @router.get("/context")
-async def get_workspace_context_info(
+def get_workspace_context_info(
     workspace_id: str,
     current_user: User = Depends(get_current_verified_user),
     db: Session = Depends(get_db)

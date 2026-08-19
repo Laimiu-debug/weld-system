@@ -56,3 +56,7 @@ def _memory_limit(key: str, limit: int, window_seconds: int) -> None:
             )
         window.append(now)
         _hits[key] = window
+
+
+def enforce_export_limit(user_id: int) -> None:
+    enforce_rate_limit(f"export-user:{user_id}", limit=20, window_seconds=60)

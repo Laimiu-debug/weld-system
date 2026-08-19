@@ -14,6 +14,8 @@ from app.models.ppqr import PPQR
 from app.core.data_access import WorkspaceContext, WorkspaceType
 from app.services.workspace_service import WorkspaceService
 from app.services.ppqr_service import PPQRService
+from app.services.approval_service import ApprovalService
+from app.services.approval_lookup import load_latest_approvals
 from app.schemas.ppqr import (
     PPQRCreate,
     PPQRUpdate,
@@ -71,7 +73,7 @@ def get_workspace_context(
 
 
 @router.get("/")
-async def get_ppqr_list(
+def get_ppqr_list(
     db: Session = Depends(deps.get_db),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=1000, description="每页记录数"),
@@ -125,60 +127,32 @@ async def get_ppqr_list(
             search_term=keyword
         )
 
-        # Convert to summary format with approval workflow info
-        from app.models.approval import ApprovalInstance, ApprovalWorkflowDefinition
-        from app.services.approval_service import ApprovalService
-
         approval_service = ApprovalService(db)
+        latest, workflows = load_latest_approvals(db, "ppqr", [item.id for item in ppqr_list])
+        can_submit_default = approval_service.should_require_approval("ppqr", workspace_context)
         ppqr_summaries = []
         for ppqr in ppqr_list:
-            # 查询关联的审批实例
-            approval_instance = db.query(ApprovalInstance).filter(
-                ApprovalInstance.document_type == "ppqr",
-                ApprovalInstance.document_id == ppqr.id
-            ).order_by(ApprovalInstance.created_at.desc()).first()
-
-            # 获取工作流名称
-            workflow_name = None
-            approval_status = None
-            approval_instance_id = None
-            submitter_id = None
+            approval_instance = latest.get(ppqr.id)
+            workflow = workflows.get(approval_instance.workflow_id) if approval_instance else None
             can_approve = False
             can_submit_approval = False
-
             if approval_instance:
-                approval_instance_id = approval_instance.id
-                approval_status = approval_instance.status
-                submitter_id = approval_instance.submitter_id
-
-                # 查询工作流定义
-                workflow = db.query(ApprovalWorkflowDefinition).filter(
-                    ApprovalWorkflowDefinition.id == approval_instance.workflow_id
-                ).first()
-
-                if workflow:
-                    workflow_name = workflow.name
-
-                # 检查当前用户是否可以审批
-                if approval_instance.status in ['pending', 'in_progress']:
+                if approval_instance.status in ["pending", "in_progress"]:
                     can_approve = approval_service._can_approve(approval_instance, current_user)
             else:
-                # 没有审批实例，检查是否可以提交审批
-                can_submit_approval = approval_service.should_require_approval('ppqr', workspace_context)
+                can_submit_approval = can_submit_default
 
-            # 确定convert_to_pqr的值
             convert_to_pqr_value = None
-            if hasattr(ppqr, 'convert_to_pqr'):
+            if hasattr(ppqr, "convert_to_pqr"):
                 if isinstance(ppqr.convert_to_pqr, bool):
                     convert_to_pqr_value = "yes" if ppqr.convert_to_pqr else "no"
                 elif isinstance(ppqr.convert_to_pqr, str):
                     convert_to_pqr_value = ppqr.convert_to_pqr
 
-            # 确定test_date的值 - 优先使用actual_test_date，其次planned_test_date
             test_date_value = None
-            if hasattr(ppqr, 'actual_test_date') and ppqr.actual_test_date:
+            if hasattr(ppqr, "actual_test_date") and ppqr.actual_test_date:
                 test_date_value = ppqr.actual_test_date
-            elif hasattr(ppqr, 'planned_test_date') and ppqr.planned_test_date:
+            elif hasattr(ppqr, "planned_test_date") and ppqr.planned_test_date:
                 test_date_value = ppqr.planned_test_date
 
             ppqr_summaries.append(PPQRSummary(
@@ -192,12 +166,12 @@ async def get_ppqr_list(
                 convert_to_pqr=convert_to_pqr_value,
                 created_at=ppqr.created_at,
                 updated_at=ppqr.updated_at,
-                approval_instance_id=approval_instance_id,
-                approval_status=approval_status,
-                workflow_name=workflow_name,
+                approval_instance_id=approval_instance.id if approval_instance else None,
+                approval_status=approval_instance.status if approval_instance else None,
+                workflow_name=workflow.name if workflow else None,
                 can_approve=can_approve,
                 can_submit_approval=can_submit_approval,
-                submitter_id=submitter_id
+                submitter_id=approval_instance.submitter_id if approval_instance else None,
             ))
 
         # 计算总页数
@@ -222,7 +196,7 @@ async def get_ppqr_list(
 
 
 @router.post("/")
-async def create_ppqr(
+def create_ppqr(
     ppqr_data: dict,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
@@ -300,7 +274,7 @@ async def create_ppqr(
 
 @router.get("/statistics")
 @router.get("/statistics/overview")
-async def get_ppqr_statistics(
+def get_ppqr_statistics(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
     workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID")
@@ -318,7 +292,7 @@ async def get_ppqr_statistics(
 
 
 @router.get("/{ppqr_id}")
-async def get_ppqr_detail(
+def get_ppqr_detail(
     ppqr_id: int,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
@@ -429,7 +403,7 @@ async def get_ppqr_detail(
 
 
 @router.put("/{ppqr_id}")
-async def update_ppqr(
+def update_ppqr(
     ppqr_id: int,
     ppqr_data: dict,
     db: Session = Depends(deps.get_db),
@@ -495,7 +469,7 @@ async def update_ppqr(
 
 
 @router.delete("/{ppqr_id}")
-async def delete_ppqr(
+def delete_ppqr(
     ppqr_id: int,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
@@ -565,7 +539,7 @@ async def delete_ppqr(
 
 
 @router.post("/{ppqr_id}/duplicate")
-async def duplicate_ppqr(
+def duplicate_ppqr(
     ppqr_id: int,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
@@ -674,7 +648,7 @@ async def duplicate_ppqr(
 
 
 @router.post("/{ppqr_id}/convert-to-pqr")
-async def convert_ppqr_to_pqr(
+def convert_ppqr_to_pqr(
     ppqr_id: int,
     payload: dict = Body(default={}),
     db: Session = Depends(deps.get_db),

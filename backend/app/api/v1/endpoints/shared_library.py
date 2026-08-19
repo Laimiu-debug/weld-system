@@ -38,7 +38,7 @@ def get_client_ip(request: Request) -> Optional[str]:
     return request.client.host
 
 
-async def get_current_user_optional(
+def get_current_user_optional(
     token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
 ) -> Optional[User]:
@@ -74,7 +74,7 @@ async def get_current_user_optional(
 # ==================== 共享模块相关API ====================
 
 @router.post("/modules/share", response_model=SharedModuleSchema)
-async def share_module(
+def share_module(
     module_data: SharedModuleCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -85,7 +85,7 @@ async def share_module(
 
 
 @router.get("/modules", response_model=dict)
-async def get_shared_modules(
+def get_shared_modules(
     keyword: Optional[str] = Query(None, description="搜索关键词"),
     category: Optional[str] = Query(None, description="分类筛选"),
     difficulty_level: Optional[str] = Query(None, description="难度筛选"),
@@ -136,7 +136,7 @@ async def get_shared_modules(
 
 
 @router.get("/modules/{module_id}", response_model=SharedModuleSchema)
-async def get_shared_module(
+def get_shared_module(
     module_id: str,
     current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
@@ -155,7 +155,7 @@ async def get_shared_module(
 
 
 @router.post("/modules/{module_id}/download")
-async def download_shared_module(
+def download_shared_module(
     module_id: str,
     request: Request,
     current_user: User = Depends(get_current_user),
@@ -191,7 +191,7 @@ async def download_shared_module(
 
 
 @router.put("/modules/{module_id}", response_model=SharedModuleSchema)
-async def update_shared_module(
+def update_shared_module(
     module_id: str,
     module_data: SharedModuleUpdate,
     current_user: User = Depends(get_current_user),
@@ -224,7 +224,7 @@ async def update_shared_module(
 
 
 @router.delete("/modules/{module_id}")
-async def delete_shared_module(
+def delete_shared_module(
     module_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -253,7 +253,7 @@ async def delete_shared_module(
 # ==================== 共享模板相关API ====================
 
 @router.post("/templates/share")
-async def share_template(
+def share_template(
     template_data: SharedTemplateCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -287,7 +287,7 @@ async def share_template(
 
 
 @router.get("/templates", response_model=dict)
-async def get_shared_templates(
+def get_shared_templates(
     keyword: Optional[str] = Query(None, description="搜索关键词"),
     welding_process: Optional[str] = Query(None, description="焊接工艺筛选"),
     standard: Optional[str] = Query(None, description="标准筛选"),
@@ -344,7 +344,7 @@ async def get_shared_templates(
 
 
 @router.get("/templates/{template_id}", response_model=SharedTemplateSchema)
-async def get_shared_template(
+def get_shared_template(
     template_id: str,
     current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
@@ -363,7 +363,7 @@ async def get_shared_template(
 
 
 @router.post("/templates/{template_id}/download")
-async def download_shared_template(
+def download_shared_template(
     template_id: str,
     request: Request,
     current_user: User = Depends(get_current_user),
@@ -399,7 +399,7 @@ async def download_shared_template(
 
 
 @router.put("/templates/{template_id}", response_model=SharedTemplateSchema)
-async def update_shared_template(
+def update_shared_template(
     template_id: str,
     template_data: SharedTemplateUpdate,
     current_user: User = Depends(get_current_user),
@@ -432,7 +432,7 @@ async def update_shared_template(
 
 
 @router.delete("/templates/{template_id}")
-async def delete_shared_template(
+def delete_shared_template(
     template_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -461,7 +461,7 @@ async def delete_shared_template(
 # ==================== 评分相关API ====================
 
 @router.post("/rate", response_model=dict)
-async def rate_shared_resource(
+def rate_shared_resource(
     rating_data: UserRatingCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -479,7 +479,7 @@ async def rate_shared_resource(
 # ==================== 评论相关API ====================
 
 @router.post("/comments", response_model=SharedCommentSchema)
-async def create_comment(
+def create_comment(
     comment_data: SharedCommentCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -491,7 +491,7 @@ async def create_comment(
 
 
 @router.get("/comments/{target_type}/{target_id}", response_model=dict)
-async def get_comments(
+def get_comments(
     target_type: str,
     target_id: str,
     page: int = Query(1, ge=1, description="页码"),
@@ -520,7 +520,7 @@ async def get_comments(
 # ==================== 管理员API ====================
 
 @router.post("/admin/review/{resource_type}/{resource_id}")
-async def review_shared_resource(
+def review_shared_resource(
     resource_type: str,
     resource_id: str,
     review_action: ReviewAction,
@@ -554,7 +554,7 @@ async def review_shared_resource(
 
 
 @router.post("/admin/featured/{resource_type}/{resource_id}")
-async def set_featured_resource(
+def set_featured_resource(
     resource_type: str,
     resource_id: str,
     featured_action: FeaturedAction,
@@ -588,7 +588,7 @@ async def set_featured_resource(
 
 
 @router.get("/admin/stats", response_model=LibraryStats)
-async def get_library_stats(
+def get_library_stats(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -606,7 +606,7 @@ async def get_library_stats(
 
 
 @router.get("/admin/pending/{resource_type}")
-async def get_pending_resources(
+def get_pending_resources(
     resource_type: str,
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),

@@ -53,7 +53,7 @@ const Register: React.FC = () => {
       })
 
       if (success) {
-        message.success('注册成功！请登录您的账户')
+        message.success('注册成功！请查收验证邮件后再登录')
         form.resetFields()
         navigate('/login')
       } else {

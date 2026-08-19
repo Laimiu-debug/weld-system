@@ -29,7 +29,7 @@ router = APIRouter()
 
 
 @router.get("/plans", response_model=List[SubscriptionPlanSchema])
-async def get_subscription_plans(
+def get_subscription_plans(
     db: Session = Depends(get_db)
 ) -> Any:
     """获取所有可用的订阅计划 (公开接口,无需认证)."""
@@ -67,7 +67,7 @@ async def get_subscription_plans(
 
 
 @router.get("/current", response_model=Optional[SubscriptionSchema])
-async def get_current_subscription(
+def get_current_subscription(
     db: Session = Depends(get_db),
     current_user = Depends(deps.get_current_user)
 ) -> Any:
@@ -85,7 +85,7 @@ async def get_current_subscription(
 
 
 @router.post("/upgrade", response_model=MembershipUpgradeResponse)
-async def upgrade_membership(
+def upgrade_membership(
     upgrade_data: MembershipUpgradeRequest,
     request: Request,
     db: Session = Depends(get_db),
@@ -133,7 +133,7 @@ async def upgrade_membership(
 
 
 @router.get("/history")
-async def get_subscription_history(
+def get_subscription_history(
     db: Session = Depends(get_db),
     current_user = Depends(deps.get_current_user)
 ) -> Any:
@@ -199,7 +199,7 @@ async def get_subscription_history(
 
 
 @router.post("/{subscription_id}/cancel")
-async def cancel_subscription(
+def cancel_subscription(
     subscription_id: int,
     db: Session = Depends(get_db),
     current_user = Depends(deps.get_current_user)
@@ -231,7 +231,7 @@ async def cancel_subscription(
 
 
 @router.post("/{subscription_id}/renew")
-async def renew_subscription(
+def renew_subscription(
     subscription_id: int,
     request: Request,
     db: Session = Depends(get_db),
@@ -290,7 +290,7 @@ async def renew_subscription(
 
 
 @router.get("/subscription-summary")
-async def get_subscription_summary(
+def get_subscription_summary(
     current_user: User = Depends(deps.get_current_user),
     db: Session = Depends(get_db)
 ) -> Any:
@@ -313,7 +313,7 @@ async def get_subscription_summary(
 
 
 @router.get("/subscription-history")
-async def get_subscription_history(
+def get_subscription_history(
     include_expired: bool = True,
     current_user: User = Depends(deps.get_current_user),
     db: Session = Depends(get_db)
@@ -340,7 +340,7 @@ async def get_subscription_history(
 
 
 @router.post("/refresh-tier")
-async def refresh_membership_tier(
+def refresh_membership_tier(
     current_user: User = Depends(deps.get_current_user),
     db: Session = Depends(get_db)
 ) -> Any:

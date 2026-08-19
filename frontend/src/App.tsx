@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useAuthStore } from '@/store/authStore'
+import { useAuthStore, bindAuthCrossTabSync } from '@/store/authStore'
 import { authService } from '@/services/auth'
 import Layout from '@/components/Layout'
 import LoadingSpinner from '@/components/LoadingSpinner'
@@ -15,6 +15,7 @@ const Login = React.lazy(() => import('@/pages/Auth/Login'))
 const Register = React.lazy(() => import('@/pages/Auth/Register'))
 const ForgotPassword = React.lazy(() => import('@/pages/Auth/ForgotPassword'))
 const ResetPassword = React.lazy(() => import('@/pages/Auth/ResetPassword'))
+const VerifyEmail = React.lazy(() => import('@/pages/Auth/VerifyEmail'))
 const LoginDebug = React.lazy(() => import('@/pages/Auth/LoginDebug'))
 
 // 法律政策页面
@@ -133,6 +134,10 @@ const App: React.FC = () => {
   const { isAuthenticated, loading, setUser, setLoading } = useAuthStore()
 
   useEffect(() => {
+    bindAuthCrossTabSync()
+  }, [])
+
+  useEffect(() => {
     const initAuth = async () => {
       console.log('🚀 App.tsx: 开始初始化认证')
       setLoading(true)
@@ -230,6 +235,10 @@ const App: React.FC = () => {
           element={
             isAuthenticated ? <Navigate to="/dashboard" replace /> : <ResetPassword />
           }
+        />
+        <Route
+          path="/verify-email"
+          element={<VerifyEmail />}
         />
         <Route
           path="/login-debug"

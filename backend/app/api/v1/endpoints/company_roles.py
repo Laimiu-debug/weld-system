@@ -21,7 +21,7 @@ router = APIRouter()
 # ==================== 初始化API ====================
 
 @router.post("/roles/init-table")
-async def init_company_roles_table_only(
+def init_company_roles_table_only(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ) -> Any:
@@ -68,7 +68,7 @@ async def init_company_roles_table_only(
 
 
 @router.post("/roles/init")
-async def init_company_roles_table(
+def init_company_roles_table(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ) -> Any:
@@ -321,7 +321,7 @@ class UpdateRoleRequest(BaseModel):
 # ==================== 角色管理API ====================
 
 @router.get("/roles")
-async def get_company_roles(
+def get_company_roles(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     is_active: Optional[bool] = Query(None),
@@ -405,7 +405,7 @@ async def get_company_roles(
 
 
 @router.post("/roles")
-async def create_company_role(
+def create_company_role(
     role_data: CreateRoleRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
@@ -495,7 +495,7 @@ async def create_company_role(
 
 
 @router.put("/roles/{role_id}")
-async def update_company_role(
+def update_company_role(
     role_id: int,
     role_data: UpdateRoleRequest,
     db: Session = Depends(get_db),
@@ -601,7 +601,7 @@ async def update_company_role(
 
 
 @router.delete("/roles/{role_id}")
-async def delete_company_role(
+def delete_company_role(
     role_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)

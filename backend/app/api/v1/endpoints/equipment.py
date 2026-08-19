@@ -108,7 +108,7 @@ class MaintenanceRecord(BaseModel):
 
 
 @router.get("/")
-async def get_equipment_list(
+def get_equipment_list(
     db: Session = Depends(deps.get_db),
     skip: int = Query(0, ge=0, description="跳过记录数"),
     limit: int = Query(100, ge=1, le=1000, description="返回记录数"),
@@ -283,7 +283,7 @@ def get_user_company_info(db: Session, user_id: int) -> tuple:
         return ("personal", None, None)
 
 @router.post("/")
-async def create_equipment(
+def create_equipment(
     equipment_data: EquipmentCreate,
     workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
     db: Session = Depends(deps.get_db),
@@ -357,7 +357,7 @@ async def create_equipment(
 
 
 @router.get("/{equipment_id}")
-async def get_equipment_detail(
+def get_equipment_detail(
     equipment_id: int,
     workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
     db: Session = Depends(deps.get_db),
@@ -489,7 +489,7 @@ async def get_equipment_detail(
 
 
 @router.put("/{equipment_id}")
-async def update_equipment(
+def update_equipment(
     equipment_id: int,
     equipment_data: EquipmentUpdate,
     workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
@@ -568,7 +568,7 @@ async def update_equipment(
 
 
 @router.delete("/{equipment_id}")
-async def delete_equipment(
+def delete_equipment(
     equipment_id: int,
     workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
     db: Session = Depends(deps.get_db),
@@ -639,7 +639,7 @@ async def delete_equipment(
 
 
 @router.put("/{equipment_id}/status")
-async def update_equipment_status(
+def update_equipment_status(
     equipment_id: int,
     status_data: StatusUpdate,
     db: Session = Depends(deps.get_db),
@@ -701,7 +701,7 @@ async def update_equipment_status(
 
 
 @router.get("/maintenance/alerts")
-async def get_maintenance_alerts(
+def get_maintenance_alerts(
     db: Session = Depends(deps.get_db),
     days: int = Query(30, ge=1, le=365, description="未来天数"),
     current_user: User = Depends(deps.get_current_active_user)
@@ -780,7 +780,7 @@ async def get_maintenance_alerts(
 
 
 @router.get("/statistics/overview")
-async def get_equipment_statistics(
+def get_equipment_statistics(
     workspace_type: Optional[str] = Query(None, description="工作区类型: personal/company"),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user)

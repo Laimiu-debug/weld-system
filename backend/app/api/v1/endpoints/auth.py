@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.core.config import settings
-from app.core.errors import not_implemented
 from app.core.rate_limit import client_ip, enforce_rate_limit
 from app.core.security import (
     create_access_token,
@@ -19,6 +18,8 @@ from app.core.security import (
     get_password_hash,
     generate_password_reset_token,
     verify_password_reset_token,
+    generate_email_verification_token,
+    verify_email_verification_token,
     verify_token,
 )
 from app.schemas.token import Token, TokenWithUser, TokenRefresh
@@ -55,7 +56,7 @@ router = APIRouter()
 
 
 @router.post("/login", response_model=Token)
-async def login_for_access_token(
+def login_for_access_token(
     request: Request,
     db: Session = Depends(deps.get_db),
     form_data: OAuth2PasswordRequestForm = Depends()
@@ -145,7 +146,7 @@ async def login_for_access_token(
 
 
 @router.post("/login-json", response_model=TokenWithUser)
-async def login_with_json(  # Updated to support phone/email login
+def login_with_json(  # Updated to support phone/email login
     request: Request,
     login_data: LoginRequest,
     db: Session = Depends(deps.get_db)
@@ -245,7 +246,7 @@ async def login_with_json(  # Updated to support phone/email login
 
 
 @router.post("/refresh", response_model=Token)
-async def refresh_access_token(
+def refresh_access_token(
     token_refresh: TokenRefresh,
     db: Session = Depends(deps.get_db)
 ) -> Any:
@@ -294,7 +295,7 @@ async def refresh_access_token(
 
 
 @router.post("/register", response_model=dict)
-async def register_user(
+def register_user(
     user_in: UserCreate,
     db: Session = Depends(deps.get_db)
 ) -> dict:
@@ -307,44 +308,29 @@ async def register_user(
 
     Returns:
         注册成功消息
-
-    Raises:
-        HTTPException: 如果邮箱已存在
     """
-    print(f"📝 收到注册请求: email={user_in.email}, username={user_in.username}")
-
-    # 检查邮箱是否已存在
     user = user_service.get_by_email(db, email=user_in.email)
     if user:
-        print(f"❌ 邮箱已存在: {user_in.email}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="该邮箱已被注册"
         )
 
-    # 创建用户
     try:
-        print(f"🔨 开始创建用户...")
         user = user_service.create(db, obj_in=user_in)
-        print(f"用户创建成功: id={user.id}, email={user.email}")
-
-        # 只返回基本成功消息，避免任何datetime字段
-        response = {"message": "注册成功"}
-        print(f"📤 返回响应: {response}")
-        return response
-    except Exception as e:
-        print(f"❌ 用户创建失败: {str(e)}")
-        import traceback
-        traceback.print_exc()
+    except Exception:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"用户创建失败: {str(e)}"
+            detail="用户创建失败，请稍后重试",
         )
+
+    _send_verification_email(user.email)
+    return {"message": "注册成功，请查收验证邮件"}
 
 
 @router.post("/logout")
-async def logout_user(
+def logout_user(
     current_user: dict = Depends(deps.get_current_user)
 ) -> Any:
     """
@@ -403,12 +389,17 @@ def forgot_password(
     user = user_service.get_by_email(db, email=payload.email)
     if user:
         reset_token = generate_password_reset_token(payload.email)
+        frontend = getattr(settings, "FRONTEND_URL", "http://localhost:3000").rstrip("/")
+        reset_url = f"{frontend}/reset-password?token={reset_token}"
         try:
             email_service.send_email(
                 to_email=payload.email,
                 subject="【焊序】密码重置",
-                html_content=f"<p>您的密码重置令牌：{reset_token}</p>",
-                text_content=f"您的密码重置令牌：{reset_token}",
+                html_content=(
+                    f"<p>请点击以下链接重置密码：</p>"
+                    f"<p><a href=\"{reset_url}\">{reset_url}</a></p>"
+                ),
+                text_content=f"请打开以下链接重置密码：{reset_url}",
             )
         except Exception:
             pass
@@ -451,9 +442,23 @@ def verify_email(
     payload: EmailTokenRequest,
     db: Session = Depends(deps.get_db)
 ) -> Any:
-    """验证邮箱. 尚未实现真实校验时返回 501，不伪装成功."""
-    del payload, db
-    not_implemented("邮箱验证")
+    """验证邮箱."""
+    email = verify_email_verification_token(payload.token)
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "INVALID_TOKEN", "message": "无效或已过期的验证链接"},
+        )
+    user = user_service.get_by_email(db, email=email)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "USER_NOT_FOUND", "message": "用户不存在"},
+        )
+    if not user.is_verified:
+        user.is_verified = True
+        db.commit()
+    return {"message": "邮箱验证成功"}
 
 
 @router.post("/resend-verification")
@@ -462,13 +467,35 @@ def resend_verification_email(
     request: Request,
     db: Session = Depends(deps.get_db)
 ) -> Any:
-    """重新发送验证邮件."""
-    del payload, request, db
-    not_implemented("重发验证邮件")
+    """重新发送验证邮件。不枚举邮箱是否存在。"""
+    enforce_rate_limit(f"verify-email:{client_ip(request)}", limit=5, window_seconds=60)
+    enforce_rate_limit(f"verify-email-account:{payload.email.lower()}", limit=3, window_seconds=60)
+    user = user_service.get_by_email(db, email=payload.email)
+    if user and not user.is_verified:
+        _send_verification_email(user.email)
+    return {"message": "如果该邮箱已注册且未验证，将收到验证邮件"}
+
+
+def _send_verification_email(email: str) -> None:
+    token = generate_email_verification_token(email)
+    frontend = getattr(settings, "FRONTEND_URL", "http://localhost:3000").rstrip("/")
+    verify_url = f"{frontend}/verify-email?token={token}"
+    try:
+        email_service.send_email(
+            to_email=email,
+            subject="【焊序】请验证您的邮箱",
+            html_content=(
+                f"<p>请点击以下链接完成邮箱验证（48小时内有效）：</p>"
+                f"<p><a href=\"{verify_url}\">{verify_url}</a></p>"
+            ),
+            text_content=f"请打开以下链接完成邮箱验证：{verify_url}",
+        )
+    except Exception:
+        pass
 
 
 @router.post("/send-verification-code", response_model=VerificationCodeResponse)
-async def send_verification_code(
+def send_verification_code(
     payload: VerificationCodeRequest,
     http_request: Request,
     db: Session = Depends(deps.get_db)
@@ -553,7 +580,7 @@ async def send_verification_code(
 
 
 @router.post("/login-with-verification-code", response_model=Token)
-async def login_with_verification_code(
+def login_with_verification_code(
     request: Request,
     login_data: LoginWithVerificationCode,
     db: Session = Depends(deps.get_db)
