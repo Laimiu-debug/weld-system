@@ -834,3 +834,57 @@ class MaterialService:
                 detail=f"获取出入库记录失败：{str(e)}"
             )
 
+    def get_low_stock_alerts(
+        self,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+    ) -> Dict[str, Any]:
+        """库存低于最低库存或已缺货的焊材。"""
+        workspace_context.validate()
+        query = self.db.query(WeldingMaterial).filter(WeldingMaterial.is_active == True)
+        query = self.data_access.apply_workspace_filter(
+            query, WeldingMaterial, current_user, workspace_context
+        )
+        query = query.filter(
+            or_(
+                WeldingMaterial.current_stock <= 0,
+                and_(
+                    WeldingMaterial.min_stock_level.isnot(None),
+                    WeldingMaterial.current_stock <= WeldingMaterial.min_stock_level,
+                ),
+            )
+        )
+        items = query.order_by(WeldingMaterial.current_stock.asc()).all()
+        return {
+            "items": items,
+            "total": len(items),
+        }
+
+    def get_statistics(
+        self,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+    ) -> Dict[str, Any]:
+        """焊材库存概览。"""
+        workspace_context.validate()
+        query = self.db.query(WeldingMaterial).filter(WeldingMaterial.is_active == True)
+        query = self.data_access.apply_workspace_filter(
+            query, WeldingMaterial, current_user, workspace_context
+        )
+        total = query.count()
+        low_stock = query.filter(
+            WeldingMaterial.min_stock_level.isnot(None),
+            WeldingMaterial.current_stock <= WeldingMaterial.min_stock_level,
+            WeldingMaterial.current_stock > 0,
+        ).count()
+        out_of_stock = query.filter(WeldingMaterial.current_stock <= 0).count()
+        value_row = query.with_entities(
+            func.coalesce(func.sum(WeldingMaterial.total_value), 0)
+        ).scalar()
+        return {
+            "total_materials": total,
+            "total_stock_value": float(value_row or 0),
+            "low_stock_count": low_stock,
+            "out_of_stock_count": out_of_stock,
+        }
+

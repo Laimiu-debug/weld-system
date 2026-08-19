@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.database import engine, get_db
 from app.models.user import User
 from app.core.security import get_password_hash
+from app.core.bootstrap_secrets import require_admin_initial_password
 
 async def create_admin_user():
     """创建管理员用户"""
@@ -43,7 +44,7 @@ async def create_admin_user():
             email="Laimiu.new@gmail.com",
             username="admin",
             full_name="系统管理员",
-            hashed_password=get_password_hash("ghzzz123"),  # 使用你的密码
+            hashed_password=get_password_hash(require_admin_initial_password()),
             is_active=True,
             is_verified=True,
             is_superuser=True,  # 设置为超级管理员
@@ -60,7 +61,7 @@ async def create_admin_user():
         print("管理员用户创建成功！")
         print(f"邮箱: {admin_user.email}")
         print(f"用户名: {admin_user.username}")
-        print(f"密码: ghzzz123")
+        print("密码: (set via ADMIN_INITIAL_PASSWORD, not printed)")
         print(f"是否管理员: {admin_user.is_superuser}")
         print(f"会员等级: {admin_user.member_tier}")
 

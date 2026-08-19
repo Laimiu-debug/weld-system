@@ -135,16 +135,33 @@ class MembershipService {
 
   // 续费订阅
   async renewSubscription(subscriptionId: number): Promise<{
+    success: boolean
     message: string
-    new_end_date: string
+    transaction_id?: string
+    order_id?: string
+    amount?: number
     amount_paid: number
+    new_end_date: string
+    qr_code?: string
+    payment_url?: string
+    payment_method?: string
+    plan_name?: string
   }> {
     const response = await apiService.post<{
+      success: boolean
       message: string
-      new_end_date: string
+      transaction_id?: string
+      order_id?: string
+      amount?: number
       amount_paid: number
+      new_end_date: string
+      qr_code?: string
+      payment_url?: string
+      payment_method?: string
+      plan_name?: string
     }>(`/members/${subscriptionId}/renew`)
     return response.data || {
+      success: false,
       message: "续费失败",
       new_end_date: "",
       amount_paid: 0

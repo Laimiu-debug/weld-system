@@ -40,7 +40,7 @@ class PaymentCallback(BaseModel):
     payment_method: str = Field(..., description="支付方式")
     status: str = Field(..., description="支付状态: success, failed, pending")
     paid_at: datetime = Field(..., description="支付时间")
-    signature: str = Field(..., description="签名")
+    signature: Optional[str] = Field(default="", description="签名")
     extra_data: Optional[Dict[str, Any]] = Field(None, description="额外数据")
 
 

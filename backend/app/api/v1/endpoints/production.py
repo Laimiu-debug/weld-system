@@ -3,13 +3,22 @@ Production Management API endpoints for the welding system backend.
 """
 from typing import Any, List, Optional
 from math import ceil
+from datetime import date as date_cls
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
 from sqlalchemy.orm import Session
 
 from app.api import deps
-from app.schemas.production import ProductionTaskCreate, ProductionTaskUpdate, ProductionTaskResponse, ProductionTaskListResponse
+from app.schemas.production import (
+    ProductionTaskCreate,
+    ProductionTaskUpdate,
+    ProductionTaskResponse,
+    ProductionTaskListResponse,
+    ProductionRecordCreate,
+    ProductionRecordResponse,
+    ProductionProgressUpdate,
+)
 from app.services.production_service import ProductionService
 from app.core.data_access import WorkspaceContext
 
@@ -288,64 +297,99 @@ async def delete_production_task(
 
 @router.put("/tasks/{task_id}/progress")
 async def update_task_progress(
-    task_id: str,
-    progress_data: dict,
+    task_id: int,
+    progress_data: ProductionProgressUpdate,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    更新任务进度
-    """
-    # TODO: 实现实际的进度更新逻辑
+    """更新任务进度。"""
+    workspace_context = WorkspaceContext(
+        workspace_type=workspace_type,
+        user_id=current_user.id,
+        company_id=company_id,
+        factory_id=factory_id
+    )
+    service = ProductionService(db)
+    task = service.update_task_progress(
+        task_id=task_id,
+        current_user=current_user,
+        workspace_context=workspace_context,
+        progress_percentage=progress_data.progress_percentage,
+        status=progress_data.status,
+        notes=progress_data.notes,
+    )
     return {
         "success": True,
-        "data": {
-            "task_id": task_id,
-            **progress_data
-        },
-        "message": "任务进度更新成功"
+        "data": ProductionTaskResponse.model_validate(task),
+        "message": "任务进度已更新"
     }
 
 
 @router.post("/tasks/{task_id}/records")
 async def create_production_record(
-    task_id: str,
-    record_data: dict,
+    task_id: int,
+    record_in: ProductionRecordCreate,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    创建生产记录
-    """
-    # TODO: 实现实际的记录创建逻辑
+    """创建生产记录。"""
+    workspace_context = WorkspaceContext(
+        workspace_type=workspace_type,
+        user_id=current_user.id,
+        company_id=company_id,
+        factory_id=factory_id
+    )
+    service = ProductionService(db)
+    record = service.create_production_record(
+        task_id=task_id,
+        current_user=current_user,
+        record_data=record_in.model_dump(exclude_unset=True),
+        workspace_context=workspace_context,
+    )
     return {
         "success": True,
-        "data": {
-            "id": "record-id",
-            "task_id": task_id,
-            **record_data
-        },
+        "data": ProductionRecordResponse.model_validate(record),
         "message": "生产记录创建成功"
     }
 
 
 @router.get("/tasks/{task_id}/records")
 async def get_production_records(
-    task_id: str,
+    task_id: int,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     db: Session = Depends(deps.get_db),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    获取生产记录
-    """
-    # TODO: 实现实际的查询逻辑
+    """获取生产记录。"""
+    workspace_context = WorkspaceContext(
+        workspace_type=workspace_type,
+        user_id=current_user.id,
+        company_id=company_id,
+        factory_id=factory_id
+    )
+    service = ProductionService(db)
+    records, total = service.get_production_records(
+        task_id=task_id,
+        current_user=current_user,
+        workspace_context=workspace_context,
+        skip=skip,
+        limit=limit,
+    )
     return {
         "success": True,
         "data": {
-            "items": [],
-            "total": 0
+            "items": [ProductionRecordResponse.model_validate(item) for item in records],
+            "total": total,
         },
         "message": "获取生产记录成功"
     }
@@ -353,46 +397,52 @@ async def get_production_records(
 
 @router.get("/statistics/overview")
 async def get_production_statistics(
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    获取生产统计信息
-    """
-    # TODO: 实现实际的统计逻辑
+    """获取生产统计信息。"""
+    workspace_context = WorkspaceContext(
+        workspace_type=workspace_type,
+        user_id=current_user.id,
+        company_id=company_id,
+        factory_id=factory_id
+    )
+    service = ProductionService(db)
     return {
         "success": True,
-        "data": {
-            "total_tasks": 0,
-            "pending_tasks": 0,
-            "in_progress_tasks": 0,
-            "completed_tasks": 0,
-            "cancelled_tasks": 0,
-            "average_completion_rate": 0.0
-        },
-        "message": "获取统计信息成功"
+        "data": service.get_statistics(current_user, workspace_context),
+        "message": "获取生产统计成功"
     }
 
 
 @router.get("/statistics/efficiency")
 async def get_production_efficiency(
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     db: Session = Depends(deps.get_db),
     start_date: Optional[str] = Query(None, description="开始日期"),
     end_date: Optional[str] = Query(None, description="结束日期"),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    获取生产效率统计
-    """
-    # TODO: 实现实际的效率统计逻辑
+    """获取生产效率统计。"""
+    workspace_context = WorkspaceContext(
+        workspace_type=workspace_type,
+        user_id=current_user.id,
+        company_id=company_id,
+        factory_id=factory_id
+    )
+    parsed_start = date_cls.fromisoformat(start_date) if start_date else None
+    parsed_end = date_cls.fromisoformat(end_date) if end_date else None
+    service = ProductionService(db)
     return {
         "success": True,
-        "data": {
-            "total_production_hours": 0.0,
-            "completed_tasks_count": 0,
-            "average_task_duration": 0.0,
-            "efficiency_rate": 0.0
-        },
+        "data": service.get_efficiency_statistics(
+            current_user, workspace_context, parsed_start, parsed_end
+        ),
         "message": "获取生产效率统计成功"
     }
 

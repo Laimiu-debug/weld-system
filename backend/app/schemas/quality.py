@@ -224,3 +224,90 @@ class QualityInspectionListResponse(BaseModel):
     page: int
     page_size: int
     total_pages: int
+
+
+# ==================== 不合格品记录Schema ====================
+
+class NonconformanceRecordBase(BaseModel):
+    """不合格品记录基础Schema"""
+    ncr_number: Optional[str] = Field(None, description="不合格品编号")
+    ncr_title: str = Field(..., description="标题")
+    inspection_id: Optional[int] = Field(None, description="检验ID")
+    production_task_id: Optional[int] = Field(None, description="生产任务ID")
+    wps_id: Optional[int] = Field(None, description="WPS ID")
+    occurrence_date: date = Field(..., description="发生日期")
+    reported_date: Optional[date] = Field(None, description="报告日期")
+    nonconformance_type: Optional[str] = Field(None, description="不合格类型")
+    nonconformance_category: Optional[str] = Field(None, description="不合格类别")
+    severity: Optional[str] = Field(None, description="严重程度")
+    description: str = Field(..., description="描述")
+    responsible_person_id: Optional[int] = Field(None, description="责任人ID")
+    responsible_department: Optional[str] = Field(None, description="责任部门")
+    root_cause: Optional[str] = Field(None, description="根本原因")
+    contributing_factors: Optional[str] = Field(None, description="促成因素")
+    disposition: Optional[str] = Field(None, description="处置方式")
+    corrective_actions: Optional[str] = Field(None, description="纠正措施")
+    preventive_actions: Optional[str] = Field(None, description="预防措施")
+    action_plan: Optional[str] = Field(None, description="行动计划(JSON)")
+    resolution_status: Optional[str] = Field(default="open", description="解决状态")
+    resolution_date: Optional[date] = Field(None, description="解决日期")
+    resolution_description: Optional[str] = Field(None, description="解决描述")
+    verification_result: Optional[str] = Field(None, description="验证结果")
+    estimated_cost: Optional[float] = Field(None, description="预计成本")
+    actual_cost: Optional[float] = Field(None, description="实际成本")
+    currency: Optional[str] = Field(default="CNY", description="货币")
+    notes: Optional[str] = Field(None, description="备注")
+    images: Optional[str] = Field(None, description="图片(JSON)")
+    attachments: Optional[str] = Field(None, description="附件(JSON)")
+
+
+class NonconformanceRecordCreate(NonconformanceRecordBase):
+    """创建不合格品记录"""
+    pass
+
+
+class NonconformanceRecordUpdate(BaseModel):
+    """更新不合格品记录"""
+    ncr_title: Optional[str] = None
+    inspection_id: Optional[int] = None
+    production_task_id: Optional[int] = None
+    wps_id: Optional[int] = None
+    occurrence_date: Optional[date] = None
+    reported_date: Optional[date] = None
+    nonconformance_type: Optional[str] = None
+    nonconformance_category: Optional[str] = None
+    severity: Optional[str] = None
+    description: Optional[str] = None
+    responsible_person_id: Optional[int] = None
+    responsible_department: Optional[str] = None
+    root_cause: Optional[str] = None
+    contributing_factors: Optional[str] = None
+    disposition: Optional[str] = None
+    corrective_actions: Optional[str] = None
+    preventive_actions: Optional[str] = None
+    action_plan: Optional[str] = None
+    resolution_status: Optional[str] = None
+    resolution_date: Optional[date] = None
+    resolution_description: Optional[str] = None
+    verification_result: Optional[str] = None
+    estimated_cost: Optional[float] = None
+    actual_cost: Optional[float] = None
+    currency: Optional[str] = None
+    notes: Optional[str] = None
+    images: Optional[str] = None
+    attachments: Optional[str] = None
+
+
+class NonconformanceRecordResponse(NonconformanceRecordBase):
+    """不合格品记录响应"""
+    id: int
+    owner_id: int
+    workspace_type: str
+    company_id: Optional[int] = None
+    factory_id: Optional[int] = None
+    created_by: int
+    updated_by: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

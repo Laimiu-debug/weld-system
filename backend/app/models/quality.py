@@ -332,6 +332,15 @@ class NonconformanceRecord(Base):
     # production_task = relationship("ProductionTask")
     # responsible_person = relationship("User", foreign_keys=[responsible_person_id])
 
+    @property
+    def user_id(self):
+        """兼容数据访问层：个人工作区按创建者隔离。"""
+        return self.owner_id
+
+    @user_id.setter
+    def user_id(self, value):
+        self.owner_id = value
+
     def __repr__(self):
         return f"<NonconformanceRecord(id={self.id}, number={self.ncr_number})>"
 

@@ -6,6 +6,7 @@ yarn-error.log*
 
 # Python dependencies
 __pycache__/
+.pytest_cache/
 *.py[cod]
 *$py.class
 *.so
@@ -39,6 +40,11 @@ logs/
 .env.local
 .env.production
 .env.development
+.env.dev
+backend/.env.dev
+
+# Keep examples
+!.env.example
 
 # Database
 *.db

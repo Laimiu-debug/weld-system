@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   Modal,
   QRCode,
@@ -8,7 +8,6 @@ import {
   Space,
   Typography,
   Alert,
-  Statistic,
   Card,
   Steps,
   message
@@ -32,6 +31,7 @@ interface PaymentModalProps {
   amount: number
   planName: string
   paymentMethod: 'alipay' | 'wechat' | 'bank'
+  qrCode?: string
   onSuccess: () => void
   onCancel: () => void
 }
@@ -44,109 +44,101 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   amount,
   planName,
   paymentMethod,
+  qrCode,
   onSuccess,
   onCancel
 }) => {
-  const [status, setStatus] = useState<PaymentStatus>('loading')
-  const [qrCodeUrl, setQrCodeUrl] = useState('')
-  const [countdown, setCountdown] = useState(300) // 5分钟倒计时
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null)
-  const [countdownInterval, setCountdownInterval] = useState<NodeJS.Timeout | null>(null)
+  const [status, setStatus] = useState<PaymentStatus>(qrCode ? 'pending' : 'loading')
+  const [qrCodeUrl, setQrCodeUrl] = useState(qrCode || '')
+  const [countdown, setCountdown] = useState(300)
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  useEffect(() => {
-    if (visible && orderId) {
-      initPayment()
+  const clearTimers = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current)
+      pollingRef.current = null
     }
-
-    return () => {
-      // 清理定时器
-      if (pollingInterval) clearInterval(pollingInterval)
-      if (countdownInterval) clearInterval(countdownInterval)
-    }
-  }, [visible, orderId])
-
-  const initPayment = async () => {
-    try {
-      setStatus('loading')
-      
-      // 获取支付二维码
-      const response = await apiService.post(`/payments/create`, {
-        plan_id: orderId,
-        billing_cycle: 'monthly',
-        payment_method: paymentMethod,
-        auto_renew: false
-      })
-
-      if (response.data?.success) {
-        const paymentUrl = response.data.payment_url || response.data.qr_code
-        setQrCodeUrl(paymentUrl)
-        setStatus('pending')
-        
-        // 开始轮询支付状态
-        startPolling()
-        // 开始倒计时
-        startCountdown()
-      } else {
-        setStatus('failed')
-        message.error('创建支付订单失败')
-      }
-    } catch (error) {
-      console.error('Payment initialization failed:', error)
-      setStatus('failed')
-      message.error('创建支付订单失败，请稍后重试')
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current)
+      countdownRef.current = null
     }
   }
 
+  useEffect(() => {
+    if (visible && orderId) {
+      setQrCodeUrl(qrCode || '')
+      setCountdown(300)
+      setStatus(qrCode ? 'pending' : 'loading')
+      startPolling()
+      startCountdown()
+    }
+
+    return () => {
+      clearTimers()
+    }
+  }, [visible, orderId, qrCode])
+
   const startPolling = () => {
-    const interval = setInterval(async () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current)
+      pollingRef.current = null
+    }
+    const checkStatus = async () => {
       try {
         const response = await apiService.get(`/payments/status/${orderId}`)
-        
         if (response.data?.success) {
           const paymentStatus = response.data.data?.status
-          
           if (paymentStatus === 'success') {
             setStatus('success')
-            if (pollingInterval) clearInterval(pollingInterval)
-            if (countdownInterval) clearInterval(countdownInterval)
-            
-            // 延迟2秒后调用成功回调
+            clearTimers()
             setTimeout(() => {
               onSuccess()
             }, 2000)
-          } else if (paymentStatus === 'failed') {
+          } else if (paymentStatus === 'failed' || paymentStatus === 'rejected') {
             setStatus('failed')
-            if (pollingInterval) clearInterval(pollingInterval)
-            if (countdownInterval) clearInterval(countdownInterval)
+            clearTimers()
+          } else {
+            setStatus('pending')
           }
         }
       } catch (error) {
         console.error('Payment status check failed:', error)
       }
-    }, 3000) // 每3秒查询一次
-
-    setPollingInterval(interval)
+    }
+    void checkStatus()
+    pollingRef.current = setInterval(() => {
+      void checkStatus()
+    }, 3000)
   }
 
   const startCountdown = () => {
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current)
+      countdownRef.current = null
+    }
     const interval = setInterval(() => {
       setCountdown(prev => {
         if (prev <= 1) {
           setStatus('timeout')
-          if (pollingInterval) clearInterval(pollingInterval)
-          if (countdownInterval) clearInterval(countdownInterval)
+          clearTimers()
           return 0
         }
         return prev - 1
       })
     }, 1000)
-
-    setCountdownInterval(interval)
+    countdownRef.current = interval
   }
 
   const handleRetry = () => {
+    if (!qrCodeUrl) {
+      message.warning('请关闭后重新发起支付')
+      return
+    }
     setCountdown(300)
-    initPayment()
+    setStatus('pending')
+    startPolling()
+    startCountdown()
   }
 
   const getPaymentIcon = () => {
@@ -155,8 +147,12 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         return <AlipayOutlined style={{ fontSize: 48, color: '#1677ff' }} />
       case 'wechat':
         return <WechatOutlined style={{ fontSize: 48, color: '#07c160' }} />
-      default:
+      case 'bank':
         return null
+      default: {
+        const _exhaustive: never = paymentMethod
+        return _exhaustive
+      }
     }
   }
 
@@ -168,8 +164,10 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         return '微信支付'
       case 'bank':
         return '银行转账'
-      default:
-        return '未知'
+      default: {
+        const _exhaustive: never = paymentMethod
+        return _exhaustive
+      }
     }
   }
 
@@ -184,7 +182,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
       case 'loading':
         return (
           <div className="text-center py-12">
-            <Spin size="large" tip="正在创建支付订单..." />
+            <Spin size="large" tip="正在确认支付订单..." />
           </div>
         )
 
@@ -192,10 +190,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         return (
           <div className="text-center">
             <Space direction="vertical" size="large" className="w-full">
-              {/* 支付方式图标 */}
               <div>{getPaymentIcon()}</div>
-
-              {/* 二维码 */}
               <Card className="inline-block">
                 {qrCodeUrl ? (
                   <QRCode value={qrCodeUrl} size={256} />
@@ -205,16 +200,12 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                   </div>
                 )}
               </Card>
-
-              {/* 提示信息 */}
               <div>
                 <Title level={4}>请使用{getPaymentMethodName()}扫码支付</Title>
                 <Paragraph type="secondary">
                   订单金额：<Text strong className="text-2xl text-red-500">¥{amount.toFixed(2)}</Text>
                 </Paragraph>
               </div>
-
-              {/* 倒计时 */}
               <Alert
                 message={
                   <Space>
@@ -225,8 +216,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
                 type="info"
                 showIcon={false}
               />
-
-              {/* 支付步骤 */}
               <Steps current={1} size="small" className="mt-4">
                 <Step title="创建订单" />
                 <Step title="扫码支付" />
@@ -241,7 +230,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           <Result
             status="success"
             title="支付成功！"
-            subTitle={`您已成功升级到${planName}，感谢您的支持！`}
+            subTitle={`您已成功开通${planName}，感谢您的支持！`}
             icon={<CheckCircleOutlined style={{ color: '#52c41a' }} />}
             extra={[
               <Button type="primary" key="ok" onClick={onSuccess}>
@@ -260,7 +249,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
             icon={<CloseCircleOutlined style={{ color: '#ff4d4f' }} />}
             extra={[
               <Button type="primary" key="retry" onClick={handleRetry} icon={<ReloadOutlined />}>
-                重新支付
+                重新查询
               </Button>,
               <Button key="cancel" onClick={onCancel}>
                 取消
@@ -274,10 +263,10 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           <Result
             status="warning"
             title="支付超时"
-            subTitle="支付二维码已过期，请重新发起支付"
+            subTitle="可关闭后重新进入本页继续支付，请勿重复下单"
             extra={[
               <Button type="primary" key="retry" onClick={handleRetry} icon={<ReloadOutlined />}>
-                重新支付
+                继续等待
               </Button>,
               <Button key="cancel" onClick={onCancel}>
                 取消
@@ -286,8 +275,10 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
           />
         )
 
-      default:
-        return null
+      default: {
+        const _exhaustive: never = status
+        return _exhaustive
+      }
     }
   }
 
@@ -307,4 +298,3 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
 }
 
 export default PaymentModal
-

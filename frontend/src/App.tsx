@@ -93,6 +93,7 @@ const PermissionDenied = React.lazy(() => import('@/pages/Error/PermissionDenied
 const MembershipCurrent = React.lazy(() => import('@/pages/Membership/MembershipCurrent'))
 const MembershipUpgrade = React.lazy(() => import('@/pages/Membership/MembershipUpgrade'))
 const MembershipPayment = React.lazy(() => import('@/pages/Membership/MembershipPayment'))
+const PaymentResult = React.lazy(() => import('@/pages/Membership/PaymentResult'))
 const SubscriptionHistory = React.lazy(() => import('@/pages/Membership/SubscriptionHistory'))
 
 // 共享库页面
@@ -724,6 +725,14 @@ const App: React.FC = () => {
             element={
               <ProtectedRoute>
                 <MembershipPayment />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="membership/result"
+            element={
+              <ProtectedRoute>
+                <PaymentResult />
               </ProtectedRoute>
             }
           />

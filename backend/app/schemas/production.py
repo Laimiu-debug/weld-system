@@ -195,59 +195,68 @@ class ProductionTaskListResponse(BaseModel):
 # ==================== 生产记录Schema ====================
 
 class ProductionRecordBase(BaseModel):
-    """生产记录基础Schema"""
-    record_number: str = Field(..., description="记录编号")
-    task_id: int = Field(..., description="任务ID")
+    """生产记录基础Schema（与 production_records 表字段对齐）"""
+    record_number: Optional[str] = Field(None, description="记录编号")
     record_date: date = Field(..., description="记录日期")
-    shift: Optional[str] = Field(None, description="班次")
-    
-    # 人员信息
-    welder_id: int = Field(..., description="焊工ID")
-    inspector_id: Optional[int] = Field(None, description="检验员ID")
-    supervisor_id: Optional[int] = Field(None, description="主管ID")
-    
-    # 工作量
-    weld_length: Optional[float] = Field(None, description="焊缝长度(m)")
-    weld_volume: Optional[float] = Field(None, description="焊缝体积(cm³)")
-    joints_completed: Optional[int] = Field(None, description="完成接头数")
-    passes_completed: Optional[int] = Field(None, description="完成焊道数")
-    work_hours: Optional[float] = Field(None, description="工时(h)")
-    
-    # 焊接参数
-    actual_current: Optional[float] = Field(None, description="实际电流(A)")
-    actual_voltage: Optional[float] = Field(None, description="实际电压(V)")
-    actual_travel_speed: Optional[float] = Field(None, description="实际焊接速度(mm/min)")
-    actual_preheat_temp: Optional[float] = Field(None, description="实际预热温度(°C)")
-    actual_interpass_temp: Optional[float] = Field(None, description="实际层间温度(°C)")
-    
-    # 质量信息
-    quality_status: str = Field(default="pending", description="质量状态")
-    defects_found: Optional[str] = Field(None, description="发现缺陷(JSON)")
-    rework_required: bool = Field(default=False, description="是否需要返工")
-    
-    # 环境条件
-    ambient_temperature: Optional[float] = Field(None, description="环境温度(°C)")
+    work_shift: Optional[str] = Field(None, description="班次")
+    welder_id: Optional[int] = Field(None, description="焊工ID")
+    equipment_id: Optional[int] = Field(None, description="设备ID")
+    wps_id: Optional[int] = Field(None, description="WPS ID")
+    start_time: Optional[datetime] = Field(None, description="开始时间")
+    end_time: Optional[datetime] = Field(None, description="结束时间")
+    duration_hours: Optional[float] = Field(None, description="工时(h)")
+    break_time_hours: Optional[float] = Field(None, description="休息时间(h)")
+    effective_work_hours: Optional[float] = Field(None, description="有效工时(h)")
+    work_description: Optional[str] = Field(None, description="工作描述")
+    work_location: Optional[str] = Field(None, description="工作地点")
+    welding_process: Optional[str] = Field(None, description="焊接工艺")
+    welding_position: Optional[str] = Field(None, description="焊接位置")
+    quantity_completed: Optional[float] = Field(None, description="完成数量")
+    unit: Optional[str] = Field(None, description="单位")
+    weld_length: Optional[float] = Field(None, description="焊接长度(m)")
+    weld_weight: Optional[float] = Field(None, description="焊接重量(kg)")
+    base_material_used: Optional[float] = Field(None, description="母材消耗")
+    filler_material_used: Optional[float] = Field(None, description="填充材料消耗")
+    gas_consumption: Optional[float] = Field(None, description="气体消耗")
+    power_consumption: Optional[float] = Field(None, description="耗电量(kWh)")
+    quality_status: Optional[str] = Field(default="pending", description="质量状态")
+    inspection_result: Optional[str] = Field(None, description="检验结果")
+    defects_found: Optional[int] = Field(default=0, description="发现缺陷数")
+    rework_required: Optional[bool] = Field(default=False, description="是否需要返工")
+    temperature: Optional[float] = Field(None, description="温度(°C)")
     humidity: Optional[float] = Field(None, description="湿度(%)")
     weather_conditions: Optional[str] = Field(None, description="天气条件")
-    
-    # 附加信息
+    issues_occurred: Optional[bool] = Field(default=False, description="是否发生问题")
+    issue_description: Optional[str] = Field(None, description="问题描述")
+    corrective_actions: Optional[str] = Field(None, description="纠正措施")
     notes: Optional[str] = Field(None, description="备注")
-    photos: Optional[str] = Field(None, description="照片(JSON)")
+    images: Optional[str] = Field(None, description="图片(JSON)")
+    attachments: Optional[str] = Field(None, description="附件(JSON)")
 
 
 class ProductionRecordCreate(ProductionRecordBase):
     """创建生产记录Schema"""
-    pass
+    progress_percentage: Optional[float] = Field(None, ge=0, le=100, description="同步更新任务进度")
+
+
+class ProductionProgressUpdate(BaseModel):
+    """更新生产任务进度"""
+    progress_percentage: float = Field(..., ge=0, le=100, description="进度百分比")
+    status: Optional[str] = Field(None, description="可选同步状态")
+    notes: Optional[str] = Field(None, description="进度备注")
 
 
 class ProductionRecordResponse(ProductionRecordBase):
     """生产记录响应Schema"""
     id: int
+    task_id: int
+    user_id: int
+    company_id: Optional[int] = None
+    factory_id: Optional[int] = None
     created_by: int
     created_at: datetime
     updated_at: datetime
-    is_active: bool
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 

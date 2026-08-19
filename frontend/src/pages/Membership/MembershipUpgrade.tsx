@@ -51,6 +51,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
 import { membershipService, SubscriptionPlan, MembershipUpgradeRequest } from '@/services/membership'
 import ManualPaymentModal from '@/components/Payment/ManualPaymentModal'
+import PaymentModal from '@/components/Payment/PaymentModal'
 
 const { Title, Text, Paragraph } = Typography
 const { Option } = Select
@@ -219,6 +220,8 @@ const MembershipUpgrade: React.FC = () => {
 
   // 手动支付相关状态
   const [manualPaymentVisible, setManualPaymentVisible] = useState(false)
+  const [qrPaymentVisible, setQrPaymentVisible] = useState(false)
+  const [currentQrCode, setCurrentQrCode] = useState('')
   const [currentOrderId, setCurrentOrderId] = useState('')
   const [currentAmount, setCurrentAmount] = useState(0)
   const [currentPlanName, setCurrentPlanName] = useState('')
@@ -791,12 +794,16 @@ const MembershipUpgrade: React.FC = () => {
 
         // 设置手动支付信息
         const selectedPlanInfo = membershipPlans.find(p => p.id === selectedPlan)
-        setCurrentOrderId(paymentData.transaction_id)  // 使用 transaction_id 而不是 order_id
+        setCurrentOrderId(paymentData.transaction_id || paymentData.order_id)
         setCurrentAmount(paymentData.amount)
         setCurrentPlanName(selectedPlanInfo?.name || selectedPlan)
+        setCurrentQrCode(paymentData.qr_code || paymentData.payment_url || '')
 
-        // 显示手动支付弹窗
-        setManualPaymentVisible(true)
+        if ((paymentMethod === 'alipay' || paymentMethod === 'wechat') && (paymentData.qr_code || paymentData.payment_url)) {
+          setQrPaymentVisible(true)
+        } else {
+          setManualPaymentVisible(true)
+        }
       } else {
         message.error(response.message || '创建订单失败')
       }
@@ -1418,7 +1425,21 @@ const MembershipUpgrade: React.FC = () => {
         )}
       </Modal>
 
-      {/* 手动支付弹窗 */}
+      {/* 在线扫码支付 */}
+      <PaymentModal
+        visible={qrPaymentVisible}
+        orderId={currentOrderId}
+        amount={currentAmount}
+        planName={currentPlanName}
+        paymentMethod={paymentMethod as 'alipay' | 'wechat' | 'bank'}
+        qrCode={currentQrCode}
+        onSuccess={() => {
+          setQrPaymentVisible(false)
+          setUpgradeModalVisible(false)
+          navigate(`/membership/result?order_id=${currentOrderId}&status=success`)
+        }}
+        onCancel={() => setQrPaymentVisible(false)}
+      />
       <ManualPaymentModal
         visible={manualPaymentVisible}
         orderId={currentOrderId}

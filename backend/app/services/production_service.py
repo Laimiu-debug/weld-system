@@ -3,9 +3,9 @@ Production Service for the welding system backend.
 生产管理服务层
 """
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, or_, func, case
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from fastapi import HTTPException
 from fastapi import status as http_status
 
@@ -503,4 +503,230 @@ class ProductionService:
             )
         
         return query.first() is not None
+
+    # ==================== 进度 / 生产记录 / 统计 ====================
+
+    def update_task_progress(
+        self,
+        task_id: int,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+        progress_percentage: float,
+        status: Optional[str] = None,
+        notes: Optional[str] = None,
+    ) -> ProductionTask:
+        """更新任务进度，并按进度自动推导状态。"""
+        task = self.get_production_task_by_id(task_id, current_user, workspace_context)
+        self.data_access.check_access(
+            current_user, task, "EDIT", workspace_context
+        )
+
+        progress = max(0.0, min(100.0, float(progress_percentage)))
+        task.progress_percentage = progress
+
+        if status:
+            task.status = status
+        elif progress >= 100:
+            task.status = "completed"
+            task.actual_end_date = task.actual_end_date or date.today()
+        elif progress > 0 and task.status in (None, "pending"):
+            task.status = "in_progress"
+            task.actual_start_date = task.actual_start_date or date.today()
+
+        if notes:
+            task.notes = notes
+
+        task.updated_by = current_user.id
+        task.updated_at = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(task)
+        return task
+
+    def create_production_record(
+        self,
+        task_id: int,
+        current_user: User,
+        record_data: Dict[str, Any],
+        workspace_context: WorkspaceContext,
+    ) -> ProductionRecord:
+        """为任务追加一条生产记录，并回写完成量/工时。"""
+        task = self.get_production_task_by_id(task_id, current_user, workspace_context)
+        self.data_access.check_access(
+            current_user, task, "EDIT", workspace_context
+        )
+
+        payload = record_data.copy()
+        progress_percentage = payload.pop("progress_percentage", None)
+        payload.pop("task_id", None)
+
+        record_date = payload.get("record_date") or date.today()
+        start_time = payload.get("start_time") or datetime.utcnow()
+        payload["record_date"] = record_date
+        payload["start_time"] = start_time
+        if not payload.get("record_number"):
+            payload["record_number"] = f"PR-{task.task_number}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+
+        allowed = {column.name for column in ProductionRecord.__table__.columns}
+        filtered = {key: value for key, value in payload.items() if key in allowed}
+
+        record = ProductionRecord(
+            **filtered,
+            task_id=task.id,
+            user_id=current_user.id,
+            company_id=task.company_id,
+            factory_id=task.factory_id,
+            created_by=current_user.id,
+        )
+        if not record.welder_id:
+            record.welder_id = task.assigned_welder_id
+        if not record.equipment_id:
+            record.equipment_id = task.assigned_equipment_id
+        if not record.wps_id:
+            record.wps_id = task.wps_id
+
+        self.db.add(record)
+
+        if record.quantity_completed:
+            task.completed_quantity = (task.completed_quantity or 0) + record.quantity_completed
+        if record.weld_length:
+            task.weld_length_actual = (task.weld_length_actual or 0) + record.weld_length
+        if record.duration_hours:
+            task.actual_duration_hours = (task.actual_duration_hours or 0) + record.duration_hours
+        if progress_percentage is not None:
+            task.progress_percentage = max(0.0, min(100.0, float(progress_percentage)))
+            if task.progress_percentage >= 100:
+                task.status = "completed"
+            elif task.status == "pending":
+                task.status = "in_progress"
+        elif task.status == "pending":
+            task.status = "in_progress"
+            task.actual_start_date = task.actual_start_date or date.today()
+
+        task.updated_by = current_user.id
+        task.updated_at = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(record)
+        return record
+
+    def get_production_records(
+        self,
+        task_id: int,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> tuple[List[ProductionRecord], int]:
+        """获取任务下的生产记录。"""
+        task = self.get_production_task_by_id(task_id, current_user, workspace_context)
+        query = self.db.query(ProductionRecord).filter(ProductionRecord.task_id == task.id)
+        total = query.count()
+        records = (
+            query.order_by(ProductionRecord.record_date.desc(), ProductionRecord.id.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+        return records, total
+
+    def _scoped_task_query(
+        self,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+    ):
+        workspace_context.validate()
+        self._check_list_permission(current_user, workspace_context)
+        query = self.db.query(ProductionTask).filter(ProductionTask.is_active == True)
+        return self.data_access.apply_workspace_filter(
+            query, ProductionTask, current_user, workspace_context
+        )
+
+    def get_statistics(
+        self,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+    ) -> Dict[str, Any]:
+        """生产任务概览统计。"""
+        query = self._scoped_task_query(current_user, workspace_context)
+        today = date.today()
+
+        total = query.count()
+        pending = query.filter(ProductionTask.status == "pending").count()
+        in_progress = query.filter(ProductionTask.status == "in_progress").count()
+        completed = query.filter(ProductionTask.status == "completed").count()
+        paused = query.filter(ProductionTask.status == "paused").count()
+        cancelled = query.filter(ProductionTask.status == "cancelled").count()
+        overdue = query.filter(
+            ProductionTask.status.in_(["pending", "in_progress", "paused"]),
+            ProductionTask.planned_end_date.isnot(None),
+            ProductionTask.planned_end_date < today,
+        ).count()
+
+        totals = query.with_entities(
+            func.coalesce(func.sum(ProductionTask.weld_length_actual), 0),
+            func.coalesce(func.sum(ProductionTask.actual_duration_hours), 0),
+            func.coalesce(func.avg(ProductionTask.progress_percentage), 0),
+        ).one()
+
+        return {
+            "total_tasks": total,
+            "pending_tasks": pending,
+            "in_progress_tasks": in_progress,
+            "completed_tasks": completed,
+            "paused_tasks": paused,
+            "cancelled_tasks": cancelled,
+            "overdue_tasks": overdue,
+            "total_weld_length": float(totals[0] or 0),
+            "total_work_hours": float(totals[1] or 0),
+            "average_progress": round(float(totals[2] or 0), 2),
+        }
+
+    def get_efficiency_statistics(
+        self,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> Dict[str, Any]:
+        """按日汇总完成量与工时。"""
+        query = self._scoped_task_query(current_user, workspace_context)
+        start = start_date or (date.today() - timedelta(days=29))
+        end = end_date or date.today()
+        query = query.filter(
+            ProductionTask.created_at >= datetime.combine(start, datetime.min.time()),
+            ProductionTask.created_at < datetime.combine(end + timedelta(days=1), datetime.min.time()),
+        )
+        return self._efficiency_by_day(query, start, end)
+
+    def _efficiency_by_day(self, query, start: date, end: date) -> Dict[str, Any]:
+        rows = (
+            query.with_entities(
+                func.date(ProductionTask.created_at).label("day"),
+                func.count(ProductionTask.id),
+                func.sum(case((ProductionTask.status == "completed", 1), else_=0)),
+                func.coalesce(func.sum(ProductionTask.actual_duration_hours), 0),
+                func.coalesce(func.sum(ProductionTask.weld_length_actual), 0),
+            )
+            .group_by(func.date(ProductionTask.created_at))
+            .order_by(func.date(ProductionTask.created_at))
+            .all()
+        )
+
+        series = []
+        for day, total, completed, hours, length in rows:
+            total_count = int(total or 0)
+            completed_count = int(completed or 0)
+            series.append({
+                "date": str(day),
+                "total_tasks": total_count,
+                "completed_tasks": completed_count,
+                "completion_rate": round((completed_count / total_count) * 100, 2) if total_count else 0,
+                "work_hours": float(hours or 0),
+                "weld_length": float(length or 0),
+            })
+
+        return {
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "series": series,
+        }
 

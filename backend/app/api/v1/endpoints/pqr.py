@@ -1,22 +1,31 @@
 """
 PQR (Procedure Qualification Record) API endpoints for the welding system backend.
 """
+import io
+import time
+import traceback
 from typing import Any, List, Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api import deps
-from app.models.user import User
+from app.core.data_access import DataAccessAction, WorkspaceContext, WorkspaceType
+from app.core.document_access import require_document_access
 from app.models.company import CompanyEmployee
+from app.models.pqr import PQR
+from app.models.user import User
 from app.schemas.pqr import (
     PQRCreate, PQRResponse, PQRUpdate, PQRSummary, PQRListResponse,
     PQRTestSpecimenCreate, PQRTestSpecimenResponse,
     PQRQualificationUpdate, PQRSearchParams, PQRExportRequest
 )
+from app.services.document_export_service import DocumentExportService
+from app.services.pqr_service import PQRService
 from app.services.user_service import user_service
 from app.services.workspace_service import WorkspaceService
-from app.core.data_access import WorkspaceContext, WorkspaceType
 
 router = APIRouter()
 
@@ -107,7 +116,6 @@ def read_pqr_list(
         actual_search_term = search_term or keyword
 
         # Initialize PQR service
-        from app.services.pqr_service import PQRService
         pqr_service_instance = PQRService(db)
 
         # Get total count with workspace filtering
@@ -255,7 +263,6 @@ def create_pqr(
                 )
 
         # 创建PQR with workspace context
-        from app.services.pqr_service import PQRService
         pqr_service_instance = PQRService(db)
         pqr = pqr_service_instance.create(
             db,
@@ -307,18 +314,8 @@ def read_pqr_by_id(
                 detail="没有足够的权限"
             )
 
-    # Get PQR with workspace filtering
-    from app.services.pqr_service import PQRService
+    pqr = require_document_access(db, PQR, id, current_user, "PQR不存在")
     pqr_service_instance = PQRService(db)
-    pqr = pqr_service_instance.get(
-        db,
-        id=id,
-        current_user=current_user,
-        workspace_context=workspace_context
-    )
-
-    if not pqr:
-        raise HTTPException(status_code=404, detail="PQR未找到或无权访问")
 
     # 查询关联的审批实例和工作流信息
     from app.models.approval import ApprovalInstance, ApprovalWorkflowDefinition
@@ -376,18 +373,10 @@ def update_pqr(
                 detail="没有足够的权限"
             )
 
-    # Get PQR with workspace filtering
-    from app.services.pqr_service import PQRService
-    pqr_service_instance = PQRService(db)
-    pqr = pqr_service_instance.get(
-        db,
-        id=id,
-        current_user=current_user,
-        workspace_context=workspace_context
+    pqr = require_document_access(
+        db, PQR, id, current_user, "PQR不存在", action=DataAccessAction.EDIT
     )
-
-    if not pqr:
-        raise HTTPException(status_code=404, detail="PQR未找到")
+    pqr_service_instance = PQRService(db)
 
     # 检查是否为所有者或管理员
     if pqr.user_id != current_user.id and not current_user.is_superuser:
@@ -441,18 +430,10 @@ def delete_pqr(
                 detail="没有足够的权限"
             )
 
-    # Get PQR with workspace filtering
-    from app.services.pqr_service import PQRService
-    pqr_service_instance = PQRService(db)
-    pqr = pqr_service_instance.get(
-        db,
-        id=id,
-        current_user=current_user,
-        workspace_context=workspace_context
+    pqr = require_document_access(
+        db, PQR, id, current_user, "PQR不存在", action=DataAccessAction.DELETE
     )
-
-    if not pqr:
-        raise HTTPException(status_code=404, detail="PQR未找到")
+    pqr_service_instance = PQRService(db)
 
     # 检查是否为所有者或管理员
     if pqr.user_id != current_user.id and not current_user.is_superuser:
@@ -498,15 +479,14 @@ def create_pqr_specimen(
     current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     """为PQR创建试样记录."""
-    pqr = pqr_service.get(db, id=id)
-    if not pqr:
-        raise HTTPException(status_code=404, detail="PQR未找到")
-
-    # 设置PQR ID
+    require_document_access(
+        db, PQR, id, current_user, "PQR不存在", action=DataAccessAction.EDIT
+    )
     specimen_in.pqr_id = id
+    pqr_service_instance = PQRService(db)
 
     try:
-        specimen = pqr_service.create_specimen(db, obj_in=specimen_in)
+        specimen = pqr_service_instance.create_specimen(db, obj_in=specimen_in)
         return specimen
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -520,11 +500,8 @@ def read_pqr_specimens(
     current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     """获取PQR的试样记录."""
-    pqr = pqr_service.get(db, id=id)
-    if not pqr:
-        raise HTTPException(status_code=404, detail="PQR未找到")
-
-    return pqr_service.get_specimens(db, pqr_id=id)
+    require_document_access(db, PQR, id, current_user, "PQR不存在")
+    return PQRService(db).get_specimens(db, pqr_id=id)
 
 
 @router.put("/{id}/qualification/", response_model=PQRResponse)
@@ -536,12 +513,13 @@ def update_pqr_qualification(
     current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     """更新PQR评定结果."""
-    pqr = pqr_service.get(db, id=id)
-    if not pqr:
-        raise HTTPException(status_code=404, detail="PQR未找到")
+    require_document_access(
+        db, PQR, id, current_user, "PQR不存在", action=DataAccessAction.EDIT
+    )
+    pqr_service_instance = PQRService(db)
 
     try:
-        pqr = pqr_service.update_qualification(
+        pqr = pqr_service_instance.update_qualification(
             db, pqr_id=id, qualification_update=qualification_update
         )
         return pqr
@@ -557,7 +535,7 @@ def search_pqr(
     current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     """高级PQR搜索."""
-    pqr_list = pqr_service.search_pqr(db, search_params=search_params.model_dump())
+    pqr_list = PQRService(db).search_pqr(db, search_params=search_params.model_dump())
 
     # 转换为summary格式
     pqr_summaries = []
@@ -586,7 +564,7 @@ def get_pqr_statistics(
     current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     """获取PQR统计信息."""
-    return pqr_service.get_pqr_statistics(db, owner_id=owner_id or current_user.id)
+    return PQRService(db).get_pqr_statistics(db, owner_id=owner_id or current_user.id)
 
 
 @router.get("/count/qualification", response_model=dict)
@@ -596,7 +574,7 @@ def get_pqr_count_by_qualification(
     current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     """按评定结果获取PQR数量."""
-    return pqr_service.get_pqr_count(db, owner_id=owner_id or current_user.id)
+    return PQRService(db).get_pqr_count(db, owner_id=owner_id or current_user.id)
 
 
 @router.get("/statistics/heat-input", response_model=dict)
@@ -606,7 +584,7 @@ def get_pqr_heat_input_stats(
     current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     """获取PQR热输入统计信息."""
-    return pqr_service.get_pqr_heat_input_stats(db, owner_id=owner_id or current_user.id)
+    return PQRService(db).get_pqr_heat_input_stats(db, owner_id=owner_id or current_user.id)
 
 
 @router.post("/{id}/duplicate", response_model=PQRResponse)
@@ -619,28 +597,10 @@ def duplicate_pqr(
 ) -> Any:
     """复制PQR."""
     try:
-        # 获取工作区上下文
         workspace_context = get_workspace_context(db, current_user, workspace_id)
-
-        # 导入PQR服务
-        from app.services.pqr_service import PQRService
+        original_pqr = require_document_access(db, PQR, id, current_user, "PQR不存在")
         pqr_service_instance = PQRService(db)
 
-        # 获取原始PQR
-        original_pqr = pqr_service_instance.get(
-            db,
-            id=id,
-            current_user=current_user,
-            workspace_context=workspace_context
-        )
-        if not original_pqr:
-            raise HTTPException(status_code=404, detail="PQR未找到")
-
-        # 创建副本数据
-        from app.schemas.pqr import PQRCreate
-        import time
-
-        # 构建新的PQR数据
         pqr_dict = {
             "title": f"{original_pqr.title} (副本)",
             "pqr_number": f"{original_pqr.pqr_number}-COPY-{int(time.time())}",
@@ -671,11 +631,9 @@ def duplicate_pqr(
         return new_pqr
     except HTTPException:
         raise
-    except Exception as e:
-        print(f"ERROR: 复制PQR失败: {str(e)}")
-        import traceback
+    except Exception:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"复制PQR失败: {str(e)}")
+        raise HTTPException(status_code=500, detail="复制PQR失败")
 
 
 @router.get("/{id}/export/pdf")
@@ -686,45 +644,24 @@ def export_pqr_pdf(
     current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
     """导出PQR为PDF."""
+    pqr = require_document_access(db, PQR, id, current_user, "PQR不存在")
     try:
-        from fastapi.responses import StreamingResponse
-        import io
-
-        # 获取PQR
-        pqr = pqr_service.get(db, id=id)
-        if not pqr:
-            raise HTTPException(status_code=404, detail="PQR未找到")
-
-        # TODO: 实现实际的PDF生成逻辑
-        # 这里暂时返回一个简单的文本文件作为示例
-        content = f"""PQR导出
-
-PQR编号: {pqr.pqr_number}
-标题: {pqr.title}
-试验日期: {pqr.test_date}
-评定结果: {pqr.qualification_result}
-焊接工艺: {pqr.welding_process}
-母材规格: {pqr.base_material_spec}
-
-注意：这是一个临时实现，实际应该生成PDF文件。
-"""
-
-        # 创建字节流
-        buffer = io.BytesIO(content.encode('utf-8'))
-        buffer.seek(0)
-
+        pdf_stream = DocumentExportService(db).export_pqr_to_pdf(pqr)
+        encoded_filename = quote(
+            f"PQR_{pqr.pqr_number}_{time.strftime('%Y%m%d')}.pdf"
+        )
         return StreamingResponse(
-            buffer,
+            pdf_stream,
             media_type="application/pdf",
             headers={
-                "Content-Disposition": f"attachment; filename={pqr.pqr_number}.pdf"
+                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
             }
         )
     except HTTPException:
         raise
-    except Exception as e:
-        print(f"ERROR: 导出PDF失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"导出PDF失败: {str(e)}")
+    except Exception:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="导出PDF失败")
 
 
 @router.get("/{id}/export/excel")
@@ -736,13 +673,7 @@ def export_pqr_excel(
 ) -> Any:
     """导出PQR为Excel."""
     try:
-        from fastapi.responses import StreamingResponse
-        import io
-
-        # 获取PQR
-        pqr = pqr_service.get(db, id=id)
-        if not pqr:
-            raise HTTPException(status_code=404, detail="PQR未找到")
+        pqr = require_document_access(db, PQR, id, current_user, "PQR不存在")
 
         # TODO: 实现实际的Excel生成逻辑
         # 这里暂时返回一个简单的CSV文件作为示例
@@ -754,11 +685,12 @@ def export_pqr_excel(
         buffer = io.BytesIO(content.encode('utf-8-sig'))  # 使用utf-8-sig以支持Excel中文显示
         buffer.seek(0)
 
+        encoded_filename = quote(f"{pqr.pqr_number}.xlsx")
         return StreamingResponse(
             buffer,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             headers={
-                "Content-Disposition": f"attachment; filename={pqr.pqr_number}.xlsx"
+                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
             }
         )
     except HTTPException:
@@ -775,9 +707,9 @@ def export_pqr(
     export_request: PQRExportRequest,
     current_user: User = Depends(deps.get_current_active_user)
 ) -> Any:
-    """导出PQR."""
-    # 这里应该实现实际的导出逻辑
-    # 目前只返回一个模拟的响应
+    """批量导出前先校验每份文档的访问权限."""
+    for pqr_id in export_request.pqr_ids:
+        require_document_access(db, PQR, pqr_id, current_user, "PQR不存在")
     return {
         "message": f"导出请求已接收，将导出 {len(export_request.pqr_ids)} 个PQR文件",
         "format": export_request.export_format,

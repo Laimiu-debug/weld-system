@@ -17,16 +17,15 @@ const Login: React.FC = () => {
   const { login } = useAuthContext();
 
   const handleSubmit = async (values: LoginForm) => {
-    console.log('Login form submitted with values:', values);
     setLoading(true);
     setError('');
 
     try {
-      console.log('Calling login function...');
       const result = await login(values.username, values.password);
-      console.log('Login function result:', result);
+      if (!result) {
+        setError('登录失败，请检查用户名和密码');
+      }
     } catch (error: any) {
-      console.error('Login error:', error);
       setError(error.message || '登录失败，请重试');
     } finally {
       setLoading(false);

@@ -5,7 +5,7 @@
 import axios from 'axios';
 import { message } from 'antd';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 
 // ==================== 类型定义 ====================
 
@@ -46,6 +46,7 @@ export interface ProductionTask {
   status: string;
   priority: string;
   progress_percentage: number;
+  notes?: string;
   
   // 数据隔离字段
   workspace_type: string;
@@ -320,6 +321,89 @@ export const updateProductionTaskStatus = async (
   );
 };
 
+export interface ProductionRecord {
+  id: number;
+  task_id: number;
+  record_number?: string;
+  record_date: string;
+  work_shift?: string;
+  start_time?: string;
+  end_time?: string;
+  duration_hours?: number;
+  work_description?: string;
+  quantity_completed?: number;
+  weld_length?: number;
+  notes?: string;
+}
+
+export interface ProductionStatistics {
+  total_tasks: number;
+  pending_tasks: number;
+  in_progress_tasks: number;
+  completed_tasks: number;
+  overdue_tasks: number;
+  total_weld_length: number;
+  total_work_hours: number;
+  average_progress: number;
+}
+
+const workspaceParams = (
+  workspaceType: string,
+  companyId?: number,
+  factoryId?: number
+) => ({
+  workspace_type: workspaceType,
+  company_id: companyId,
+  factory_id: factoryId,
+});
+
+export const getProductionRecords = async (
+  taskId: number,
+  workspaceType: string,
+  companyId?: number,
+  factoryId?: number
+): Promise<{ success: boolean; data: { items: ProductionRecord[]; total: number } }> => {
+  const token = localStorage.getItem('token');
+  const response = await axios.get(`${API_BASE_URL}/production/tasks/${taskId}/records`, {
+    params: workspaceParams(workspaceType, companyId, factoryId),
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.data;
+};
+
+export const createProductionRecord = async (
+  taskId: number,
+  data: Partial<ProductionRecord> & { record_date: string },
+  workspaceType: string,
+  companyId?: number,
+  factoryId?: number
+) => {
+  const token = localStorage.getItem('token');
+  const response = await axios.post(
+    `${API_BASE_URL}/production/tasks/${taskId}/records`,
+    data,
+    {
+      params: workspaceParams(workspaceType, companyId, factoryId),
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+  message.success('生产记录已保存');
+  return response.data;
+};
+
+export const getProductionStatistics = async (
+  workspaceType: string,
+  companyId?: number,
+  factoryId?: number
+): Promise<{ success: boolean; data: ProductionStatistics }> => {
+  const token = localStorage.getItem('token');
+  const response = await axios.get(`${API_BASE_URL}/production/statistics/overview`, {
+    params: workspaceParams(workspaceType, companyId, factoryId),
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.data;
+};
+
 export default {
   getProductionTasks,
   createProductionTask,
@@ -328,5 +412,8 @@ export default {
   deleteProductionTask,
   updateProductionTaskProgress,
   updateProductionTaskStatus,
+  getProductionRecords,
+  createProductionRecord,
+  getProductionStatistics,
 };
 

@@ -298,108 +298,168 @@ async def delete_material(
 
 
 @router.post("/{material_id}/stock-in")
-async def material_stock_in(
-    material_id: str,
+async def material_stock_in_by_id(
+    material_id: int,
     transaction_data: dict,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID"),
+    factory_id: Optional[int] = Query(None, description="工厂ID"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    ????
-    """
-    # TODO: ?????????
+    """按焊材ID入库。"""
+    workspace_context = WorkspaceContext(
+        workspace_type=workspace_type,
+        user_id=current_user.id,
+        company_id=company_id,
+        factory_id=factory_id
+    )
+    service = MaterialService(db)
+    result = service.stock_in(
+        current_user=current_user,
+        material_id=material_id,
+        quantity=float(transaction_data.get("quantity") or 0),
+        workspace_context=workspace_context,
+        unit_price=transaction_data.get("unit_price"),
+        source=transaction_data.get("source"),
+        batch_number=transaction_data.get("batch_number"),
+        warehouse=transaction_data.get("warehouse"),
+        storage_location=transaction_data.get("storage_location"),
+        notes=transaction_data.get("notes"),
+    )
     return {
         "success": True,
         "data": {
-            "material_id": material_id,
-            "transaction_type": "in",
-            **transaction_data
+            "transaction_id": result["transaction"].id,
+            "transaction_number": result["transaction"].transaction_number,
+            "current_stock": result["material"].current_stock,
+            "unit": result["material"].unit
         },
-        "message": "????"
+        "message": result["message"]
     }
 
 
 @router.post("/{material_id}/stock-out")
-async def material_stock_out(
-    material_id: str,
+async def material_stock_out_by_id(
+    material_id: int,
     transaction_data: dict,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID"),
+    factory_id: Optional[int] = Query(None, description="工厂ID"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    ????
-    """
-    # TODO: ?????????
+    """按焊材ID出库。"""
+    workspace_context = WorkspaceContext(
+        workspace_type=workspace_type,
+        user_id=current_user.id,
+        company_id=company_id,
+        factory_id=factory_id
+    )
+    service = MaterialService(db)
+    result = service.stock_out(
+        current_user=current_user,
+        material_id=material_id,
+        quantity=float(transaction_data.get("quantity") or 0),
+        workspace_context=workspace_context,
+        destination=transaction_data.get("destination"),
+        reference_type=transaction_data.get("reference_type"),
+        reference_id=transaction_data.get("reference_id"),
+        reference_number=transaction_data.get("reference_number"),
+        notes=transaction_data.get("notes"),
+    )
     return {
         "success": True,
         "data": {
-            "material_id": material_id,
-            "transaction_type": "out",
-            **transaction_data
+            "transaction_id": result["transaction"].id,
+            "transaction_number": result["transaction"].transaction_number,
+            "current_stock": result["material"].current_stock,
+            "unit": result["material"].unit
         },
-        "message": "????"
+        "message": result["message"]
     }
 
 
 @router.get("/{material_id}/transactions")
-async def get_material_transactions(
-    material_id: str,
+async def get_material_transactions_by_id(
+    material_id: int,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID"),
+    factory_id: Optional[int] = Query(None, description="工厂ID"),
     db: Session = Depends(deps.get_db),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    ????????
-    """
-    # TODO: ?????????
+    """获取指定焊材的出入库记录。"""
+    workspace_context = WorkspaceContext(
+        workspace_type=workspace_type,
+        user_id=current_user.id,
+        company_id=company_id,
+        factory_id=factory_id
+    )
+    service = MaterialService(db)
+    result = service.get_transaction_list(
+        current_user=current_user,
+        workspace_context=workspace_context,
+        material_id=material_id,
+        skip=skip,
+        limit=limit,
+    )
     return {
         "success": True,
-        "data": {
-            "items": [],
-            "total": 0
-        },
-        "message": "????????"
+        "data": result,
+        "message": "获取出入库记录成功"
     }
 
 
 @router.get("/low-stock/alerts")
 async def get_low_stock_alerts(
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID"),
+    factory_id: Optional[int] = Query(None, description="工厂ID"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    ???????
-    """
-    # TODO: ?????????
+    """获取低库存预警。"""
+    workspace_context = WorkspaceContext(
+        workspace_type=workspace_type,
+        user_id=current_user.id,
+        company_id=company_id,
+        factory_id=factory_id
+    )
+    service = MaterialService(db)
+    result = service.get_low_stock_alerts(current_user, workspace_context)
     return {
         "success": True,
         "data": {
-            "items": [],
-            "total": 0
+            "items": [MaterialResponse.model_validate(item) for item in result["items"]],
+            "total": result["total"],
         },
-        "message": "?????????"
+        "message": "获取低库存预警成功"
     }
 
 
 @router.get("/statistics/overview")
 async def get_materials_statistics(
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID"),
+    factory_id: Optional[int] = Query(None, description="工厂ID"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    ????????
-    """
-    # TODO: ?????????
+    """获取焊材统计。"""
+    workspace_context = WorkspaceContext(
+        workspace_type=workspace_type,
+        user_id=current_user.id,
+        company_id=company_id,
+        factory_id=factory_id
+    )
+    service = MaterialService(db)
     return {
         "success": True,
-        "data": {
-            "total_materials": 0,
-            "total_stock_value": 0.0,
-            "low_stock_count": 0,
-            "out_of_stock_count": 0
-        },
-        "message": "????????"
+        "data": service.get_statistics(current_user, workspace_context),
+        "message": "获取焊材统计成功"
     }
 
 

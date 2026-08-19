@@ -1,15 +1,26 @@
-# 生产环境Dockerfile - 直接使用已构建的dist目录
+# 构建阶段
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+
+RUN npm config set registry https://registry.npmmirror.com
+
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+
+ARG VITE_API_BASE_URL
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+
+RUN chmod -R 755 node_modules/.bin 2>/dev/null || true && npm run build:check
+
+# 生产阶段
 FROM nginx:alpine
 
-# 复制已构建的dist目录
-COPY dist /usr/share/nginx/html
-
-# 复制 nginx 配置
+COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# 暴露端口
 EXPOSE 80
 
-# 启动 nginx
 CMD ["nginx", "-g", "daemon off;"]
-

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "welding-system-backend"
 version = "1.0.0"
-description = "焊接工艺管理系统后端API服务"
+description = "焊序后端API服务"
 authors = [
     {name = "Developer", email = "dev@example.com"},
 ]
@@ -15,9 +15,12 @@ dependencies = [
     "sqlalchemy>=2.0.20",
     "alembic>=1.12.0",
     "asyncpg>=0.29.0",
+    "psycopg2-binary>=2.9.7",
     "redis>=5.0.0",
+    "hiredis>=2.2.3",
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",
+    "bcrypt>=4.1.2",
     "python-multipart>=0.0.6",
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
@@ -28,9 +31,33 @@ dependencies = [
     "pillow>=10.1.0",
     "python-dateutil>=2.8.2",
     "python-dotenv>=1.0.0",
-    "python-cors>=0.1.6",
+    "pytz>=2023.3",
+    "python-docx>=1.1.0",
+    "weasyprint>=60.1",
+    "beautifulsoup4>=4.12.2",
+    "lxml>=4.9.3",
+    "werkzeug>=3.0.1",
+    "structlog>=23.2.0",
+    "rich>=13.6.0",
+    "psutil>=5.9.6",
 ]
 requires-python = ">=3.11"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.3",
+    "pytest-asyncio>=0.21.1",
+    "black>=23.9.1",
+    "isort>=5.12.0",
+    "mypy>=1.7.1",
+    "flake8>=6.1.0",
+    "pre-commit>=3.5.0",
+    "types-passlib>=1.7.1",
+    "flower>=2.0.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
 
 [tool.hatch.envs.default]
 PYTHONPATH = ["."]
@@ -87,10 +114,12 @@ warn_no_return = true
 warn_unreachable = true
 strict_equality = true
 
-[tool.pytest.ini]
+[tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
+norecursedirs = ["scripts", "migrations", ".git", "venv", ".venv"]
 addopts = "-v --tb=short"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",

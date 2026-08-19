@@ -12,6 +12,7 @@ from fastapi import Depends
 from app.models.user import User
 from app.models.subscription import Subscription, SubscriptionPlan, SubscriptionTransaction
 from app.core.database import get_db
+from app.services.payment_service import PaymentService
 
 
 class MembershipService:
@@ -457,31 +458,19 @@ class MembershipService:
         return result
 
     def process_subscription_renewal(self, user_id: int) -> bool:
-        """处理订阅续费"""
+        """创建待支付续费订单，不在未扣款时延长有效期。"""
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user:
             return False
 
-        if not user.auto_renewal:
+        subscription = self.db.query(Subscription).filter(
+            Subscription.user_id == user_id,
+            Subscription.status == "active",
+        ).order_by(Subscription.end_date.desc()).first()
+        if not subscription:
             return False
 
-        # 延长订阅时间
-        if user.subscription_end_date and user.subscription_end_date > datetime.utcnow():
-            # 订阅还未过期，从结束时间开始延长
-            user.subscription_end_date += timedelta(days=30)
-        else:
-            # 订阅已过期，从今天开始
-            user.subscription_start_date = datetime.utcnow()
-            user.subscription_end_date = datetime.utcnow() + timedelta(days=30)
-
-        user.subscription_status = "active"
-        user.updated_at = datetime.utcnow()
-
-        self.db.commit()
-
-        # TODO: 处理支付
-        # TODO: 发送续费通知
-
+        PaymentService(self.db).create_renewal_order_if_needed(subscription, notify=True)
         return True
 
 

@@ -3,13 +3,22 @@ Quality Management API endpoints for the welding system backend.
 """
 from typing import Any, List, Optional
 from math import ceil
+from datetime import date as date_cls
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
 from sqlalchemy.orm import Session
 
 from app.api import deps
-from app.schemas.quality import QualityInspectionCreate, QualityInspectionUpdate, QualityInspectionResponse, QualityInspectionListResponse
+from app.schemas.quality import (
+    QualityInspectionCreate,
+    QualityInspectionUpdate,
+    QualityInspectionResponse,
+    QualityInspectionListResponse,
+    NonconformanceRecordCreate,
+    NonconformanceRecordUpdate,
+    NonconformanceRecordResponse,
+)
 from app.services.quality_service import QualityService
 from app.core.data_access import WorkspaceContext
 
@@ -115,10 +124,7 @@ async def create_quality_inspection(
             factory_id=factory_id
         )
 
-        # 打印接收到的数据
-        print(f"DEBUG API: 接收到的inspection_in数据: {inspection_in}")
         dumped_data = inspection_in.model_dump(exclude_unset=True)
-        print(f"DEBUG API: model_dump后的数据: {dumped_data}")
 
         # 调用服务层 - 使用exclude_unset=True排除未设置的字段
         service = QualityService(db)
@@ -299,135 +305,181 @@ async def delete_quality_inspection(
 @router.get("/nonconformance")
 async def get_nonconformance_records(
     db: Session = Depends(deps.get_db),
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     skip: int = Query(0, ge=0, description="跳过记录数"),
     limit: int = Query(100, ge=1, le=1000, description="返回记录数"),
     search: Optional[str] = Query(None, description="搜索关键词"),
     status: Optional[str] = Query(None, description="处理状态"),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    获取不合格品记录列表
-    """
-    # TODO: 实现实际的数据库查询
+    """获取不合格品记录列表"""
+    workspace_context = WorkspaceContext(
+        workspace_type=workspace_type,
+        user_id=current_user.id,
+        company_id=company_id,
+        factory_id=factory_id
+    )
+    service = QualityService(db)
+    records, total = service.get_nonconformance_list(
+        current_user=current_user,
+        workspace_context=workspace_context,
+        skip=skip,
+        limit=limit,
+        search=search,
+        status=status,
+    )
+    page = (skip // limit) + 1 if limit > 0 else 1
+    total_pages = ceil(total / limit) if limit > 0 else 0
     return {
         "success": True,
         "data": {
-            "items": [],
-            "total": 0,
-            "page": 1,
+            "items": [NonconformanceRecordResponse.model_validate(item) for item in records],
+            "total": total,
+            "page": page,
             "page_size": limit,
-            "total_pages": 0
+            "total_pages": total_pages,
         },
-        "message": "获取不合格品记录列表成功"
+        "message": "获取不合格品记录成功"
     }
 
 
 @router.post("/nonconformance")
 async def create_nonconformance_record(
-    record_data: dict,
+    record_in: NonconformanceRecordCreate,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    创建不合格品记录
-    """
-    # TODO: 实现实际的创建逻辑
+    """创建不合格品记录"""
+    workspace_context = WorkspaceContext(
+        workspace_type=workspace_type,
+        user_id=current_user.id,
+        company_id=company_id,
+        factory_id=factory_id
+    )
+    service = QualityService(db)
+    record = service.create_nonconformance_record(
+        current_user=current_user,
+        record_data=record_in.model_dump(exclude_unset=True),
+        workspace_context=workspace_context,
+    )
     return {
         "success": True,
-        "data": {
-            "id": "new-nonconformance-id",
-            **record_data,
-            "created_at": "2025-01-01T00:00:00Z"
-        },
+        "data": NonconformanceRecordResponse.model_validate(record),
         "message": "不合格品记录创建成功"
     }
 
 
 @router.get("/nonconformance/{record_id}")
 async def get_nonconformance_detail(
-    record_id: str,
+    record_id: int,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    获取不合格品记录详情
-    """
-    # TODO: 实现实际的查询逻辑
+    """获取不合格品记录详情"""
+    workspace_context = WorkspaceContext(
+        workspace_type=workspace_type,
+        user_id=current_user.id,
+        company_id=company_id,
+        factory_id=factory_id
+    )
+    service = QualityService(db)
+    record = service.get_nonconformance_by_id(
+        record_id=record_id,
+        current_user=current_user,
+        workspace_context=workspace_context,
+    )
     return {
         "success": True,
-        "data": {
-            "id": record_id,
-            "record_number": "NCR-2025-001",
-            "status": "pending"
-        },
+        "data": NonconformanceRecordResponse.model_validate(record),
         "message": "获取不合格品记录详情成功"
     }
 
 
 @router.put("/nonconformance/{record_id}")
 async def update_nonconformance_record(
-    record_id: str,
-    record_data: dict,
+    record_id: int,
+    record_in: NonconformanceRecordUpdate,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    更新不合格品记录
-    """
-    # TODO: 实现实际的更新逻辑
+    """更新不合格品记录"""
+    workspace_context = WorkspaceContext(
+        workspace_type=workspace_type,
+        user_id=current_user.id,
+        company_id=company_id,
+        factory_id=factory_id
+    )
+    service = QualityService(db)
+    record = service.update_nonconformance_record(
+        record_id=record_id,
+        current_user=current_user,
+        record_data=record_in.model_dump(exclude_unset=True),
+        workspace_context=workspace_context,
+    )
     return {
         "success": True,
-        "data": {
-            "id": record_id,
-            **record_data,
-            "updated_at": "2025-01-01T00:00:00Z"
-        },
+        "data": NonconformanceRecordResponse.model_validate(record),
         "message": "不合格品记录更新成功"
     }
 
 
 @router.get("/statistics/overview")
 async def get_quality_statistics(
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    获取质量统计信息
-    """
-    # TODO: 实现实际的统计逻辑
+    """获取质量统计信息"""
+    workspace_context = WorkspaceContext(
+        workspace_type=workspace_type,
+        user_id=current_user.id,
+        company_id=company_id,
+        factory_id=factory_id
+    )
+    service = QualityService(db)
     return {
         "success": True,
-        "data": {
-            "total_inspections": 0,
-            "pass_count": 0,
-            "fail_count": 0,
-            "conditional_count": 0,
-            "pass_rate": 0.0,
-            "total_nonconformance": 0,
-            "pending_nonconformance": 0
-        },
-        "message": "获取质量统计信息成功"
+        "data": service.get_statistics(current_user, workspace_context),
+        "message": "获取质量统计成功"
     }
 
 
 @router.get("/statistics/trends")
 async def get_quality_trends(
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
     db: Session = Depends(deps.get_db),
     start_date: Optional[str] = Query(None, description="开始日期"),
     end_date: Optional[str] = Query(None, description="结束日期"),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
-    """
-    获取质量趋势统计
-    """
-    # TODO: 实现实际的趋势统计逻辑
+    """获取质量趋势统计"""
+    workspace_context = WorkspaceContext(
+        workspace_type=workspace_type,
+        user_id=current_user.id,
+        company_id=company_id,
+        factory_id=factory_id
+    )
+    parsed_start = date_cls.fromisoformat(start_date) if start_date else None
+    parsed_end = date_cls.fromisoformat(end_date) if end_date else None
+    service = QualityService(db)
     return {
         "success": True,
-        "data": {
-            "daily_pass_rate": [],
-            "defect_types_distribution": {},
-            "inspector_performance": []
-        },
-        "message": "获取质量趋势统计成功"
+        "data": service.get_trends(current_user, workspace_context, parsed_start, parsed_end),
+        "message": "获取质量趋势成功"
     }
 

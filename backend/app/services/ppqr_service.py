@@ -2,13 +2,99 @@
 pPQR Service
 处理pPQR相关的业务逻辑
 """
-from typing import List, Optional
+from typing import List, Optional, Any
+from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_, func
+from sqlalchemy import or_, func
+from fastapi import HTTPException
+from fastapi import status as http_status
 
 from app.models.ppqr import PPQR
+from app.models.pqr import PQR
 from app.models.user import User
 from app.core.data_access import WorkspaceContext, DataAccessMiddleware
+from app.services.quota_service import QuotaService
+
+
+PPQR_TO_PQR_FIELD_MAP = {
+    "title": "title",
+    "company": "company",
+    "project_name": "project_name",
+    "test_location": "test_location",
+    "welding_process": "welding_process",
+    "process_type": "process_type",
+    "process_specification": "process_specification",
+    "base_material_group": "base_material_group",
+    "base_material_spec": "base_material_spec",
+    "base_material_thickness": "base_material_thickness",
+    "filler_material_spec": "filler_material_spec",
+    "filler_material_classification": "filler_material_classification",
+    "filler_material_diameter": "filler_material_diameter",
+    "shielding_gas": "shielding_gas",
+    "gas_flow_rate": "gas_flow_rate",
+    "gas_composition": "gas_composition",
+    "current_type": "current_type",
+    "actual_current": "current_actual",
+    "actual_voltage": "voltage_actual",
+    "actual_wire_feed_speed": "wire_feed_speed_actual",
+    "actual_welding_speed": "welding_speed_actual",
+    "actual_heat_input": "heat_input_calculated",
+    "heat_input_min": "heat_input_range_min",
+    "heat_input_max": "heat_input_range_max",
+    "joint_design": "joint_design",
+    "groove_type": "groove_type",
+    "actual_preheat_temp": "preheat_temp_actual",
+    "actual_interpass_temp": "interpass_temp_max_actual",
+    "ambient_temperature": "ambient_temperature",
+    "humidity": "humidity",
+    "pwht_required": "pwht_performed",
+    "pwht_temperature": "pwht_temperature_actual",
+    "pwht_time": "pwht_time_actual",
+    "visual_inspection_result": "visual_inspection_result",
+    "rt_result": "rt_result",
+    "ut_result": "ut_result",
+    "mt_result": "mt_result",
+    "pt_result": "pt_result",
+    "template_id": "template_id",
+    "module_data": "modules_data",
+    "document_html": "document_html",
+    "welder_name": "welding_operator",
+    "notes": "test_notes",
+    "deviation_notes": "deviation_notes",
+    "recommendations": "recommendations",
+    "test_reports": "test_reports",
+    "attachments": "attachments",
+}
+
+
+def map_ppqr_to_pqr_fields(ppqr: Any) -> dict:
+    """把 pPQR 可复用字段映射到 PQR 创建载荷。"""
+    payload: dict = {}
+    for source, target in PPQR_TO_PQR_FIELD_MAP.items():
+        value = getattr(ppqr, source, None)
+        if value is not None:
+            payload[target] = value
+
+    test_date = getattr(ppqr, "actual_test_date", None) or getattr(ppqr, "planned_test_date", None)
+    if test_date:
+        payload["test_date"] = datetime.combine(test_date, datetime.min.time()) if not isinstance(test_date, datetime) else test_date
+
+    conclusion = getattr(ppqr, "test_conclusion", None)
+    if conclusion == "qualified":
+        payload["qualification_result"] = "qualified"
+    elif conclusion == "failed":
+        payload["qualification_result"] = "not qualified"
+
+    payload.setdefault("title", getattr(ppqr, "title", None) or f"由 {getattr(ppqr, 'ppqr_number', 'pPQR')} 转换")
+    payload.setdefault("status", "draft")
+    return payload
+
+
+def generate_pqr_number_from_ppqr(ppqr_number: str, suffix: int = 0) -> str:
+    base = f"PQR-{ppqr_number}"
+    if suffix:
+        base = f"{base}-{suffix}"
+    return base[:50]
 
 
 class PPQRService:
@@ -299,4 +385,119 @@ class PPQRService:
         db.commit()
 
         return True
+
+    def get_statistics(
+        self,
+        db: Session,
+        *,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+    ) -> dict:
+        """按工作区汇总 pPQR 状态。"""
+        workspace_context.validate()
+        query = db.query(PPQR).filter(PPQR.is_active == True)
+        query = self.data_access.apply_workspace_filter(
+            query, PPQR, current_user, workspace_context
+        )
+        total = query.count()
+        by_status = dict(
+            query.with_entities(PPQR.status, func.count(PPQR.id))
+            .group_by(PPQR.status)
+            .all()
+        )
+        converted = query.filter(
+            or_(PPQR.converted_to_pqr == True, PPQR.status == "converted")
+        ).count()
+        return {
+            "total": total,
+            "converted": converted,
+            "draft": int(by_status.get("draft") or 0),
+            "testing": int(by_status.get("testing") or 0),
+            "completed": int(by_status.get("completed") or 0),
+            "by_status": {str(key): int(value) for key, value in by_status.items() if key is not None},
+        }
+
+    def convert_to_pqr(
+        self,
+        db: Session,
+        *,
+        ppqr_id: int,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+        overrides: Optional[dict] = None,
+    ) -> dict:
+        """将 pPQR 转换为 PQR，已转换时返回原记录。"""
+        ppqr = self.get(
+            db,
+            id=ppqr_id,
+            current_user=current_user,
+            workspace_context=workspace_context,
+        )
+        if not ppqr:
+            raise HTTPException(
+                status_code=http_status.HTTP_404_NOT_FOUND,
+                detail="pPQR不存在或无权访问",
+            )
+
+        self.data_access.check_access(current_user, ppqr, "EDIT", workspace_context)
+
+        if ppqr.converted_to_pqr_id:
+            existing = db.query(PQR).filter(PQR.id == ppqr.converted_to_pqr_id).first()
+            if existing:
+                return {
+                    "already_converted": True,
+                    "pqr_id": existing.id,
+                    "pqr_number": existing.pqr_number,
+                    "ppqr_id": ppqr.id,
+                }
+
+        quota_service = QuotaService(db)
+        quota_service.check_quota(current_user, workspace_context, "pqr", 1)
+
+        payload = map_ppqr_to_pqr_fields(ppqr)
+        if overrides:
+            payload.update({key: value for key, value in overrides.items() if value is not None})
+
+        pqr_number = payload.get("pqr_number") or generate_pqr_number_from_ppqr(ppqr.ppqr_number)
+        suffix = 1
+        while db.query(PQR).filter(PQR.pqr_number == pqr_number).first():
+            suffix += 1
+            pqr_number = generate_pqr_number_from_ppqr(ppqr.ppqr_number, suffix)
+        payload["pqr_number"] = pqr_number
+
+        allowed = {column.name for column in PQR.__table__.columns}
+        filtered = {key: value for key, value in payload.items() if key in allowed}
+        filtered.update({
+            "user_id": current_user.id,
+            "workspace_type": workspace_context.workspace_type,
+            "company_id": workspace_context.company_id,
+            "factory_id": workspace_context.factory_id,
+            "created_by": current_user.id,
+            "updated_by": current_user.id,
+            "owner_id": current_user.id,
+            "status": filtered.get("status") or "draft",
+        })
+
+        pqr = PQR(**filtered)
+        db.add(pqr)
+        db.flush()
+
+        ppqr.converted_to_pqr = True
+        ppqr.convert_to_pqr = True
+        ppqr.converted_to_pqr_id = pqr.id
+        ppqr.converted_at = datetime.utcnow()
+        ppqr.converted_by = current_user.id
+        ppqr.status = "converted"
+        ppqr.updated_by = current_user.id
+
+        quota_service.update_quota_usage(current_user, workspace_context, "pqr", 1)
+        db.commit()
+        db.refresh(pqr)
+
+        return {
+            "already_converted": False,
+            "pqr_id": pqr.id,
+            "pqr_number": pqr.pqr_number,
+            "ppqr_id": ppqr.id,
+        }
 

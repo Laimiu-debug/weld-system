@@ -1,18 +1,33 @@
 """
 Configuration settings for the welding system backend application.
 """
-import os
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import AnyHttpUrl, PostgresDsn, field_validator
+from pydantic import AnyHttpUrl, PostgresDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings
+
+LEAKED_SECRETS = {
+    "dev-secret-key-for-testing-purposes-change-in-production",
+    "secret",
+    "changeme",
+}
+
+LEAKED_PASSWORDS = {
+    "weld_password",
+    "WeldDB@2024#Secure!Pass",
+    "WeldDB@2024",
+    "Redis@2024#Strong!Key",
+    "ghzzz123",
+    "password",
+    "123456",
+}
 
 
 class Settings(BaseSettings):
     """Application settings."""
 
     # 应用基础配置
-    APP_NAME: str = "Welding System Backend"
+    APP_NAME: str = "Hanxu Backend"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = True
     DEVELOPMENT: bool = True
@@ -22,18 +37,19 @@ class Settings(BaseSettings):
     PORT: int = 8000
 
     # 数据库配置
-    DATABASE_URL: Optional[str] = None
     DATABASE_HOST: str = "localhost"
     DATABASE_PORT: int = 5432
     DATABASE_NAME: str = "weld_db"
     DATABASE_USER: str = "weld_user"
     DATABASE_PASSWORD: str = "weld_password"
+    DATABASE_URL: Optional[str] = None
 
     # Redis配置
-    REDIS_URL: str = "redis://localhost:6379/0"
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
+    REDIS_PASSWORD: Optional[str] = None
+    REDIS_URL: str = "redis://localhost:6379/0"
 
     # JWT配置
     SECRET_KEY: str = "dev-secret-key-for-testing-purposes-change-in-production"
@@ -75,7 +91,7 @@ class Settings(BaseSettings):
     SMTP_USER: str = "your-email@gmail.com"
     SMTP_PASSWORD: str = "your-app-password"
     EMAILS_FROM_EMAIL: str = "noreply@yourdomain.com"
-    EMAILS_FROM_NAME: str = "焊接工艺管理系统"
+    EMAILS_FROM_NAME: str = "焊序"
     EMAIL_RESET_TOKEN_EXPIRE_HOURS: int = 4
 
     # SendGrid配置（可选）
@@ -90,7 +106,7 @@ class Settings(BaseSettings):
     SMS_PROVIDER: str = "aliyun"  # aliyun, tencent, yunpian
 
     # 阿里云短信配置
-    ALIYUN_SMS_SIGN_NAME: str = "焊接工艺管理系统"
+    ALIYUN_SMS_SIGN_NAME: str = "焊序"
     SMS_TEMPLATE_LOGIN: str = "SMS_LOGIN"  # 登录验证码模板ID
     SMS_TEMPLATE_REGISTER: str = "SMS_REGISTER"  # 注册验证码模板ID
     SMS_TEMPLATE_RESET_PASSWORD: str = "SMS_RESET_PASSWORD"  # 重置密码验证码模板ID
@@ -99,7 +115,7 @@ class Settings(BaseSettings):
     TENCENT_SECRET_ID: Optional[str] = None
     TENCENT_SECRET_KEY: Optional[str] = None
     TENCENT_SMS_APP_ID: Optional[str] = None
-    TENCENT_SMS_SIGN_NAME: str = "焊接工艺管理系统"
+    TENCENT_SMS_SIGN_NAME: str = "焊序"
     TENCENT_SMS_REGION: str = "ap-guangzhou"
 
     # 云片短信配置（可选）
@@ -114,8 +130,8 @@ class Settings(BaseSettings):
 
     # API配置
     API_V1_STR: str = "/api/v1"
-    PROJECT_NAME: str = "Welding System"
-    PROJECT_DESCRIPTION: str = "焊接工艺管理系统API服务"
+    PROJECT_NAME: str = "Hanxu"
+    PROJECT_DESCRIPTION: str = "焊序API服务"
 
     # 安全配置
     BCRYPT_ROUNDS: int = 12
@@ -211,12 +227,71 @@ class Settings(BaseSettings):
     }
 
     @field_validator("DATABASE_URL", mode="before")
-    def assemble_db_connection(cls, v: Optional[str], info) -> Any:
-        """Build database URL from individual components."""
-        if isinstance(v, str):
+    @classmethod
+    def keep_explicit_db_url(cls, v: Optional[str]) -> Optional[str]:
+        """Keep an explicit DATABASE_URL; assemble later from parts if missing."""
+        if isinstance(v, str) and v:
             return v
-        # 如果没有设置DATABASE_URL，使用PostgreSQL作为默认数据库
-        return f"postgresql://weld_user:weld_password@localhost:5432/weld_db"
+        return None
+
+    @model_validator(mode="after")
+    def finalize_runtime_settings(self) -> "Settings":
+        """Assemble connection URLs and reject weak production secrets."""
+        from urllib.parse import quote
+
+        if not self.DATABASE_URL:
+            object.__setattr__(
+                self,
+                "DATABASE_URL",
+                (
+                    f"postgresql://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}"
+                    f"@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_NAME}"
+                ),
+            )
+
+        if self.REDIS_PASSWORD:
+            encoded = quote(self.REDIS_PASSWORD, safe="")
+            object.__setattr__(
+                self,
+                "REDIS_URL",
+                f"redis://:{encoded}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}",
+            )
+
+        if not self.DEVELOPMENT:
+            self._reject_insecure_production_values()
+        return self
+
+    def _reject_insecure_production_values(self) -> None:
+        if (
+            not self.SECRET_KEY
+            or len(self.SECRET_KEY) < 32
+            or self.SECRET_KEY in LEAKED_SECRETS
+        ):
+            raise ValueError(
+                "Production SECRET_KEY must be at least 32 characters "
+                "and must not use a default or leaked value"
+            )
+
+        if not self.DATABASE_PASSWORD or self.DATABASE_PASSWORD in LEAKED_PASSWORDS:
+            raise ValueError(
+                "Production DATABASE_PASSWORD must not use a default or leaked value"
+            )
+        if self.DATABASE_URL and any(
+            leaked in self.DATABASE_URL
+            for leaked in ("weld_password", "WeldDB@2024", "ghzzz123")
+        ):
+            raise ValueError(
+                "Production DATABASE_URL must not use a default or leaked value"
+            )
+
+        if not self.REDIS_PASSWORD or self.REDIS_PASSWORD in LEAKED_PASSWORDS:
+            raise ValueError(
+                "Production REDIS_PASSWORD must be set and must not use a leaked default"
+            )
+        if self.REDIS_URL and "Redis@2024" in self.REDIS_URL:
+            raise ValueError(
+                "Production REDIS_URL must not use a leaked default"
+            )
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:

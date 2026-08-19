@@ -4,7 +4,7 @@ pPQR (preliminary Procedure Qualification Record) API endpoints for the welding 
 from typing import Any, List, Optional
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Header, Body
 from sqlalchemy.orm import Session
 
 from app.api import deps
@@ -296,6 +296,25 @@ async def create_ppqr(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"创建pPQR失败: {str(e)}"
         )
+
+
+@router.get("/statistics")
+@router.get("/statistics/overview")
+async def get_ppqr_statistics(
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID")
+) -> Any:
+    """获取pPQR统计信息"""
+    workspace_context = get_workspace_context(db, current_user, workspace_id)
+    ppqr_service = PPQRService(db)
+    return {
+        "success": True,
+        "data": ppqr_service.get_statistics(
+            db, current_user=current_user, workspace_context=workspace_context
+        ),
+        "message": "获取pPQR统计成功"
+    }
 
 
 @router.get("/{ppqr_id}")
@@ -656,44 +675,26 @@ async def duplicate_ppqr(
 
 @router.post("/{ppqr_id}/convert-to-pqr")
 async def convert_ppqr_to_pqr(
-    ppqr_id: str,
+    ppqr_id: int,
+    payload: dict = Body(default={}),
     db: Session = Depends(deps.get_db),
-    current_user: Any = Depends(deps.get_current_active_user)
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID")
 ) -> Any:
-    """
-    将pPQR转换为PQR
-    """
-    # TODO: 实现实际的转换逻辑
+    """将pPQR转换为PQR。"""
+    workspace_context = get_workspace_context(db, current_user, workspace_id)
+    ppqr_service = PPQRService(db)
+    result = ppqr_service.convert_to_pqr(
+        db,
+        ppqr_id=ppqr_id,
+        current_user=current_user,
+        workspace_context=workspace_context,
+        overrides=payload or {},
+    )
+    message = "该pPQR已转换过" if result.get("already_converted") else "转换成功"
     return {
         "success": True,
-        "data": {
-            "ppqr_id": ppqr_id,
-            "pqr_id": "new-pqr-id",
-            "converted_at": "2025-01-01T00:00:00Z"
-        },
-        "message": "pPQR已成功转换为PQR"
-    }
-
-
-@router.get("/statistics/overview")
-async def get_ppqr_statistics(
-    db: Session = Depends(deps.get_db),
-    current_user: Any = Depends(deps.get_current_active_user)
-) -> Any:
-    """
-    获取pPQR统计信息
-    """
-    # TODO: 实现实际的统计逻辑
-    return {
-        "success": True,
-        "data": {
-            "total_ppqr": 0,
-            "draft_count": 0,
-            "under_review_count": 0,
-            "approved_count": 0,
-            "rejected_count": 0,
-            "converted_to_pqr_count": 0
-        },
-        "message": "获取pPQR统计信息成功"
+        "data": result,
+        "message": message,
     }
 

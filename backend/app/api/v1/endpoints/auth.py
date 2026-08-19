@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.core.config import settings
+from app.core.errors import not_implemented
+from app.core.rate_limit import client_ip, enforce_rate_limit
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -20,7 +22,17 @@ from app.core.security import (
     verify_token,
 )
 from app.schemas.token import Token, TokenWithUser, TokenRefresh
-from app.schemas.user import UserCreate, UserResponse, LoginRequest, LoginResponse
+from app.schemas.user import (
+    UserCreate,
+    UserResponse,
+    LoginRequest,
+    LoginResponse,
+    ChangePasswordRequest,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
+    EmailTokenRequest,
+    ResendVerificationRequest,
+)
 from app.schemas.verification_code import (
     VerificationCodeRequest,
     VerificationCodeResponse,
@@ -62,6 +74,9 @@ async def login_for_access_token(
     Raises:
         HTTPException: 如果用户名或密码错误
     """
+    enforce_rate_limit(f"login:{client_ip(request)}", limit=10, window_seconds=60)
+    enforce_rate_limit(f"login-user:{form_data.username.lower()}", limit=10, window_seconds=60)
+
     # 验证用户凭据
     user = user_service.authenticate(
         db, email=form_data.username, password=form_data.password
@@ -347,214 +362,131 @@ async def logout_user(
 
 
 @router.post("/change-password")
-async def change_password(
-    current_password: str,
-    new_password: str,
+def change_password(
+    payload: ChangePasswordRequest,
     current_user: dict = Depends(deps.get_current_user),
     db: Session = Depends(deps.get_db)
 ) -> Any:
-    """
-    修改密码.
+    """修改密码. 密码必须放在请求体中，不能出现在 query string."""
+    if payload.confirm_password and payload.confirm_password != payload.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "PASSWORD_MISMATCH", "message": "两次输入的新密码不一致"},
+        )
 
-    Args:
-        current_password: 当前密码
-        new_password: 新密码
-        current_user: 当前用户信息
-        db: 数据库会话
-
-    Returns:
-        修改成功消息
-
-    Raises:
-        HTTPException: 如果当前密码错误
-    """
-    # 获取用户完整信息
     user = user_service.get(db, id=current_user["id"])
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="用户不存在"
+            detail={"code": "USER_NOT_FOUND", "message": "用户不存在"},
         )
 
-    # 验证当前密码
-    if not verify_password(current_password, user.hashed_password):
+    if not verify_password(payload.current_password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="当前密码错误"
+            detail={"code": "BAD_PASSWORD", "message": "当前密码错误"},
         )
 
-    # 更新密码
-    user.hashed_password = get_password_hash(new_password)
-    await db.commit()
-
+    user.hashed_password = get_password_hash(payload.new_password)
+    db.commit()
     return {"message": "密码修改成功"}
 
 
 @router.post("/forgot-password")
-async def forgot_password(
-    email: str,
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    request: Request,
     db: Session = Depends(deps.get_db)
 ) -> Any:
-    """
-    忘记密码.
-
-    Args:
-        email: 用户邮箱
-        db: 数据库会话
-
-    Returns:
-        重置邮件发送状态
-
-    Raises:
-        HTTPException: 如果邮箱不存在
-    """
-    user = user_service.get_by_email(db, email=email)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="该邮箱未注册"
-        )
-
-    # 生成密码重置令牌
-    reset_token = generate_password_reset_token(email)
-
-    # 这里应该发送邮件，暂时只返回令牌（开发环境）
-    if settings.DEVELOPMENT:
-        return {
-            "message": "密码重置邮件已发送",
-            "reset_token": reset_token  # 仅开发环境返回
-        }
-    else:
-        # 生产环境发送邮件
-        # TODO: 实现邮件发送功能
-        return {"message": "密码重置邮件已发送"}
+    """忘记密码. 无论邮箱是否存在都返回同一消息，避免账号枚举."""
+    enforce_rate_limit(f"forgot:{client_ip(request)}", limit=5, window_seconds=60)
+    user = user_service.get_by_email(db, email=payload.email)
+    if user:
+        reset_token = generate_password_reset_token(payload.email)
+        try:
+            email_service.send_email(
+                to_email=payload.email,
+                subject="【焊序】密码重置",
+                html_content=f"<p>您的密码重置令牌：{reset_token}</p>",
+                text_content=f"您的密码重置令牌：{reset_token}",
+            )
+        except Exception:
+            pass
+    return {"message": "如果该邮箱已注册，将收到密码重置邮件"}
 
 
 @router.post("/reset-password")
-async def reset_password(
-    token: str,
-    new_password: str,
+def reset_password(
+    payload: ResetPasswordRequest,
     db: Session = Depends(deps.get_db)
 ) -> Any:
-    """
-    重置密码.
+    """重置密码. token 与新密码必须放在请求体中."""
+    if payload.confirm_password and payload.confirm_password != payload.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "PASSWORD_MISMATCH", "message": "两次输入的新密码不一致"},
+        )
 
-    Args:
-        token: 密码重置令牌
-        new_password: 新密码
-        db: 数据库会话
-
-    Returns:
-        重置成功消息
-
-    Raises:
-        HTTPException: 如果令牌无效
-    """
-    # 验证重置令牌
-    email = verify_password_reset_token(token)
+    email = verify_password_reset_token(payload.token)
     if not email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="无效或已过期的重置令牌"
+            detail={"code": "INVALID_TOKEN", "message": "无效或已过期的重置令牌"},
         )
 
-    # 获取用户
     user = user_service.get_by_email(db, email=email)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="用户不存在"
+            detail={"code": "USER_NOT_FOUND", "message": "用户不存在"},
         )
 
-    # 更新密码
-    user.hashed_password = get_password_hash(new_password)
-    await db.commit()
-
+    user.hashed_password = get_password_hash(payload.new_password)
+    db.commit()
     return {"message": "密码重置成功"}
 
 
 @router.post("/verify-email")
-async def verify_email(
-    token: str,
+def verify_email(
+    payload: EmailTokenRequest,
     db: Session = Depends(deps.get_db)
 ) -> Any:
-    """
-    验证邮箱.
-
-    Args:
-        token: 邮箱验证令牌
-        db: 数据库会话
-
-    Returns:
-        验证成功消息
-
-    Raises:
-        HTTPException: 如果令牌无效
-    """
-    # TODO: 实现邮箱验证逻辑
-    return {"message": "邮箱验证成功"}
-
-
+    """验证邮箱. 尚未实现真实校验时返回 501，不伪装成功."""
+    del payload, db
+    not_implemented("邮箱验证")
 
 
 @router.post("/resend-verification")
-async def resend_verification_email(
-    email: str,
+def resend_verification_email(
+    payload: ResendVerificationRequest,
+    request: Request,
     db: Session = Depends(deps.get_db)
 ) -> Any:
-    """
-    重新发送验证邮件.
-
-    Args:
-        email: 用户邮箱
-        db: 数据库会话
-
-    Returns:
-        发送状态
-
-    Raises:
-        HTTPException: 如果邮箱不存在
-    """
-    user = user_service.get_by_email(db, email=email)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="该邮箱未注册"
-        )
-
-    # TODO: 实现邮件重新发送逻辑
-    return {"message": "验证邮件已重新发送"}
+    """重新发送验证邮件."""
+    del payload, request, db
+    not_implemented("重发验证邮件")
 
 
 @router.post("/send-verification-code", response_model=VerificationCodeResponse)
 async def send_verification_code(
-    request: VerificationCodeRequest,
+    payload: VerificationCodeRequest,
+    http_request: Request,
     db: Session = Depends(deps.get_db)
 ) -> Any:
-    """
-    发送验证码.
+    """发送验证码."""
+    enforce_rate_limit(f"otp:{client_ip(http_request)}", limit=5, window_seconds=60)
+    enforce_rate_limit(f"otp-account:{payload.account}", limit=3, window_seconds=60)
 
-    Args:
-        request: 验证码请求
-        db: 数据库会话
-
-    Returns:
-        发送状态
-
-    Raises:
-        HTTPException: 如果账号格式错误或发送失败
-    """
-    # 检查账号格式
-    account_type = verification_service.detect_account_type(request.account)
-    if account_type != request.account_type:
+    account_type = verification_service.detect_account_type(payload.account)
+    if account_type != payload.account_type:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="账号格式与类型不匹配"
         )
 
     # 检查用户是否存在（对于登录）
-    if request.purpose == "login":
-        user = user_service.get_by_contact(db, contact=request.account)
+    if payload.purpose == "login":
+        user = user_service.get_by_contact(db, contact=payload.account)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -563,7 +495,7 @@ async def send_verification_code(
 
     # 检查发送频率限制
     if not verification_service.can_send_code(
-        db, request.account, request.account_type, request.purpose
+        db, payload.account, payload.account_type, payload.purpose
     ):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -574,61 +506,46 @@ async def send_verification_code(
         # 创建验证码
         verification_code = verification_service.create_verification_code(
             db=db,
-            account=request.account,
-            account_type=request.account_type,
-            purpose=request.purpose,
+            account=payload.account,
+            account_type=payload.account_type,
+            purpose=payload.purpose,
             expires_minutes=10
         )
 
-        # 发送验证码
         send_success = False
 
-        if request.account_type == "email":
-            # 发送邮件验证码
+        if payload.account_type == "email":
             send_success = email_service.send_verification_code(
-                to_email=request.account,
+                to_email=payload.account,
                 code=verification_code.code,
-                purpose=request.purpose,
+                purpose=payload.purpose,
                 expires_minutes=10
             )
-        elif request.account_type == "phone":
-            # 发送短信验证码
+        elif payload.account_type == "phone":
             send_success = sms_service.send_verification_code(
-                phone=request.account,
+                phone=payload.account,
                 code=verification_code.code,
-                purpose=request.purpose,
+                purpose=payload.purpose,
                 expires_minutes=10
             )
 
-        # 开发环境：即使发送失败也返回成功（用于测试）
-        if settings.DEVELOPMENT:
-            print(f"🔐 [开发环境] 验证码: {verification_code.code}")
-            return {
-                "message": f"验证码已发送到您的{'邮箱' if request.account_type == 'email' else '手机'}（开发环境：{verification_code.code}）",
-                "expires_in": 600,
-                "code": verification_code.code  # 开发环境返回验证码
-            }
-
-        # 生产环境：检查发送结果
-        if not send_success:
-            # 发送失败，标记验证码为已使用
+        if not send_success and not settings.DEVELOPMENT:
             verification_code.is_used = True
             db.commit()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"发送{'邮件' if request.account_type == 'email' else '短信'}失败，请稍后重试"
+                detail="验证码发送失败，请稍后重试",
             )
 
         return {
-            "message": f"验证码已发送到您的{'邮箱' if request.account_type == 'email' else '手机'}",
-            "expires_in": 600
+            "message": f"验证码已发送到您的{'邮箱' if payload.account_type == 'email' else '手机'}",
+            "expires_in": 600,
         }
 
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         db.rollback()
-        print(f"❌ 发送验证码异常: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="发送验证码失败，请稍后重试"
@@ -655,6 +572,8 @@ async def login_with_verification_code(
     Raises:
         HTTPException: 如果验证码错误或账号不存在
     """
+    enforce_rate_limit(f"otp-login:{client_ip(request)}", limit=10, window_seconds=60)
+
     # 检查账号格式
     account_type = verification_service.detect_account_type(login_data.account)
     if account_type != login_data.account_type:

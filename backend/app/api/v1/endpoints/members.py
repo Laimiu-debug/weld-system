@@ -2,9 +2,10 @@
 Member management endpoints for the welding system backend.
 """
 from typing import Any, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
+import json
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 
 from app.api import deps
@@ -20,6 +21,9 @@ from app.api.v1.schemas.membership import (
 from app.models.user import User
 from app.models.subscription import Subscription, SubscriptionPlan, SubscriptionTransaction
 from app.core.database import get_db
+from app.core.rate_limit import client_ip, enforce_rate_limit
+from app.services.payment_service import PaymentService
+from app.services.membership_tier_service import MembershipTierService
 
 router = APIRouter()
 
@@ -29,8 +33,6 @@ async def get_subscription_plans(
     db: Session = Depends(get_db)
 ) -> Any:
     """获取所有可用的订阅计划 (公开接口,无需认证)."""
-    import json
-
     plans = db.query(SubscriptionPlan).filter(SubscriptionPlan.is_active == True).order_by(SubscriptionPlan.sort_order).all()
 
     # 转换为JSON响应格式，确保features是数组
@@ -85,42 +87,44 @@ async def get_current_subscription(
 @router.post("/upgrade", response_model=MembershipUpgradeResponse)
 async def upgrade_membership(
     upgrade_data: MembershipUpgradeRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user = Depends(deps.get_current_user)
 ) -> Any:
     """升级会员等级."""
-    from app.services.payment_service import PaymentService
-
+    enforce_rate_limit(f"pay-create-user:{current_user.id}", limit=10, window_seconds=60)
     payment_service = PaymentService(db)
 
     try:
-        # 创建支付订单
         order_data = payment_service.create_payment_order(
             user_id=current_user.id,
             plan_id=upgrade_data.plan_id,
             billing_cycle=upgrade_data.billing_cycle,
-            payment_method=upgrade_data.payment_method
+            payment_method=upgrade_data.payment_method,
+            auto_renew=getattr(upgrade_data, "auto_renew", False),
+            purpose="upgrade",
         )
-        
-        # 处理支付
+
         payment_response = payment_service.process_payment(
-            order_id=order_data["order_id"],
-            payment_method=upgrade_data.payment_method
+            order_id=order_data["transaction_id"],
+            payment_method=upgrade_data.payment_method,
+            client_ip=client_ip(request),
         )
-        
-        # 获取订阅计划信息
+
         plan = db.query(SubscriptionPlan).filter(SubscriptionPlan.id == upgrade_data.plan_id).first()
-        
+
         return MembershipUpgradeResponse(
             success=True,
             subscription_id=order_data["subscription_id"],
             message="支付订单创建成功，请完成支付",
-            new_plan=plan.name,
+            new_plan=plan.name if plan else upgrade_data.plan_id,
             next_billing_date=order_data["end_date"],
             amount_paid=order_data["amount"],
             payment_url=payment_response.payment_url,
             qr_code=payment_response.qr_code
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -134,8 +138,6 @@ async def get_subscription_history(
     current_user = Depends(deps.get_current_user)
 ) -> Any:
     """获取用户订阅历史."""
-    from app.models.subscription import SubscriptionTransaction
-
     try:
         subscriptions = db.query(Subscription).filter(
             Subscription.user_id == current_user.id
@@ -231,10 +233,12 @@ async def cancel_subscription(
 @router.post("/{subscription_id}/renew")
 async def renew_subscription(
     subscription_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user = Depends(deps.get_current_user)
 ) -> Any:
-    """续费订阅."""
+    """创建续费订单，支付成功后才延长有效期。"""
+    enforce_rate_limit(f"pay-create-user:{current_user.id}", limit=10, window_seconds=60)
     subscription = db.query(Subscription).filter(
         Subscription.id == subscription_id,
         Subscription.user_id == current_user.id
@@ -246,7 +250,6 @@ async def renew_subscription(
             detail="订阅不存在"
         )
 
-    # 获取订阅计划
     plan = db.query(SubscriptionPlan).filter(SubscriptionPlan.id == subscription.plan_id).first()
     if not plan:
         raise HTTPException(
@@ -254,53 +257,35 @@ async def renew_subscription(
             detail="订阅计划不存在"
         )
 
-    # 计算新价格和期限
-    if subscription.billing_cycle == "monthly":
-        price = plan.monthly_price
-        duration_months = 1
-    elif subscription.billing_cycle == "quarterly":
-        price = plan.quarterly_price
-        duration_months = 3
-    else:  # yearly
-        price = plan.yearly_price
-        duration_months = 12
-
-    # 延长订阅期限
-    old_end_date = subscription.end_date
-    if old_end_date < datetime.utcnow():
-        new_end_date = datetime.utcnow() + timedelta(days=duration_months * 30)
-    else:
-        new_end_date = old_end_date + timedelta(days=duration_months * 30)
-
-    subscription.end_date = new_end_date
-    subscription.next_billing_date = new_end_date - timedelta(days=7)
-
-    # 创建交易记录
-    import uuid
-    transaction = SubscriptionTransaction(
-        subscription_id=subscription.id,
-        transaction_id=f"TXN{datetime.utcnow().strftime('%Y%m%d%H%M%S')}{uuid.uuid4().hex[:8].upper()}",
-        amount=price,
-        currency="CNY",
-        payment_method=subscription.payment_method,
-        status="pending",
-        description=f"续费 {plan.name} - {subscription.billing_cycle}"
+    payment_service = PaymentService(db)
+    payment_method = subscription.payment_method or "alipay"
+    order_data = payment_service.create_payment_order(
+        user_id=current_user.id,
+        plan_id=subscription.plan_id,
+        billing_cycle=subscription.billing_cycle or "monthly",
+        payment_method=payment_method,
+        auto_renew=bool(subscription.auto_renew),
+        purpose="renew",
+        existing_subscription_id=subscription.id,
+    )
+    payment_response = payment_service.process_payment(
+        order_id=order_data["transaction_id"],
+        payment_method=payment_method,
+        client_ip=client_ip(request),
     )
 
-    db.add(transaction)
-    db.commit()
-
-    # 模拟支付处理
-    transaction.status = "success"
-    transaction.transaction_date = datetime.utcnow()
-    subscription.last_payment_date = datetime.utcnow()
-
-    db.commit()
-
     return {
-        "message": "续费成功",
-        "new_end_date": new_end_date,
-        "amount_paid": price
+        "success": True,
+        "message": "续费订单已创建，请完成支付",
+        "transaction_id": order_data["transaction_id"],
+        "order_id": order_data["order_id"],
+        "amount": order_data["amount"],
+        "amount_paid": 0,
+        "new_end_date": order_data["end_date"],
+        "payment_url": payment_response.payment_url,
+        "qr_code": payment_response.qr_code,
+        "payment_method": payment_method,
+        "plan_name": plan.name,
     }
 
 
@@ -318,8 +303,6 @@ async def get_subscription_summary(
     - 次高等级订阅（如果存在）
     - 所有有效订阅列表
     """
-    from app.services.membership_tier_service import MembershipTierService
-
     tier_service = MembershipTierService(db)
     summary = tier_service.get_user_subscription_summary(current_user.id)
 
@@ -343,8 +326,6 @@ async def get_subscription_history(
 
     返回所有订阅记录，按创建时间降序排列
     """
-    from app.services.membership_tier_service import MembershipTierService
-
     tier_service = MembershipTierService(db)
     subscriptions = tier_service.get_all_subscriptions_for_user(
         current_user.id,
@@ -371,8 +352,6 @@ async def refresh_membership_tier(
     - 用户怀疑会员等级不正确时手动刷新
     - 管理员操作后的同步
     """
-    from app.services.membership_tier_service import MembershipTierService
-
     tier_service = MembershipTierService(db)
     result = tier_service.update_user_tier(current_user.id)
 

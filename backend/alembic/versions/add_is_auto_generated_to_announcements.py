@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'add_auto_generated_flag'
-down_revision = None  # 设置为你的上一个迁移ID
+down_revision = "add_approval_system"
 branch_labels = None
 depends_on = None
 

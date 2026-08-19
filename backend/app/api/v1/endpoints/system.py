@@ -6,27 +6,29 @@ from typing import Any
 from fastapi import APIRouter, Depends
 
 from app.api import deps
-from app.core.database import db_manager
+from app.core.config import settings
+from app.core.health import readiness
 
 router = APIRouter()
 
 
 @router.get("/health")
-async def system_health(
+def system_health(
     current_user: dict = Depends(deps.get_current_admin_user)
 ) -> Any:
-    """系统健康检查."""
-    health_status = await db_manager.health_check()
-    return health_status
+    """管理员查看依赖健康状态."""
+    del current_user
+    return readiness()
 
 
 @router.get("/info")
-async def system_info(
+def system_info(
     current_user: dict = Depends(deps.get_current_admin_user)
 ) -> Any:
     """系统信息."""
+    del current_user
     return {
-        "message": "系统信息功能开发中...",
-        "version": "1.0.0",
-        "environment": "development"
+        "version": settings.APP_VERSION,
+        "environment": "development" if settings.DEVELOPMENT else "production",
+        "app_name": settings.APP_NAME,
     }

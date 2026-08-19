@@ -9,8 +9,12 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_active_user
-from app.core.data_access import WorkspaceContext, WorkspaceType
+from app.core.data_access import DataAccessAction, WorkspaceContext, WorkspaceType
+from app.core.document_access import require_document_access
 from app.models.company import CompanyEmployee
+from app.models.ppqr import PPQR
+from app.models.pqr import PQR
+from app.models.wps import WPS
 from app.services.approval_service import ApprovalService
 from app.services.workspace_service import WorkspaceService
 from app.schemas.approval import (
@@ -104,30 +108,31 @@ async def submit_for_approval(
     """
     approval_service = ApprovalService(db)
 
+    model_by_type = {"wps": WPS, "pqr": PQR, "ppqr": PPQR}
+    model = model_by_type[request.document_type]
+    documents = {
+        document_id: require_document_access(
+            db,
+            model,
+            document_id,
+            current_user,
+            f"{request.document_type.upper()}不存在",
+            action=DataAccessAction.EDIT,
+        )
+        for document_id in request.document_ids
+    }
+
     if len(request.document_ids) == 1:
         # 单个提交
         # 根据document_type查询文档信息
         document_number = f"{request.document_type.upper()}-{request.document_ids[0]}"
         document_title = f"Document {request.document_ids[0]}"
 
-        if request.document_type == 'wps':
-            from app.models.wps import WPS
-            wps = db.query(WPS).filter(WPS.id == request.document_ids[0]).first()
-            if wps:
-                document_number = wps.wps_number
-                document_title = wps.title
-        elif request.document_type == 'pqr':
-            from app.models.pqr import PQR
-            pqr = db.query(PQR).filter(PQR.id == request.document_ids[0]).first()
-            if pqr:
-                document_number = pqr.pqr_number
-                document_title = pqr.title
-        elif request.document_type == 'ppqr':
-            from app.models.ppqr import PPQR
-            ppqr = db.query(PPQR).filter(PPQR.id == request.document_ids[0]).first()
-            if ppqr:
-                document_number = ppqr.ppqr_number
-                document_title = ppqr.title
+        document = documents[request.document_ids[0]]
+        document_number = getattr(
+            document, f"{request.document_type}_number", document_number
+        )
+        document_title = document.title
 
         instance = approval_service.submit_for_approval(
             document_type=request.document_type,

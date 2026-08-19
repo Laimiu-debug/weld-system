@@ -18,54 +18,29 @@ import SecurityManagement from '@/pages/SecurityManagement';
 import UserDetail from '@/pages/UserDetail';
 import EnterpriseDetail from '@/pages/EnterpriseDetail';
 import SharedLibraryManagement from '@/pages/SharedLibraryManagement';
-import DebugPage from '@/pages/DebugPage';
-import TestLogin from '@/TestLogin';
-import AuthTest from '@/pages/AuthTest';
 import LoadingSpinner from '@/components/LoadingSpinner';
 
 const AppContent: React.FC = () => {
-  const { isAuthenticated, loading, user } = useAuthContext();
-
-  // 添加调试信息
-  const debugInfo = {
-    loading,
-    isAuthenticated,
-    user,
-    hasToken: !!localStorage.getItem('admin_token'),
-    hasUser: !!localStorage.getItem('admin_user'),
-    timestamp: new Date().toLocaleTimeString()
-  };
-  console.log('=== APP CONTENT ROUTE CHECK ===');
-  console.log('AppContent - Debug Info:', debugInfo);
+  const { isAuthenticated, loading } = useAuthContext();
 
   if (loading) {
-    console.log('AppContent: Still loading, showing spinner');
     return <LoadingSpinner />;
   }
 
-  // 直接检查localStorage作为备用验证
   const hasLocalStorageAuth = !!(localStorage.getItem('admin_token') && localStorage.getItem('admin_user'));
 
   if (!isAuthenticated && !hasLocalStorageAuth) {
-    console.log('AppContent: Not authenticated (both context and localStorage), redirecting to login');
     return (
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/test-login" element={<TestLogin />} />
-        <Route path="/auth-test" element={<AuthTest />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
   }
 
   if (!isAuthenticated && hasLocalStorageAuth) {
-    console.log('AppContent: Context says not authenticated but localStorage has auth data - Context initialization issue');
-    console.log('AppContent: Waiting for context to initialize...');
-    // 暂时不重定向，让组件有时间完成初始化
     return <LoadingSpinner />;
   }
-
-  console.log('AppContent: Authenticated, showing dashboard');
 
   return (
     <Layout>
@@ -85,8 +60,6 @@ const AppContent: React.FC = () => {
         <Route path="/config" element={<SystemConfig />} />
         <Route path="/security" element={<SecurityManagement />} />
         <Route path="/shared-library" element={<SharedLibraryManagement />} />
-        <Route path="/debug" element={<DebugPage />} />
-        <Route path="/auth-test" element={<AuthTest />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Layout>

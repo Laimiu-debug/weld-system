@@ -43,6 +43,7 @@ lxml==4.9.3
 
 # 日期时间处理
 python-dateutil==2.8.2
+pytz==2024.1
 
 # 环境变量
 python-dotenv==1.0.0

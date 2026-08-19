@@ -1,6 +1,7 @@
 """
 Security utilities for the welding system backend application.
 """
+import os
 import secrets
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
@@ -99,28 +100,6 @@ def verify_token(token: str, token_type: str = "access") -> Optional[str]:
 
         return user_id
     except jwt.JWTError:
-        # 开发环境临时修复：如果JWT验证失败，尝试解析开发环境token
-        if settings.DEVELOPMENT:
-            try:
-                import base64
-                from urllib.parse import unquote
-
-                # 检查是否是JWT格式的token
-                if '.' in token:
-                    parts = token.split('.')
-                    if len(parts) == 3:
-                        # 尝试手动解析payload
-                        payload_str = base64.b64decode(parts[1] + '==').decode('utf-8')
-                        payload = eval(payload_str)  # 注意：仅在开发环境中使用
-                        user_id = payload.get("sub")
-                        token_type_claim = payload.get("type")
-
-                        if user_id and token_type_claim == token_type:
-                            print(f"DEBUG: Using dev environment token validation for user {user_id}")
-                            return user_id
-            except Exception as e:
-                print(f"DEBUG: Dev environment token validation failed: {e}")
-
         return None
 
 

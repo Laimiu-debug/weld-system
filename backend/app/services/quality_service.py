@@ -3,11 +3,11 @@ Quality Service for the welding system backend.
 质量管理服务层
 """
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, or_, func, case
 from sqlalchemy.exc import IntegrityError
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from fastapi import HTTPException
 from fastapi import status as http_status
 
@@ -149,10 +149,7 @@ class QualityService:
                 if field in inspection_data_dict:
                     del inspection_data_dict[field]
 
-            # 调试：打印最终的数据字典
-            print(f"DEBUG: 最终传递给QualityInspection的数据: {inspection_data_dict}")
-
-            inspection = QualityInspection(**inspection_data_dict)
+            # 移除数据库中不存在的虚拟字段
 
             # 设置数据隔离字段
             inspection.owner_id = current_user.id
@@ -580,4 +577,223 @@ class QualityService:
             )
 
         return query.first() is not None
+
+    # ==================== 不合格品 / 质量统计 ====================
+
+    def _scoped_inspection_query(
+        self,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+    ):
+        workspace_context.validate()
+        self._check_list_permission(current_user, workspace_context)
+        query = self.db.query(QualityInspection)
+        return self.data_access.apply_workspace_filter(
+            query, QualityInspection, current_user, workspace_context
+        )
+
+    def _scoped_ncr_query(
+        self,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+    ):
+        workspace_context.validate()
+        self._check_list_permission(current_user, workspace_context)
+        query = self.db.query(NonconformanceRecord)
+        return self.data_access.apply_workspace_filter(
+            query, NonconformanceRecord, current_user, workspace_context
+        )
+
+    def create_nonconformance_record(
+        self,
+        current_user: User,
+        record_data: Dict[str, Any],
+        workspace_context: WorkspaceContext,
+    ) -> NonconformanceRecord:
+        workspace_context.validate()
+        if workspace_context.workspace_type == "enterprise":
+            self._check_create_permission(current_user, workspace_context)
+
+        payload = record_data.copy()
+        if not payload.get("ncr_number"):
+            payload["ncr_number"] = f"NCR-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+        if not payload.get("reported_date"):
+            payload["reported_date"] = date.today()
+        payload.setdefault("resolution_status", "open")
+
+        allowed = {column.name for column in NonconformanceRecord.__table__.columns}
+        filtered = {key: value for key, value in payload.items() if key in allowed}
+
+        record = NonconformanceRecord(
+            **filtered,
+            owner_id=current_user.id,
+            workspace_type=workspace_context.workspace_type,
+            company_id=workspace_context.company_id,
+            factory_id=workspace_context.factory_id,
+            created_by=current_user.id,
+        )
+        self.db.add(record)
+        self.db.commit()
+        self.db.refresh(record)
+        return record
+
+    def get_nonconformance_list(
+        self,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+        skip: int = 0,
+        limit: int = 100,
+        search: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> tuple[List[NonconformanceRecord], int]:
+        query = self._scoped_ncr_query(current_user, workspace_context)
+        if search:
+            pattern = f"%{search}%"
+            query = query.filter(
+                or_(
+                    NonconformanceRecord.ncr_number.ilike(pattern),
+                    NonconformanceRecord.ncr_title.ilike(pattern),
+                    NonconformanceRecord.description.ilike(pattern),
+                )
+            )
+        if status:
+            query = query.filter(NonconformanceRecord.resolution_status == status)
+        total = query.count()
+        items = (
+            query.order_by(NonconformanceRecord.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+        return items, total
+
+    def get_nonconformance_by_id(
+        self,
+        record_id: int,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+    ) -> NonconformanceRecord:
+        record = self.db.query(NonconformanceRecord).filter(
+            NonconformanceRecord.id == record_id
+        ).first()
+        if not record:
+            raise HTTPException(
+                status_code=http_status.HTTP_404_NOT_FOUND,
+                detail="不合格品记录不存在",
+            )
+        self.data_access.check_access(current_user, record, "VIEW", workspace_context)
+        return record
+
+    def update_nonconformance_record(
+        self,
+        record_id: int,
+        current_user: User,
+        record_data: Dict[str, Any],
+        workspace_context: WorkspaceContext,
+    ) -> NonconformanceRecord:
+        record = self.get_nonconformance_by_id(record_id, current_user, workspace_context)
+        self.data_access.check_access(current_user, record, "EDIT", workspace_context)
+        allowed = {column.name for column in NonconformanceRecord.__table__.columns}
+        for key, value in record_data.items():
+            if key in allowed and value is not None:
+                setattr(record, key, value)
+        record.updated_by = current_user.id
+        record.updated_at = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(record)
+        return record
+
+    def get_statistics(
+        self,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+    ) -> Dict[str, Any]:
+        query = self._scoped_inspection_query(current_user, workspace_context)
+        total = query.count()
+        passed = query.filter(QualityInspection.inspection_result == "pass").count()
+        failed = query.filter(QualityInspection.inspection_result == "fail").count()
+        pending = query.filter(
+            or_(
+                QualityInspection.inspection_result == "pending",
+                QualityInspection.inspection_result.is_(None),
+            )
+        ).count()
+        conditional = query.filter(QualityInspection.inspection_result == "conditional").count()
+        retest = query.filter(QualityInspection.inspection_result == "retest").count()
+
+        defect_totals = query.with_entities(
+            func.coalesce(func.sum(QualityInspection.crack_count), 0),
+            func.coalesce(func.sum(QualityInspection.porosity_count), 0),
+            func.coalesce(func.sum(QualityInspection.inclusion_count), 0),
+            func.coalesce(func.sum(QualityInspection.undercut_count), 0),
+            func.coalesce(func.sum(QualityInspection.incomplete_penetration_count), 0),
+            func.coalesce(func.sum(QualityInspection.incomplete_fusion_count), 0),
+            func.coalesce(func.sum(QualityInspection.other_defect_count), 0),
+        ).one()
+
+        ncr_query = self._scoped_ncr_query(current_user, workspace_context)
+        open_ncr = ncr_query.filter(NonconformanceRecord.resolution_status == "open").count()
+
+        return {
+            "total_inspections": total,
+            "passed_inspections": passed,
+            "failed_inspections": failed,
+            "pending_inspections": pending,
+            "conditional_inspections": conditional,
+            "retest_inspections": retest,
+            "pass_rate": round((passed / total) * 100, 2) if total else 0,
+            "open_nonconformances": open_ncr,
+            "total_nonconformances": ncr_query.count(),
+            "defects": {
+                "crack": int(defect_totals[0] or 0),
+                "porosity": int(defect_totals[1] or 0),
+                "inclusion": int(defect_totals[2] or 0),
+                "undercut": int(defect_totals[3] or 0),
+                "incomplete_penetration": int(defect_totals[4] or 0),
+                "incomplete_fusion": int(defect_totals[5] or 0),
+                "other": int(defect_totals[6] or 0),
+            },
+        }
+
+    def get_trends(
+        self,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> Dict[str, Any]:
+        query = self._scoped_inspection_query(current_user, workspace_context)
+        start = start_date or (date.today() - timedelta(days=29))
+        end = end_date or date.today()
+        query = query.filter(
+            QualityInspection.inspection_date >= start,
+            QualityInspection.inspection_date <= end,
+        )
+        rows = (
+            query.with_entities(
+                QualityInspection.inspection_date,
+                func.count(QualityInspection.id),
+                func.sum(case((QualityInspection.inspection_result == "pass", 1), else_=0)),
+                func.sum(case((QualityInspection.inspection_result == "fail", 1), else_=0)),
+            )
+            .group_by(QualityInspection.inspection_date)
+            .order_by(QualityInspection.inspection_date)
+            .all()
+        )
+        series = []
+        for day, total, passed, failed in rows:
+            total_count = int(total or 0)
+            passed_count = int(passed or 0)
+            series.append({
+                "date": str(day) if day else None,
+                "total": total_count,
+                "passed": passed_count,
+                "failed": int(failed or 0),
+                "pass_rate": round((passed_count / total_count) * 100, 2) if total_count else 0,
+            })
+        return {
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "series": series,
+        }
 

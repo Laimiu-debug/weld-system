@@ -484,14 +484,40 @@ const MembershipCurrent: React.FC = () => {
                     return null
                   }
 
-                  return tier !== 'enterprise_pro_max' && (
-                    <Button
-                      type="primary"
-                      icon={<CrownOutlined />}
-                      onClick={() => navigate('/membership/upgrade')}
-                    >
-                      升级套餐
-                    </Button>
+                  return (
+                    <>
+                      {tier !== 'enterprise_pro_max' && (
+                        <Button
+                          type="primary"
+                          icon={<CrownOutlined />}
+                          onClick={() => navigate('/membership/upgrade')}
+                        >
+                          升级套餐
+                        </Button>
+                      )}
+                      {tier !== 'free' && tier !== 'personal_free' && (
+                        <Button
+                          icon={<SyncOutlined />}
+                          onClick={async () => {
+                            try {
+                              const current = await membershipService.getCurrentSubscription()
+                              if (!current) {
+                                message.warning('暂无有效订阅，请先升级套餐')
+                                return
+                              }
+                              navigate(
+                                `/membership/payment?subscription_id=${current.id}&plan_id=${current.plan_id}&billing_cycle=${current.billing_cycle || 'monthly'}`
+                              )
+                            } catch (error) {
+                              console.error(error)
+                              message.error('无法发起续费')
+                            }
+                          }}
+                        >
+                          续费
+                        </Button>
+                      )}
+                    </>
                   )
                 })()}
                 <Button

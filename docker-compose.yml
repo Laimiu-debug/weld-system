@@ -1,5 +1,8 @@
 version: '3.8'
 
+# 密钥从项目根目录 .env 注入（复制 .env.example）。
+# 生产环境不要把 PostgreSQL / Redis / 后端 API 端口暴露到公网。
+
 services:
   # PostgreSQL 数据库
   postgres:
@@ -7,20 +10,18 @@ services:
     container_name: weld_postgres
     restart: always
     environment:
-      POSTGRES_DB: weld_db
-      POSTGRES_USER: weld_user
-      POSTGRES_PASSWORD: WeldDB@2024#Secure!Pass
+      POSTGRES_DB: ${POSTGRES_DB:-weld_db}
+      POSTGRES_USER: ${POSTGRES_USER:-weld_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
       TZ: Asia/Shanghai
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:
-      - "5432:5432"
     networks:
       - weld_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U weld_user -d weld_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-weld_user} -d ${POSTGRES_DB:-weld_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -30,17 +31,21 @@ services:
     image: redis:7-alpine
     container_name: weld_redis
     restart: always
-    command: redis-server --requirepass Redis@2024#Strong!Key --appendonly yes
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+      - --appendonly
+      - "yes"
     environment:
       TZ: Asia/Shanghai
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
     networks:
       - weld_network
     healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -53,14 +58,18 @@ services:
     container_name: weld_backend
     restart: always
     environment:
-      - TZ=Asia/Shanghai
+      TZ: Asia/Shanghai
+      DEVELOPMENT: "false"
+      DEBUG: "false"
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+      REDIS_HOST: redis
+      DATABASE_HOST: postgres
     env_file:
       - ./backend/.env.production
     volumes:
       - ./backend:/app
       - backend_uploads:/app/storage/uploads
-    ports:
-      - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,8 +93,6 @@ services:
         - VITE_API_BASE_URL=https://api.sdhaohan.cn/api/v1
     container_name: weld_frontend
     restart: always
-    volumes:
-      - frontend_dist:/usr/share/nginx/html
     networks:
       - weld_network
 
@@ -98,8 +105,6 @@ services:
         - VITE_API_BASE_URL=https://api.sdhaohan.cn/api/v1
     container_name: weld_admin
     restart: always
-    volumes:
-      - admin_dist:/usr/share/nginx/html
     networks:
       - weld_network
 
@@ -117,8 +122,6 @@ services:
       - ./nginx/ssl:/etc/nginx/ssl:ro
       - ./nginx/certbot/conf:/etc/letsencrypt:ro
       - ./nginx/certbot/www:/var/www/certbot:ro
-      - frontend_dist:/usr/share/nginx/html/frontend:ro
-      - admin_dist:/usr/share/nginx/html/admin:ro
       - backend_uploads:/usr/share/nginx/html/uploads:ro
     depends_on:
       - backend
@@ -154,8 +157,3 @@ volumes:
     driver: local
   backend_uploads:
     driver: local
-  frontend_dist:
-    driver: local
-  admin_dist:
-    driver: local
-

@@ -106,8 +106,11 @@ class DataAccessMiddleware:
         # 2. 企业工作区数据：检查企业成员身份和权限
         if resource.workspace_type == WorkspaceType.ENTERPRISE:
             return self._check_enterprise_access(user, resource, action)
-        
-        return False
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="权限不足：无法识别该资源的工作区类型",
+        )
     
     def _check_personal_access(
         self,
@@ -186,7 +189,10 @@ class DataAccessMiddleware:
             # 其他操作需要检查权限
             return self._check_role_permission(employee, resource, action)
 
-        return False
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="权限不足：无法识别该资源的访问级别",
+        )
     
     def _check_factory_access(
         self,
@@ -258,7 +264,9 @@ class DataAccessMiddleware:
             "equipment": "equipment_management",
             "welder": "welders_management",
             "productionrecord": "production_management",
+            "productiontask": "production_management",
             "qualityinspection": "quality_management",
+            "nonconformancerecord": "quality_management",
             "wps": "wps_management",
             "pqr": "pqr_management",
             "ppqr": "ppqr_management"

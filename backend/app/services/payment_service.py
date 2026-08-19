@@ -1,23 +1,23 @@
 """
 Payment service for handling payment processing.
 """
-import hashlib
-import json
 import uuid
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
-from uuid import UUID
+from typing import Dict, Optional, Any
 
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status, Depends
 
 from app.api.v1.schemas.payment import (
-    PaymentRequest, PaymentResponse, PaymentCallback, PaymentStatus
+    PaymentResponse, PaymentCallback, PaymentStatus
 )
 from app.models.subscription import Subscription, SubscriptionTransaction, SubscriptionPlan
 from app.models.user import User
 from app.core.config import settings
 from app.services.payment_gateway import get_payment_gateway
+from app.services.membership_tier_service import MembershipTierService
+from app.services.notification_service import NotificationService
+from app.services.email_service import EmailService
 from app.api import deps
 
 
@@ -29,15 +29,15 @@ class PaymentService:
 
     def create_payment_order(
         self,
-        user_id: str,
+        user_id: int,
         plan_id: str,
         billing_cycle: str,
-        payment_method: str
+        payment_method: str,
+        auto_renew: bool = False,
+        purpose: str = "upgrade",
+        existing_subscription_id: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """创建支付订单"""
-        from app.models.user import User
-
-        # 获取订阅计划
+        """创建支付订单。purpose=upgrade 新建待激活订阅；purpose=renew 挂到现有订阅。"""
         plan = self.db.query(SubscriptionPlan).filter(
             SubscriptionPlan.id == plan_id,
             SubscriptionPlan.is_active == True
@@ -49,7 +49,6 @@ class PaymentService:
                 detail="订阅计划不存在"
             )
 
-        # 获取用户当前信息
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user:
             raise HTTPException(
@@ -57,7 +56,6 @@ class PaymentService:
                 detail="用户不存在"
             )
 
-        # 计算新套餐价格
         if billing_cycle == "monthly":
             new_plan_price = plan.monthly_price
             duration_months = 1
@@ -73,65 +71,86 @@ class PaymentService:
                 detail="无效的计费周期"
             )
 
-        # 计算实际支付金额（考虑升级补差价）
-        price = self._calculate_upgrade_price(
-            user=user,
-            new_plan_id=plan_id,
-            new_plan_price=new_plan_price,
-            billing_cycle=billing_cycle,
-            duration_months=duration_months
-        )
+        if purpose == "renew":
+            price = new_plan_price
+        else:
+            price = self._calculate_upgrade_price(
+                user=user,
+                new_plan_id=plan_id,
+                new_plan_price=new_plan_price,
+                billing_cycle=billing_cycle,
+                duration_months=duration_months
+            )
 
-        # 生成订单ID
-        order_id = f"ORDER{datetime.utcnow().strftime('%Y%m%d%H%M%S')}{uuid.uuid4().hex[:8].upper()}"
-
-        # 计算订阅时间
         start_date = datetime.utcnow()
         end_date = start_date + timedelta(days=duration_months * 30)
+        action_label = "续费" if purpose == "renew" else "升级到"
 
-        # 创建订阅记录
-        subscription = Subscription(
-            user_id=user_id,
-            plan_id=plan_id,
-            status="pending",
-            billing_cycle=billing_cycle,
-            price=price,
-            currency="CNY",
-            start_date=start_date,
-            end_date=end_date,
-            auto_renew=False,
-            payment_method=payment_method
-        )
+        if purpose == "renew":
+            if not existing_subscription_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="续费必须指定现有订阅",
+                )
+            subscription = self.db.query(Subscription).filter(
+                Subscription.id == existing_subscription_id,
+                Subscription.user_id == user_id,
+            ).first()
+            if not subscription:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="订阅不存在",
+                )
+            if subscription.end_date and subscription.end_date > start_date:
+                end_date = subscription.end_date + timedelta(days=duration_months * 30)
+            subscription.auto_renew = auto_renew
+            subscription.payment_method = payment_method
+            subscription.updated_at = datetime.utcnow()
+        else:
+            subscription = Subscription(
+                user_id=user_id,
+                plan_id=plan_id,
+                status="pending",
+                billing_cycle=billing_cycle,
+                price=price,
+                currency="CNY",
+                start_date=start_date,
+                end_date=end_date,
+                auto_renew=auto_renew,
+                payment_method=payment_method
+            )
+            self.db.add(subscription)
+            self.db.flush()
 
-        self.db.add(subscription)
-        self.db.commit()
-        self.db.refresh(subscription)
-
-        # 创建交易记录
+        transaction_id = f"TXN{datetime.utcnow().strftime('%Y%m%d%H%M%S')}{uuid.uuid4().hex[:8].upper()}"
         transaction = SubscriptionTransaction(
             subscription_id=subscription.id,
-            transaction_id=f"TXN{datetime.utcnow().strftime('%Y%m%d%H%M%S')}{uuid.uuid4().hex[:8].upper()}",
+            transaction_id=transaction_id,
             amount=price,
             currency="CNY",
             payment_method=payment_method,
             status="pending",
-            description=f"升级到 {plan.name} - {billing_cycle}"
+            description=f"{action_label} {plan.name} - {billing_cycle};purpose={purpose};duration_months={duration_months}"
         )
 
         self.db.add(transaction)
         self.db.commit()
         self.db.refresh(transaction)
+        self.db.refresh(subscription)
 
         return {
-            "order_id": order_id,
+            "order_id": transaction.transaction_id,
             "subscription_id": subscription.id,
             "transaction_id": transaction.transaction_id,
             "amount": price,
             "plan_name": plan.name,
+            "plan_id": plan.id,
             "billing_cycle": billing_cycle,
             "payment_method": payment_method,
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat()
+            "purpose": purpose,
+            "start_date": subscription.start_date.isoformat() if subscription.start_date else start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "auto_renew": auto_renew,
         }
 
     def process_payment(
@@ -165,50 +184,76 @@ class PaymentService:
             SubscriptionPlan.id == subscription.plan_id
         ).first()
 
-        # 映射支付渠道
-        channel_map = {
-            'alipay': 'alipay_qr',  # 支付宝扫码
-            'wechat': 'wx_pub_qr',   # 微信扫码
-            'bank': 'alipay_qr'      # 银行转账暂用支付宝
-        }
-
-        channel = channel_map.get(payment_method, 'alipay_qr')
-
-        # 调用支付网关
-        gateway = get_payment_gateway()
-
-        payment_data = {
-            'order_id': transaction.transaction_id,
-            'amount': transaction.amount,
-            'channel': channel,
-            'subject': f"升级到{plan.name}",
-            'body': f"{plan.name} - {subscription.billing_cycle}",
-            'client_ip': client_ip
-        }
-
-        result = gateway.create_payment(payment_data)
-
-        if not result.get('success'):
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"创建支付订单失败: {result.get('error', '未知错误')}"
+        if payment_method == "bank":
+            return PaymentResponse(
+                success=True,
+                payment_url=None,
+                qr_code=None,
+                order_id=transaction.transaction_id,
+                transaction_id=transaction.transaction_id,
+                message="请按对公账户完成转账后提交凭证",
+                amount=transaction.amount,
+                payment_method=payment_method,
+                created_at=datetime.now()
             )
 
-        # 更新交易记录
-        if hasattr(transaction, 'gateway_transaction_id'):
-            transaction.gateway_transaction_id = result.get('charge_id')
+        channel_map = {
+            'alipay': 'alipay_qr',
+            'wechat': 'wx_pub_qr',
+            'bank': 'alipay_qr'
+        }
+        channel = channel_map.get(payment_method, 'alipay_qr')
 
-        self.db.commit()
+        try:
+            gateway = get_payment_gateway()
+            result = gateway.create_payment({
+                'order_id': transaction.transaction_id,
+                'amount': transaction.amount,
+                'channel': channel,
+                'subject': f"{plan.name if plan else '会员'}订阅",
+                'body': transaction.description or plan.name if plan else "会员订阅",
+                'client_ip': client_ip
+            })
+        except Exception as exc:
+            return PaymentResponse(
+                success=True,
+                payment_url=None,
+                qr_code=None,
+                order_id=transaction.transaction_id,
+                transaction_id=transaction.transaction_id,
+                message=f"在线支付暂不可用，请使用转账凭证：{exc}",
+                amount=transaction.amount,
+                payment_method=payment_method,
+                created_at=datetime.now()
+            )
 
-        # 提取支付凭证
-        credential = result.get('credential', {})
-        qr_code_url = credential.get(channel, '')
+        if not result.get('success'):
+            return PaymentResponse(
+                success=True,
+                payment_url=None,
+                qr_code=None,
+                order_id=transaction.transaction_id,
+                transaction_id=transaction.transaction_id,
+                message=result.get('error') or "请改用转账凭证完成支付",
+                amount=transaction.amount,
+                payment_method=payment_method,
+                created_at=datetime.now()
+            )
+
+        credential = result.get('credential') or {}
+        qr_code_url = (
+            result.get('qr_code')
+            or result.get('payment_url')
+            or credential.get(channel)
+            or ""
+        )
 
         return PaymentResponse(
             success=True,
             payment_url=qr_code_url,
             qr_code=qr_code_url,
-            order_id=order_id,
+            order_id=transaction.transaction_id,
+            transaction_id=transaction.transaction_id,
             message="支付订单创建成功",
             amount=transaction.amount,
             payment_method=payment_method,
@@ -219,72 +264,224 @@ class PaymentService:
         self,
         callback_data: PaymentCallback
     ) -> Dict[str, Any]:
-        """处理支付回调"""
-        # 验证签名
+        """处理支付回调。商户订单号是我们的 transaction_id。"""
         if not self._verify_payment_signature(callback_data):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="无效的支付签名"
             )
 
-        # 查找交易记录
-        transaction = self.db.query(SubscriptionTransaction).filter(
-            SubscriptionTransaction.transaction_id == callback_data.transaction_id
-        ).first()
-
+        transaction = self._find_transaction(
+            callback_data.order_id or callback_data.transaction_id
+        )
         if not transaction:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="交易记录不存在"
             )
 
-        # 更新交易状态
-        transaction.status = callback_data.status
-        transaction.transaction_date = callback_data.paid_at
+        if transaction.status == "success":
+            return {
+                "success": True,
+                "message": "订单已处理",
+                "transaction_id": transaction.transaction_id,
+                "status": transaction.status,
+            }
 
-        # 更新订阅状态
-        subscription = transaction.subscription
         if callback_data.status == "success":
-            subscription.status = "active"
-            subscription.last_payment_date = callback_data.paid_at
-            subscription.next_billing_date = subscription.end_date - timedelta(days=7)
-
-            # 使用会员等级计算服务更新用户会员等级
-            # 这样可以正确处理多订单场景
-            from app.services.membership_tier_service import MembershipTierService
-            tier_service = MembershipTierService(self.db)
-
-            # 先提交订阅状态更新
-            self.db.commit()
-
-            # 然后更新用户会员等级（会自动选择最高等级）
-            tier_result = tier_service.update_user_tier(subscription.user_id)
-
-            print(f"[支付成功] 用户 {subscription.user_id} 会员等级更新: {tier_result['old_tier']} -> {tier_result['new_tier']}")
-
+            self.activate_paid_transaction(transaction)
         else:
+            transaction.status = "failed"
             self.db.commit()
+            self._notify_user(
+                transaction.subscription.user_id,
+                "支付未完成",
+                "会员订单支付失败或已取消，请重新发起支付。",
+                "warning",
+            )
 
         return {
             "success": True,
             "message": "支付回调处理成功",
-            "transaction_id": callback_data.transaction_id,
-            "status": callback_data.status
+            "transaction_id": transaction.transaction_id,
+            "status": transaction.status
         }
 
-    def get_payment_status(self, order_id: str) -> PaymentStatus:
-        """获取支付状态"""
-        # 模拟查询支付状态
-        # 实际应该调用支付网关API查询
-        
+    def get_payment_status(self, order_id: str, user_id: Optional[int] = None) -> PaymentStatus:
+        """按交易号查询真实支付状态。"""
+        transaction = self._find_transaction(order_id)
+        if not transaction:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="订单不存在"
+            )
+        subscription = transaction.subscription
+        if user_id is not None and subscription.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="无权查看此订单"
+            )
         return PaymentStatus(
-            order_id=order_id,
-            status="pending",
-            amount=0,  # 从数据库获取
-            paid_at=None,
-            transaction_id=None,
-            failure_reason=None
+            order_id=transaction.transaction_id,
+            status=transaction.status if transaction.status != "pending_confirm" else "pending",
+            amount=float(transaction.amount or 0),
+            paid_at=transaction.transaction_date if transaction.status == "success" else None,
+            transaction_id=transaction.transaction_id,
+            failure_reason=None if transaction.status != "failed" else (transaction.description or "支付失败"),
         )
+
+    def _find_transaction(self, order_id: str) -> Optional[SubscriptionTransaction]:
+        if not order_id:
+            return None
+        return self.db.query(SubscriptionTransaction).filter(
+            SubscriptionTransaction.transaction_id == order_id
+        ).first()
+
+    def activate_paid_transaction(self, transaction: SubscriptionTransaction) -> Dict[str, Any]:
+        """支付成功后激活订阅、刷新会员等级并通知用户。幂等。"""
+        subscription = transaction.subscription
+        already_active = transaction.status == "success" and subscription.status == "active"
+        if already_active:
+            return {
+                "already_active": True,
+                "tier": None,
+                "transaction_id": transaction.transaction_id,
+                "subscription_id": subscription.id,
+            }
+        transaction.status = "success"
+        transaction.transaction_date = transaction.transaction_date or datetime.utcnow()
+        transaction.updated_at = datetime.utcnow()
+
+        description = transaction.description or ""
+        duration_months = 1
+        if "duration_months=" in description:
+            try:
+                duration_months = int(description.split("duration_months=")[1].split(";")[0])
+            except (ValueError, IndexError):
+                duration_months = 1
+        is_renewal = "purpose=renew" in description or description.startswith("续费")
+
+        if is_renewal:
+            base = subscription.end_date if subscription.end_date and subscription.end_date > datetime.utcnow() else datetime.utcnow()
+            subscription.end_date = base + timedelta(days=duration_months * 30)
+            subscription.status = "active"
+        else:
+            subscription.status = "active"
+
+        subscription.last_payment_date = datetime.utcnow()
+        subscription.next_billing_date = (subscription.end_date - timedelta(days=7)) if subscription.end_date else None
+        subscription.updated_at = datetime.utcnow()
+
+        user = self.db.query(User).filter(User.id == subscription.user_id).first()
+        if user:
+            user.auto_renewal = bool(subscription.auto_renew)
+            user.subscription_status = "active"
+            user.subscription_start_date = subscription.start_date
+            user.subscription_end_date = subscription.end_date
+            user.updated_at = datetime.utcnow()
+
+        self.db.commit()
+
+        tier_result = MembershipTierService(self.db).update_user_tier(subscription.user_id)
+
+        if not already_active:
+            plan = self.db.query(SubscriptionPlan).filter(
+                SubscriptionPlan.id == subscription.plan_id
+            ).first()
+            plan_name = plan.name if plan else subscription.plan_id
+            self._notify_user(
+                subscription.user_id,
+                "会员已开通" if not is_renewal else "会员续费成功",
+                f"您的{plan_name}已生效，有效期至 {subscription.end_date.strftime('%Y-%m-%d') if subscription.end_date else '-'}。",
+                "success",
+            )
+
+        return {
+            "already_active": already_active,
+            "tier": tier_result,
+            "transaction_id": transaction.transaction_id,
+            "subscription_id": subscription.id,
+        }
+
+    def create_renewal_order_if_needed(
+        self,
+        subscription: Subscription,
+        notify: bool = True,
+    ) -> Optional[Dict[str, Any]]:
+        """为现有订阅创建待支付续费单；已有未完成续费单则跳过。"""
+        pending = self.db.query(SubscriptionTransaction).filter(
+            SubscriptionTransaction.subscription_id == subscription.id,
+            SubscriptionTransaction.status.in_(["pending", "pending_confirm"]),
+        ).all()
+        for item in pending:
+            description = item.description or ""
+            if "purpose=renew" in description or description.startswith("续费"):
+                return None
+
+        order = self.create_payment_order(
+            user_id=subscription.user_id,
+            plan_id=subscription.plan_id,
+            billing_cycle=subscription.billing_cycle or "monthly",
+            payment_method=subscription.payment_method or "alipay",
+            auto_renew=True,
+            purpose="renew",
+            existing_subscription_id=subscription.id,
+        )
+        if notify:
+            amount = order.get("amount") or 0
+            self._notify_user(
+                subscription.user_id,
+                "请完成会员续费",
+                f"您的会员即将到期。续费订单 {order['transaction_id']} 金额 ¥{amount}，支付完成前不会延长有效期。",
+                "warning",
+            )
+        return order
+
+    def _notify_user(self, user_id: int, title: str, content: str, announcement_type: str = "info") -> None:
+        try:
+            NotificationService(self.db).create_system_announcement(
+                title=title,
+                content=content,
+                announcement_type=announcement_type,
+                priority="normal",
+                target_audience="user",
+                expire_at=datetime.utcnow() + timedelta(days=14),
+                created_by=user_id,
+                is_auto_generated=True,
+            )
+        except Exception:
+            pass
+
+        try:
+            user = self.db.query(User).filter(User.id == user_id).first()
+            if user and user.email:
+                EmailService().send_email(
+                    to_email=user.email,
+                    subject=f"【焊接工艺管理系统】{title}",
+                    html_content=f"<p>{content}</p>",
+                    text_content=content,
+                )
+        except Exception:
+            pass
+
+    def _verify_payment_signature(self, callback_data: PaymentCallback) -> bool:
+        """优先走支付网关验签；mock 环境放行。"""
+        provider = getattr(settings, "PAYMENT_PROVIDER", "mock")
+        if provider == "mock":
+            return True
+        if getattr(settings, "DEVELOPMENT", False) and not callback_data.signature:
+            return True
+        try:
+            gateway = get_payment_gateway()
+            extra = callback_data.extra_data or {
+                "order_id": callback_data.order_id,
+                "transaction_id": callback_data.transaction_id,
+                "amount": callback_data.amount,
+                "status": callback_data.status,
+            }
+            return bool(gateway.verify_callback(extra, callback_data.signature or ""))
+        except Exception:
+            return False
 
     def _generate_payment_url(self, order_id: str, payment_method: str) -> str:
         """生成支付URL"""
@@ -308,20 +505,6 @@ class PaymentService:
         
         # 这里应该生成实际的二维码图片，返回URL或Base64编码
         return f"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
-
-    def _verify_payment_signature(self, callback_data: PaymentCallback) -> bool:
-        """验证支付签名"""
-        # 模拟签名验证
-        # 实际应该根据支付网关的规则验证签名
-        
-        # 构造待签名字符串
-        sign_str = f"order_id={callback_data.order_id}&transaction_id={callback_data.transaction_id}&amount={callback_data.amount}&status={callback_data.status}&paid_at={callback_data.paid_at.isoformat()}"
-        
-        # 计算签名
-        sign = hashlib.md5(f"{sign_str}&{settings.SECRET_KEY}".encode()).hexdigest()
-        
-        # 比对签名
-        return sign == callback_data.signature
 
     def refund_payment(self, transaction_id: str, refund_amount: float, reason: str) -> Dict[str, Any]:
         """退款处理"""
@@ -394,9 +577,6 @@ class PaymentService:
         Returns:
             实际应支付金额
         """
-        from app.models.user import User
-        from datetime import datetime
-
         # 获取用户当前会员等级
         current_tier = user.member_tier or 'free'
 

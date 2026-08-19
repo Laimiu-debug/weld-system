@@ -392,6 +392,17 @@ class QualityService {
     const response = await api.post(`${this.baseUrl}/batch-delete`, { ids: inspectionIds }, { params })
     return response
   }
+
+  async getStatistics(
+    workspaceType: 'personal' | 'enterprise',
+    companyId?: number,
+    factoryId?: number
+  ) {
+    const params: Record<string, unknown> = { workspace_type: workspaceType }
+    if (companyId) params.company_id = companyId
+    if (factoryId) params.factory_id = factoryId
+    return api.get('/quality/statistics/overview', { params })
+  }
 }
 
 // 导出服务实例

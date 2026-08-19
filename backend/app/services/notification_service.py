@@ -177,10 +177,12 @@ class NotificationService:
         return processed_count
 
     def process_auto_renewals(self) -> int:
-        """处理自动续费"""
-        # 查找需要自动续费的订阅
+        """为即将到期且开启自动续费的订阅创建待支付订单，不直接扣款或延期。"""
+        # 延迟导入：PaymentService 顶层依赖本模块发通知。
+        from app.services.payment_service import PaymentService
+
         renew_date = datetime.utcnow() + timedelta(days=7)
-        
+
         auto_renew_subscriptions = self.db.query(Subscription).join(User).filter(
             and_(
                 Subscription.next_billing_date <= renew_date,
@@ -191,72 +193,15 @@ class NotificationService:
         ).all()
 
         renewed_count = 0
+        payment_service = PaymentService(self.db)
         for subscription in auto_renew_subscriptions:
             try:
-                # 获取订阅计划
-                from app.models.subscription import SubscriptionPlan
-                plan = self.db.query(SubscriptionPlan).filter(
-                    SubscriptionPlan.id == subscription.plan_id
-                ).first()
-                
-                if not plan:
-                    continue
-                
-                # 计算新价格
-                if subscription.billing_cycle == "monthly":
-                    price = plan.monthly_price
-                    duration_months = 1
-                elif subscription.billing_cycle == "quarterly":
-                    price = plan.quarterly_price
-                    duration_months = 3
-                else:  # yearly
-                    price = plan.yearly_price
-                    duration_months = 12
-                
-                # 延长订阅时间
-                if subscription.end_date > datetime.utcnow():
-                    subscription.end_date += timedelta(days=duration_months * 30)
-                else:
-                    subscription.end_date = datetime.utcnow() + timedelta(days=duration_months * 30)
-                
-                subscription.next_billing_date = subscription.end_date - timedelta(days=7)
-                subscription.last_payment_date = datetime.utcnow()
-                
-                # 创建交易记录
-                from app.models.subscription import SubscriptionTransaction
-                import uuid
-                transaction = SubscriptionTransaction(
-                    subscription_id=subscription.id,
-                    transaction_id=f"TXN{datetime.utcnow().strftime('%Y%m%d%H%M%S')}{uuid.uuid4().hex[:8].upper()}",
-                    amount=price,
-                    currency="CNY",
-                    payment_method=subscription.payment_method,
-                    status="success",
-                    transaction_date=datetime.utcnow(),
-                    description=f"自动续费 {plan.name} - {subscription.billing_cycle}"
-                )
-
-                self.db.add(transaction)
-                
-                # 创建系统公告
-                announcement = SystemAnnouncement(
-                    title="自动续费成功",
-                    content=f"您的订阅已自动续费，下次扣款日期为 {subscription.next_billing_date.strftime('%Y-%m-%d')}。",
-                    announcement_type="info",
-                    priority="low",
-                    target_audience="user",
-                    publish_at=datetime.utcnow(),
-                    expire_at=datetime.utcnow() + timedelta(days=7),
-                    created_by=subscription.user_id
-                )
-
-                self.db.add(announcement)
-                
-                renewed_count += 1
+                order = payment_service.create_renewal_order_if_needed(subscription, notify=True)
+                if order:
+                    renewed_count += 1
             except Exception as e:
                 print(f"处理自动续费失败: {str(e)}")
-        
-        self.db.commit()
+
         return renewed_count
 
     def create_system_announcement(
