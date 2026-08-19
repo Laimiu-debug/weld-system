@@ -1,5 +1,5 @@
 """Enterprise factory and department APIs."""
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session

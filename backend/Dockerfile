@@ -48,8 +48,10 @@ RUN addgroup --system app && adduser --system --ingroup app app
 # 复制应用代码
 COPY --chown=app:app . .
 
-# 创建上传目录
-RUN mkdir -p /app/storage/uploads && chown -R app:app /app/storage
+# 创建上传目录和字体缓存目录，确保非 root 运行时可写
+ENV XDG_CACHE_HOME=/home/app/.cache
+RUN mkdir -p /app/storage/uploads /home/app/.cache/fontconfig && \
+    chown -R app:app /app/storage /home/app
 
 USER app
 

@@ -4,7 +4,7 @@ Configuration settings for the welding system backend application.
 from typing import Any, Dict, List, Optional, Union
 
 from pydantic import AnyHttpUrl, PostgresDsn, field_validator, model_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LEAKED_SECRETS = {
     "dev-secret-key-for-testing-purposes-change-in-production",
@@ -25,6 +25,12 @@ LEAKED_PASSWORDS = {
 
 class Settings(BaseSettings):
     """Application settings."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore",
+    )
 
     # 应用基础配置
     APP_NAME: str = "Hanxu Backend"
@@ -339,12 +345,6 @@ class Settings(BaseSettings):
         elif isinstance(v, (list, str)):
             return v
         raise ValueError(v)
-
-    class Config:
-        """Pydantic configuration."""
-        env_file = ".env"
-        case_sensitive = True
-
 
 # 创建全局设置实例
 settings = Settings()

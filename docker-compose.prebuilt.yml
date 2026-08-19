@@ -1,0 +1,6 @@
+# 显式选择服务器上已经构建好的后端镜像：
+# docker compose -f docker-compose.yml -f docker-compose.prebuilt.yml up -d
+services:
+  backend:
+    image: weld-backend:latest
+    build: null

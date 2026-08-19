@@ -1,20 +1,31 @@
-version: '3.8'
-
-# 仅本地开发：把数据库/缓存/API 绑到本机回环地址。
+# 仅本地开发：仅把 Web/API 绑到本机回环地址。
 # 用法：docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 
 services:
-  postgres:
-    ports:
-      - "127.0.0.1:5432:5432"
-
-  redis:
-    ports:
-      - "127.0.0.1:6379:6379"
-
   backend:
     environment:
       DEVELOPMENT: "true"
       DEBUG: "true"
     ports:
       - "127.0.0.1:8000:8000"
+
+  frontend:
+    build:
+      args:
+        VITE_API_BASE_URL: http://localhost:8000/api/v1
+    ports:
+      - "127.0.0.1:3100:80"
+
+  admin-portal:
+    build:
+      args:
+        VITE_API_BASE_URL: http://localhost:8000/api/v1
+    ports:
+      - "127.0.0.1:3001:80"
+
+  # 本地开发直接访问上面的端口，不启动域名/TLS 入口。
+  nginx:
+    profiles: ["production"]
+
+  certbot:
+    profiles: ["production"]

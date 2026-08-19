@@ -47,6 +47,22 @@ cd frontend && npm ci && npm run dev      # http://localhost:3000
 cd admin-portal && npm ci && npm run dev  # http://localhost:3001
 ```
 
+### Docker 本地启动
+
+准备根目录 `.env` 和 `backend/.env.production` 后执行：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml exec backend \
+  python -m app.scripts.bootstrap_schema  # 仅首次创建空库时执行
+```
+
+- 用户端：http://localhost:3100
+- 管理端：http://localhost:3001
+- 后端健康检查：http://localhost:8000/api/v1/health
+
+`docker-compose.prebuilt.yml` 仅用于显式选择已经构建好的后端镜像，不会再被 Compose 自动加载。
+
 ## 测试与 CI
 
 ```bash
