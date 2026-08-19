@@ -2,6 +2,8 @@
 文档导出服务
 处理WPS/PQR/pPQR文档导出为Word和PDF
 """
+from __future__ import annotations
+
 from sqlalchemy.orm import Session
 from typing import Optional, BinaryIO
 import io
