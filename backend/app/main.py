@@ -81,6 +81,54 @@ async def startup_event():
                 db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences TEXT"))
                 db.execute(
                     text(
+                        "ALTER TABLE quality_inspections ADD COLUMN IF NOT EXISTS inspection_type VARCHAR(50)"
+                    )
+                )
+                db.execute(
+                    text(
+                        "ALTER TABLE quality_inspections ADD COLUMN IF NOT EXISTS inspector_name VARCHAR(100)"
+                    )
+                )
+                db.execute(
+                    text(
+                        "ALTER TABLE quality_inspections ADD COLUMN IF NOT EXISTS project_name VARCHAR(200)"
+                    )
+                )
+                db.execute(
+                    text(
+                        "ALTER TABLE quality_inspections ADD COLUMN IF NOT EXISTS vessel_no VARCHAR(100)"
+                    )
+                )
+                db.execute(
+                    text(
+                        "ALTER TABLE quality_inspections ADD COLUMN IF NOT EXISTS work_order_no VARCHAR(100)"
+                    )
+                )
+                db.execute(
+                    text(
+                        "ALTER TABLE quality_inspections ADD COLUMN IF NOT EXISTS weld_joint_number VARCHAR(100)"
+                    )
+                )
+                db.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_quality_inspections_vessel_no "
+                        "ON quality_inspections (vessel_no)"
+                    )
+                )
+                db.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_quality_inspections_work_order_no "
+                        "ON quality_inspections (work_order_no)"
+                    )
+                )
+                db.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_quality_inspections_weld_joint_number "
+                        "ON quality_inspections (weld_joint_number)"
+                    )
+                )
+                db.execute(
+                    text(
                         """
                         CREATE TABLE IF NOT EXISTS welder_certified_projects (
                             id SERIAL PRIMARY KEY,

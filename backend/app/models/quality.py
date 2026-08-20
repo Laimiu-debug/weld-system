@@ -4,6 +4,7 @@ Quality models for the welding system backend.
 """
 from datetime import datetime, date
 from typing import Optional
+import json
 
 from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, Date, ForeignKey, Enum as SQLEnum, Index
 from sqlalchemy.orm import relationship
@@ -73,11 +74,19 @@ class QualityInspection(Base):
 
     # ==================== 基本信息 ====================
     inspection_number = Column(String(100), nullable=False, unique=True, index=True, comment="检验编号")
+    inspection_type = Column(String(50), comment="检验类型：visual/radiographic/ultrasonic/...")
     inspection_result = Column(String(20), comment="检验结果")
 
     # ==================== 关联信息 ====================
     production_task_id = Column(Integer, ForeignKey("production_tasks.id"), comment="生产任务ID")
     inspector_id = Column(Integer, ForeignKey("users.id"), comment="检验员ID")
+    inspector_name = Column(String(100), comment="检验员姓名")
+
+    # ==================== 定位层级：项目 → 容器/工令 → 焊缝 ====================
+    project_name = Column(String(200), comment="项目名称")
+    vessel_no = Column(String(100), index=True, comment="容器号")
+    work_order_no = Column(String(100), index=True, comment="工令号")
+    weld_joint_number = Column(String(100), index=True, comment="焊缝编号")
 
     # ==================== 时间信息 ====================
     inspection_date = Column(Date, nullable=True, comment="检验日期")
@@ -173,23 +182,49 @@ class QualityInspection(Base):
                 self.inspection_result = "fail"
 
     @property
-    def inspection_type(self):
-        """默认检验类型"""
-        return "visual"
+    def joint_number(self):
+        """兼容旧字段名"""
+        return self.weld_joint_number
 
-    @inspection_type.setter
-    def inspection_type(self, value):
-        """设置检验类型（虚拟字段）"""
-        pass
+    @joint_number.setter
+    def joint_number(self, value):
+        self.weld_joint_number = value
 
     @property
-    def inspector_name(self):
-        """检验员姓名（虚拟字段，需要关联查询）"""
-        return None
+    def defect_details(self):
+        """兼容 API：缺陷 JSON 存于 defects 列"""
+        return self.defects
 
-    @inspector_name.setter
-    def inspector_name(self, value):
-        """设置检验员姓名（虚拟字段）"""
+    @defect_details.setter
+    def defect_details(self, value):
+        self.defects = value
+
+    @property
+    def defects_found(self):
+        """缺陷总数量（计数列汇总；若无计数则尝试解析 defects JSON）"""
+        total = (
+            (self.crack_count or 0)
+            + (self.porosity_count or 0)
+            + (self.inclusion_count or 0)
+            + (self.undercut_count or 0)
+            + (self.incomplete_penetration_count or 0)
+            + (self.incomplete_fusion_count or 0)
+            + (self.other_defect_count or 0)
+        )
+        if total > 0:
+            return total
+        if self.defects:
+            try:
+                parsed = json.loads(self.defects)
+                if isinstance(parsed, list):
+                    return sum(int(item.get("quantity") or 1) for item in parsed if isinstance(item, dict))
+            except Exception:
+                pass
+        return 0
+
+    @defects_found.setter
+    def defects_found(self, value):
+        """无独立列；由缺陷明细驱动，忽略直接赋值"""
         pass
 
     @property
@@ -200,16 +235,6 @@ class QualityInspection(Base):
     @welder_name.setter
     def welder_name(self, value):
         """设置焊工姓名（虚拟字段）"""
-        pass
-
-    @property
-    def joint_number(self):
-        """焊缝编号（虚拟字段）"""
-        return None
-
-    @joint_number.setter
-    def joint_number(self, value):
-        """设置焊缝编号（虚拟字段）"""
         pass
 
     # 为了数据访问层兼容性，添加一些必需的字段

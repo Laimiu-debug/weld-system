@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 class QualityInspectionBase(BaseModel):
     """质量检验基础Schema - 基于数据库模型"""
-    inspection_number: str = Field(..., description="检验编号")
+    inspection_number: Optional[str] = Field(None, description="检验编号（可空，后端自动生成）")
     inspection_type: Optional[str] = Field(None, description="检验类型")
     inspection_date: Optional[date] = Field(None, description="检验日期")
     # inspection_time字段已移除,因为数据库中只有inspection_date字段
@@ -21,6 +21,12 @@ class QualityInspectionBase(BaseModel):
     production_task_id: Optional[int] = Field(None, description="生产任务ID")
     wps_id: Optional[int] = Field(None, description="WPS ID")
     pqr_id: Optional[int] = Field(None, description="PQR ID")
+
+    # 定位层级：项目 → 容器/工令 → 焊缝
+    project_name: Optional[str] = Field(None, description="项目名称")
+    vessel_no: Optional[str] = Field(None, description="容器号")
+    work_order_no: Optional[str] = Field(None, description="工令号")
+    weld_joint_number: Optional[str] = Field(None, description="焊缝编号")
 
     # 检验人员
     inspector_id: Optional[int] = Field(None, description="检验员ID")
@@ -37,7 +43,6 @@ class QualityInspectionBase(BaseModel):
 
     # 检验位置
     inspection_location: Optional[str] = Field(None, description="检验位置")
-    weld_joint_number: Optional[str] = Field(None, description="焊缝编号")
 
     # 检验标准
     inspection_standard: Optional[str] = Field(None, description="检验标准")
@@ -132,6 +137,10 @@ class QualityInspectionUpdate(BaseModel):
     production_task_id: Optional[int] = None
     wps_id: Optional[int] = None
     pqr_id: Optional[int] = None
+    project_name: Optional[str] = None
+    vessel_no: Optional[str] = None
+    work_order_no: Optional[str] = None
+    weld_joint_number: Optional[str] = None
     inspector_id: Optional[int] = None
     inspector_name: Optional[str] = None
     inspector_certification: Optional[str] = None
@@ -142,7 +151,6 @@ class QualityInspectionUpdate(BaseModel):
     batch_number: Optional[str] = None
     serial_number: Optional[str] = None
     inspection_location: Optional[str] = None
-    weld_joint_number: Optional[str] = None
     inspection_standard: Optional[str] = None
     inspection_procedure: Optional[str] = None
     result: Optional[str] = None

@@ -19,6 +19,12 @@ export interface QualityInspection {
   wps_id?: number
   pqr_id?: number
 
+  // 定位：项目 → 容器/工令 → 焊缝
+  project_name?: string
+  vessel_no?: string
+  work_order_no?: string
+  weld_joint_number?: string
+
   // 检验人员
   inspector_id: number
   inspector_name?: string
@@ -48,6 +54,8 @@ export interface QualityInspection {
   is_qualified: boolean
   defects_found: number
   defect_details?: string
+  defects?: string
+  notes?: string
 
   // 缺陷详细计数
   crack_count?: number
@@ -98,13 +106,17 @@ export interface QualityInspection {
 }
 
 export interface QualityInspectionCreate {
-  inspection_number: string
+  inspection_number?: string
   inspection_type: string
   inspection_date: string
   production_task_id?: number
   production_record_id?: number
   wps_id?: number
   pqr_id?: number
+  project_name?: string
+  vessel_no?: string
+  work_order_no?: string
+  weld_joint_number?: string
   inspector_id: number
   inspector_name?: string
   inspector_certification?: string
@@ -125,6 +137,7 @@ export interface QualityInspectionCreate {
   is_qualified?: boolean
   defects_found?: number
   defect_details?: string
+  notes?: string
   crack_count?: number
   porosity_count?: number
   inclusion_count?: number
@@ -154,6 +167,10 @@ export interface QualityInspectionCreate {
 export interface QualityInspectionUpdate {
   inspection_type?: string
   inspection_date?: string
+  project_name?: string
+  vessel_no?: string
+  work_order_no?: string
+  weld_joint_number?: string
   inspector_id?: number
   inspector_name?: string
   inspector_certification?: string
@@ -174,6 +191,7 @@ export interface QualityInspectionUpdate {
   is_qualified?: boolean
   defects_found?: number
   defect_details?: string
+  notes?: string
   crack_count?: number
   porosity_count?: number
   inclusion_count?: number

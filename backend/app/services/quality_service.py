@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date, timedelta
+import json
 from fastapi import HTTPException
 from fastapi import status as http_status
 
@@ -54,6 +55,118 @@ class QualityService:
             + (inspection.incomplete_fusion_count or 0)
             + (inspection.other_defect_count or 0)
         )
+
+    @staticmethod
+    def _summarize_defect_counts(defects_payload: Any) -> Dict[str, int]:
+        """根据片子/缺陷明细汇总计数列"""
+        counts = {
+            "crack_count": 0,
+            "porosity_count": 0,
+            "inclusion_count": 0,
+            "undercut_count": 0,
+            "incomplete_penetration_count": 0,
+            "incomplete_fusion_count": 0,
+            "other_defect_count": 0,
+        }
+        items: List[Any] = []
+        if isinstance(defects_payload, str) and defects_payload.strip():
+            try:
+                parsed = json.loads(defects_payload)
+                items = parsed if isinstance(parsed, list) else []
+            except Exception:
+                items = []
+        elif isinstance(defects_payload, list):
+            items = defects_payload
+
+        type_map = {
+            "裂纹": "crack_count",
+            "crack": "crack_count",
+            "气孔": "porosity_count",
+            "porosity": "porosity_count",
+            "夹渣": "inclusion_count",
+            "inclusion": "inclusion_count",
+            "咬边": "undercut_count",
+            "undercut": "undercut_count",
+            "未焊透": "incomplete_penetration_count",
+            "incomplete_penetration": "incomplete_penetration_count",
+            "未熔合": "incomplete_fusion_count",
+            "incomplete_fusion": "incomplete_fusion_count",
+        }
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            qty = int(item.get("quantity") or 1)
+            raw_type = str(item.get("type") or "").strip()
+            key = type_map.get(raw_type) or type_map.get(raw_type.lower())
+            if key:
+                counts[key] += qty
+            else:
+                counts["other_defect_count"] += qty
+        return counts
+
+    def _prepare_inspection_write_dict(self, inspection_data: Dict[str, Any]) -> Dict[str, Any]:
+        """创建/更新前：结果归一、缺陷落库、定位字段保留、剔除虚拟列"""
+        data = inspection_data.copy()
+
+        if "result" in data:
+            data["inspection_result"] = data.pop("result")
+        if data.get("inspection_result"):
+            data["inspection_result"] = self._normalize_result(data["inspection_result"])
+
+        if "joint_number" in data and not data.get("weld_joint_number"):
+            data["weld_joint_number"] = data.pop("joint_number")
+        else:
+            data.pop("joint_number", None)
+
+        if data.get("weld_location") and not data.get("project_name"):
+            data["project_name"] = data.pop("weld_location")
+        else:
+            data.pop("weld_location", None)
+
+        defects_raw = data.pop("defect_details", None)
+        if defects_raw is None:
+            defects_raw = data.get("defects")
+        if defects_raw is not None:
+            if isinstance(defects_raw, (list, dict)):
+                data["defects"] = json.dumps(defects_raw, ensure_ascii=False)
+            else:
+                data["defects"] = defects_raw
+            counts = self._summarize_defect_counts(data["defects"])
+            for key, value in counts.items():
+                if key not in data or data.get(key) in (None, 0):
+                    data[key] = value
+
+        if not data.get("inspection_number"):
+            stamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+            project = (data.get("project_name") or "P")[:12]
+            vessel = (data.get("vessel_no") or "V")[:12]
+            weld = (data.get("weld_joint_number") or "W")[:12]
+            data["inspection_number"] = f"QI-{project}-{vessel}-{weld}-{stamp}"
+
+        virtual_fields = [
+            "is_qualified", "user_id", "workspace_type", "access_level",
+            "is_shared", "created_by", "updated_by", "welder_name",
+            "inspection_method", "ndt_method", "quality_level",
+            "equipment_id", "witness_id", "item_description", "item_quantity",
+            "item_unit", "batch_number", "serial_number", "inspection_location",
+            "inspection_standard", "inspection_procedure",
+            "acceptance_criteria", "actual_measurements",
+            "defect_locations", "max_defect_severity", "corrective_actions",
+            "rework_description", "follow_up_date",
+            "temperature", "humidity", "environmental_conditions",
+            "equipment_used", "equipment_calibration_date", "description",
+            "recommendations", "report_file_url", "images", "attachments",
+            "reviewed_by", "reviewed_date", "approved_by", "approved_date",
+            "inspection_time", "report_date", "witness_name",
+            "inspector_certification",
+            "wps_id", "pqr_id", "production_record_id",
+            "defects_found", "rework_required", "follow_up_required",
+            "welder_id",
+        ]
+        for field in virtual_fields:
+            data.pop(field, None)
+
+        return data
 
     def _sync_production_task_quality(self, production_task_id: int) -> None:
         """把最新质检结果回写到生产任务，供生产模块直接调用."""
@@ -166,8 +279,10 @@ class QualityService:
                         )
 
 
-            # 检查检验编号是否重复
-            inspection_number = inspection_data.get("inspection_number")
+            # 创建检验对象，处理字段映射
+            inspection_data_dict = self._prepare_inspection_write_dict(inspection_data)
+
+            inspection_number = inspection_data_dict.get("inspection_number")
             if inspection_number:
                 existing = self._check_inspection_number_exists(
                     inspection_number, workspace_context
@@ -177,43 +292,6 @@ class QualityService:
                         status_code=http_status.HTTP_400_BAD_REQUEST,
                         detail=f"检验编号 {inspection_number} 已存在"
                     )
-
-            # 创建检验对象，处理字段映射
-            inspection_data_dict = inspection_data.copy()
-
-            # 处理字段映射：前端发送的result映射到数据库的inspection_result
-            if "result" in inspection_data_dict:
-                inspection_data_dict["inspection_result"] = inspection_data_dict.pop("result")
-            if "inspection_result" in inspection_data_dict and inspection_data_dict["inspection_result"]:
-                inspection_data_dict["inspection_result"] = self._normalize_result(
-                    inspection_data_dict["inspection_result"]
-                )
-
-            # 移除数据库中不存在的虚拟字段
-            virtual_fields = [
-                "is_qualified", "user_id", "workspace_type", "access_level",
-                "is_shared", "created_by", "updated_by", "welder_name",
-                "inspection_method", "ndt_method", "quality_level", "weld_location",
-                "equipment_id", "witness_id", "item_description", "item_quantity",
-                "item_unit", "batch_number", "serial_number", "inspection_location",
-                "weld_joint_number", "inspection_standard", "inspection_procedure",
-                "acceptance_criteria", "actual_measurements", "defect_details",
-                "defect_locations", "max_defect_severity", "corrective_actions",
-                "rework_description", "follow_up_date",
-                "temperature", "humidity", "environmental_conditions",
-                "equipment_used", "equipment_calibration_date", "description",
-                "recommendations", "report_file_url", "images", "attachments",
-                "reviewed_by", "reviewed_date", "approved_by", "approved_date",
-                "inspection_time", "report_date", "witness_name",
-                "inspector_certification", "inspector_name", "joint_number",
-                "wps_id", "pqr_id", "production_record_id",
-                "defects_found", "rework_required", "follow_up_required",
-                "inspection_type", "welder_id"
-            ]
-
-            for field in virtual_fields:
-                if field in inspection_data_dict:
-                    del inspection_data_dict[field]
 
             inspection = QualityInspection(**inspection_data_dict)
 
@@ -307,14 +385,22 @@ class QualityService:
                 workspace_context
             )
 
-            # 搜索过滤 (只使用数据库中实际存在的字段)
+            # 搜索过滤：编号 / 项目 / 容器 / 工令 / 焊缝
             if search:
-                search_filter = QualityInspection.inspection_number.ilike(f"%{search}%")
-                query = query.filter(search_filter)
+                like = f"%{search}%"
+                query = query.filter(
+                    or_(
+                        QualityInspection.inspection_number.ilike(like),
+                        QualityInspection.project_name.ilike(like),
+                        QualityInspection.vessel_no.ilike(like),
+                        QualityInspection.work_order_no.ilike(like),
+                        QualityInspection.weld_joint_number.ilike(like),
+                    )
+                )
 
-            # 检验类型筛选 (inspection_type是虚拟字段，暂时跳过)
-            # if inspection_type:
-            #     query = query.filter(QualityInspection.inspection_type == inspection_type)
+            # 检验类型筛选
+            if inspection_type:
+                query = query.filter(QualityInspection.inspection_type == inspection_type)
 
             # 检验结果筛选 (result映射到inspection_result)
             if result:
@@ -438,15 +524,12 @@ class QualityService:
             )
 
             # 更新字段，处理字段映射
-            inspection_data_dict = inspection_data.copy()
-
-            # 处理字段映射：前端发送的result映射到数据库的inspection_result
-            if "result" in inspection_data_dict:
-                inspection_data_dict["inspection_result"] = inspection_data_dict.pop("result")
-            if "inspection_result" in inspection_data_dict and inspection_data_dict["inspection_result"]:
-                inspection_data_dict["inspection_result"] = self._normalize_result(
-                    inspection_data_dict["inspection_result"]
-                )
+            inspection_data_dict = self._prepare_inspection_write_dict(inspection_data)
+            # 更新时不要用空值覆盖编号
+            if "inspection_number" in inspection_data and not inspection_data.get("inspection_number"):
+                inspection_data_dict.pop("inspection_number", None)
+            elif "inspection_number" not in inspection_data:
+                inspection_data_dict.pop("inspection_number", None)
 
             # 只更新数据库中实际存在的字段
             for key, value in inspection_data_dict.items():

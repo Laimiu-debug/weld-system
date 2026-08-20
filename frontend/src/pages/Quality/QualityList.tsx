@@ -130,10 +130,7 @@ const QualityList: React.FC = () => {
       navigate(`/quality/create?taskId=${taskIdFilter}&from=production`)
       return
     }
-    setModalType('create')
-    setCurrentInspection(null)
-    form.resetFields()
-    setIsModalVisible(true)
+    navigate('/quality/create')
   }
 
   // 处理编辑质量检验
@@ -320,9 +317,12 @@ const QualityList: React.FC = () => {
       visual: { color: 'blue', text: '外观检验' },
       radiographic: { color: 'green', text: '射线检验' },
       ultrasonic: { color: 'orange', text: '超声波检验' },
+      magnetic: { color: 'purple', text: '磁粉检验' },
       magnetic_particle: { color: 'purple', text: '磁粉检验' },
+      penetrant: { color: 'cyan', text: '渗透检验' },
       liquid_penetrant: { color: 'cyan', text: '渗透检验' },
       destructive: { color: 'red', text: '破坏性检验' },
+      other: { color: 'default', text: '其他' },
     }
     return typeConfig[type] || { color: 'default', text: type }
   }
@@ -344,14 +344,43 @@ const QualityList: React.FC = () => {
       title: '检验编号',
       dataIndex: 'inspection_number',
       key: 'inspection_number',
-      width: 150,
+      width: 160,
       fixed: 'left',
+    },
+    {
+      title: '项目',
+      dataIndex: 'project_name',
+      key: 'project_name',
+      width: 140,
+      ellipsis: true,
+      render: (v?: string) => v || '-',
+    },
+    {
+      title: '容器号',
+      dataIndex: 'vessel_no',
+      key: 'vessel_no',
+      width: 100,
+      render: (v?: string) => v || '-',
+    },
+    {
+      title: '工令号',
+      dataIndex: 'work_order_no',
+      key: 'work_order_no',
+      width: 110,
+      render: (v?: string) => v || '-',
+    },
+    {
+      title: '焊缝',
+      dataIndex: 'weld_joint_number',
+      key: 'weld_joint_number',
+      width: 90,
+      render: (v?: string, row?: QualityInspection) => v || row?.joint_number || '-',
     },
     {
       title: '生产任务',
       dataIndex: 'production_task_id',
       key: 'production_task_id',
-      width: 110,
+      width: 100,
       render: (taskId?: number) =>
         taskId ? (
           <Button type="link" style={{ padding: 0 }} onClick={() => navigate(`/production/${taskId}?tab=quality`)}>
@@ -365,7 +394,7 @@ const QualityList: React.FC = () => {
       title: '检验类型',
       dataIndex: 'inspection_type',
       key: 'inspection_type',
-      width: 120,
+      width: 110,
       render: (type: string) => {
         const config = getInspectionTypeConfig(type)
         return <Tag color={config.color}>{config.text}</Tag>
@@ -375,7 +404,7 @@ const QualityList: React.FC = () => {
       title: '检验结果',
       dataIndex: 'result',
       key: 'result',
-      width: 120,
+      width: 110,
       render: (result: string) => {
         const config = getResultConfig(result)
         return (
@@ -389,29 +418,20 @@ const QualityList: React.FC = () => {
       title: '检验日期',
       dataIndex: 'inspection_date',
       key: 'inspection_date',
-      width: 120,
+      width: 110,
       render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD') : '-',
     },
     {
       title: '检验员',
       dataIndex: 'inspector_name',
       key: 'inspector_name',
-      width: 100,
+      width: 90,
     },
     {
-      title: '是否合格',
-      dataIndex: 'is_qualified',
-      key: 'is_qualified',
-      width: 100,
-      render: (qualified: boolean) => (
-        qualified ? <Tag color="success">合格</Tag> : <Tag color="error">不合格</Tag>
-      ),
-    },
-    {
-      title: '缺陷数量',
+      title: '缺陷',
       dataIndex: 'defects_found',
       key: 'defects_found',
-      width: 100,
+      width: 70,
       render: (defects: number) => defects || 0,
     },
     {
@@ -493,7 +513,7 @@ const QualityList: React.FC = () => {
         <div className="doc-list-toolbar">
           <div className="toolbar-search">
             <Search
-              placeholder="搜索检验编号、检验员"
+              placeholder="搜索编号 / 项目 / 容器 / 工令 / 焊缝"
               allowClear
               enterButton={<SearchOutlined />}
               size="large"
@@ -595,6 +615,10 @@ const QualityList: React.FC = () => {
           <Descriptions bordered column={2} size="small">
             <Descriptions.Item label="检验编号">{currentInspection.inspection_number}</Descriptions.Item>
             <Descriptions.Item label="检验类型">{getInspectionTypeConfig(currentInspection.inspection_type).text}</Descriptions.Item>
+            <Descriptions.Item label="项目">{currentInspection.project_name || '-'}</Descriptions.Item>
+            <Descriptions.Item label="容器号">{currentInspection.vessel_no || '-'}</Descriptions.Item>
+            <Descriptions.Item label="工令号">{currentInspection.work_order_no || '-'}</Descriptions.Item>
+            <Descriptions.Item label="焊缝">{currentInspection.weld_joint_number || currentInspection.joint_number || '-'}</Descriptions.Item>
             <Descriptions.Item label="检验日期">{currentInspection.inspection_date ? dayjs(currentInspection.inspection_date).format('YYYY-MM-DD') : '-'}</Descriptions.Item>
             <Descriptions.Item label="检验员">{currentInspection.inspector_name || '-'}</Descriptions.Item>
             <Descriptions.Item label="检验结果">{getResultConfig(currentInspection.result).text}</Descriptions.Item>

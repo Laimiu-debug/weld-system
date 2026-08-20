@@ -80,8 +80,10 @@ const parseDefects = (raw?: string) => {
     if (Array.isArray(parsed)) {
       return parsed.map((item, index) => ({
         id: String(item.id ?? index),
+        film_no: item.film_no || item.filmNo || '-',
         location: item.location || '-',
         type: item.type || item.defect_type || '缺陷',
+        severity: item.severity || '-',
         size: item.size || '-',
         quantity: item.quantity ?? 1,
         description: item.description || item.notes || '',
@@ -89,10 +91,10 @@ const parseDefects = (raw?: string) => {
     }
   } catch {
     return raw
-      ? [{ id: '1', location: '-', type: '记录', size: '-', quantity: 1, description: raw }]
+      ? [{ id: '1', film_no: '-', location: '-', type: '记录', severity: '-', size: '-', quantity: 1, description: raw }]
       : []
   }
-  return [{ id: '1', location: '-', type: '记录', size: '-', quantity: 1, description: raw }]
+  return [{ id: '1', film_no: '-', location: '-', type: '记录', severity: '-', size: '-', quantity: 1, description: raw }]
 }
 
 const AuthImage: React.FC<{ fileId: string; alt: string }> = ({ fileId, alt }) => {
@@ -171,7 +173,7 @@ const QualityDetail: React.FC = () => {
   }, [id])
 
   const inspectionImages = parsePhotos(inspectionData?.photos)
-  const defectRecords = parseDefects(inspectionData?.defect_details)
+  const defectRecords = parseDefects(inspectionData?.defect_details || inspectionData?.defects)
   const inspectionItems = [
     {
       id: 'standard',
@@ -187,9 +189,12 @@ const QualityDetail: React.FC = () => {
       visual: { color: 'blue', text: '外观检验' },
       radiographic: { color: 'green', text: '射线检验' },
       ultrasonic: { color: 'orange', text: '超声波检验' },
+      magnetic: { color: 'purple', text: '磁粉检验' },
       magnetic_particle: { color: 'purple', text: '磁粉检验' },
+      penetrant: { color: 'cyan', text: '渗透检验' },
       liquid_penetrant: { color: 'cyan', text: '渗透检验' },
       destructive: { color: 'red', text: '破坏性检验' },
+      other: { color: 'default', text: '其他' },
     }
     return typeNames[type] || { color: 'default', text: type || '未知' }
   }
@@ -289,15 +294,17 @@ const QualityDetail: React.FC = () => {
   ]
 
   const defectColumns = [
-    { title: '位置', dataIndex: 'location', key: 'location' },
+    { title: '片子号', dataIndex: 'film_no', key: 'film_no', width: 100 },
+    { title: '片上位置', dataIndex: 'location', key: 'location' },
     {
       title: '缺陷类型',
       dataIndex: 'type',
       key: 'type',
       render: (type: string) => <Tag color="red">{type}</Tag>,
     },
-    { title: '尺寸', dataIndex: 'size', key: 'size' },
-    { title: '数量', dataIndex: 'quantity', key: 'quantity' },
+    { title: '严重程度', dataIndex: 'severity', key: 'severity', width: 90 },
+    { title: '尺寸', dataIndex: 'size', key: 'size', width: 80 },
+    { title: '数量', dataIndex: 'quantity', key: 'quantity', width: 70 },
     { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true },
   ]
 
@@ -358,6 +365,10 @@ const QualityDetail: React.FC = () => {
                       <Descriptions.Item label="检验日期">
                         {inspectionData.inspection_date ? dayjs(inspectionData.inspection_date).format('YYYY-MM-DD') : '-'}
                       </Descriptions.Item>
+                      <Descriptions.Item label="项目名称">{inspectionData.project_name || inspectionData.weld_location || '-'}</Descriptions.Item>
+                      <Descriptions.Item label="容器号">{inspectionData.vessel_no || '-'}</Descriptions.Item>
+                      <Descriptions.Item label="工令号">{inspectionData.work_order_no || '-'}</Descriptions.Item>
+                      <Descriptions.Item label="焊缝编号">{inspectionData.weld_joint_number || inspectionData.joint_number || '-'}</Descriptions.Item>
                       <Descriptions.Item label="关联生产任务" span={2}>
                         {inspectionData.production_task_id ? (
                           <Button type="link" style={{ padding: 0 }} onClick={() => navigate(`/production/${inspectionData.production_task_id}?tab=quality`)}>
@@ -368,17 +379,12 @@ const QualityDetail: React.FC = () => {
                         )}
                       </Descriptions.Item>
                       <Descriptions.Item label="检验员">{inspectionData.inspector_name || '-'}</Descriptions.Item>
-                      <Descriptions.Item label="焊工">{inspectionData.welder_name || '-'}</Descriptions.Item>
-                      <Descriptions.Item label="焊缝位置">{inspectionData.weld_location || '-'}</Descriptions.Item>
-                      <Descriptions.Item label="接头编号">{inspectionData.joint_number || '-'}</Descriptions.Item>
-                      <Descriptions.Item label="检验标准">{inspectionData.inspection_standard || '-'}</Descriptions.Item>
-                      <Descriptions.Item label="验收标准">{inspectionData.acceptance_criteria || '-'}</Descriptions.Item>
                       <Descriptions.Item label="缺陷数量">{inspectionData.defects_found ?? 0}</Descriptions.Item>
                       <Descriptions.Item label="是否合格">
                         {inspectionData.is_qualified ? <Tag color="success">合格</Tag> : <Tag color="warning">待确认</Tag>}
                       </Descriptions.Item>
-                      <Descriptions.Item label="纠正措施" span={2}>
-                        {inspectionData.corrective_actions || '无'}
+                      <Descriptions.Item label="备注" span={2}>
+                        {inspectionData.notes || inspectionData.corrective_actions || '无'}
                       </Descriptions.Item>
                     </Descriptions>
                   ),
@@ -477,12 +483,24 @@ const QualityDetail: React.FC = () => {
                   </Text>
                 </div>
                 <div className="flex justify-between">
-                  <Text>检验员:</Text>
-                  <Text>{inspectionData.inspector_name || '-'}</Text>
+                  <Text>项目:</Text>
+                  <Text>{inspectionData.project_name || inspectionData.weld_location || '-'}</Text>
                 </div>
                 <div className="flex justify-between">
-                  <Text>焊缝位置:</Text>
-                  <Text>{inspectionData.weld_location || '-'}</Text>
+                  <Text>容器号:</Text>
+                  <Text>{inspectionData.vessel_no || '-'}</Text>
+                </div>
+                <div className="flex justify-between">
+                  <Text>工令号:</Text>
+                  <Text>{inspectionData.work_order_no || '-'}</Text>
+                </div>
+                <div className="flex justify-between">
+                  <Text>焊缝:</Text>
+                  <Text>{inspectionData.weld_joint_number || inspectionData.joint_number || '-'}</Text>
+                </div>
+                <div className="flex justify-between">
+                  <Text>检验员:</Text>
+                  <Text>{inspectionData.inspector_name || '-'}</Text>
                 </div>
               </Space>
             </div>
