@@ -467,7 +467,7 @@ body {
 
 /* 测试账号卡片样式 */
 .test-accounts-card {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #1a2744 0%, #1f5eff 100%);
   border: none;
   color: white;
 }
@@ -515,16 +515,33 @@ body {
   min-height: 100vh;
 }
 
-/* 欢迎区域 */
+/* 欢迎区域 — 钢蓝品牌色，去掉蓝紫渐变 */
 .dashboard-welcome-section {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 40px 24px;
+  position: relative;
+  background:
+    radial-gradient(ellipse 70% 120% at 100% 0%, rgba(31, 94, 255, 0.12), transparent 55%),
+    linear-gradient(180deg, #f4f7fb 0%, #eef2f7 100%);
+  color: #14181f;
+  padding: 36px 24px;
   margin: -24px -24px 32px -24px;
-  border-radius: 0 0 16px 16px;
+  border-radius: 0;
+  border-bottom: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+
+.dashboard-welcome-section::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: #1f5eff;
 }
 
 .welcome-content {
+  position: relative;
+  z-index: 1;
   max-width: 1200px;
   margin: 0 auto;
   display: flex;
@@ -540,43 +557,50 @@ body {
 }
 
 .welcome-title {
-  color: white !important;
+  color: #14181f !important;
   margin-bottom: 8px !important;
   font-size: 28px !important;
   font-weight: 600 !important;
 }
 
 .welcome-subtitle {
-  color: rgba(255, 255, 255, 0.9) !important;
+  color: #64748b !important;
   margin-bottom: 16px !important;
   font-size: 16px !important;
 }
 
 .welcome-description {
-  color: rgba(255, 255, 255, 0.8) !important;
+  color: #6b7385 !important;
   margin-bottom: 0 !important;
   font-size: 14px !important;
 }
 
 .welcome-stats {
   display: flex;
-  gap: 32px;
+  gap: 28px;
+  padding: 16px 20px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .stat-item {
   text-align: center;
+  min-width: 72px;
 }
 
 .stat-number {
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 700;
   line-height: 1;
   margin-bottom: 4px;
+  color: #1f5eff;
 }
 
 .stat-label {
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.8);
+  font-size: 13px;
+  color: #64748b;
 }
 
 /* 用户信息区域 */
@@ -717,7 +741,7 @@ body {
 }
 
 .ppqr-card .overview-icon {
-  background: linear-gradient(135deg, #722ed1, #9254de);
+  background: linear-gradient(135deg, #1f5eff, #3b82f6);
 }
 
 .welders-card .overview-icon {
@@ -828,8 +852,8 @@ body {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, #1890ff, #722ed1, #fa8c16);
-  opacity: 0.8;
+  background: linear-gradient(90deg, #1f5eff, #3b82f6, #60a5fa);
+  opacity: 0.9;
 }
 
 /* 头部左侧 */

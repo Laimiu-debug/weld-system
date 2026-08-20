@@ -1,434 +1,361 @@
-import React from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Button, Card, Col, Row, Typography, Space, Divider } from 'antd'
+import React, { useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import {
-  SafetyOutlined,
-  TeamOutlined,
   FileTextOutlined,
+  ExperimentOutlined,
+  TeamOutlined,
   ToolOutlined,
-  LoginOutlined,
-  UserAddOutlined,
-  CheckCircleOutlined,
+  DatabaseOutlined,
+  SettingOutlined,
+  SafetyCertificateOutlined,
+  PartitionOutlined,
+  BarChartOutlined,
+  CrownOutlined,
+  PlusOutlined,
+  SearchOutlined,
+  BellOutlined,
+  MenuFoldOutlined,
+  ArrowRightOutlined,
 } from '@ant-design/icons'
 import PublicNavbar from '@/components/PublicNavbar'
+import './Welcome.css'
 
-const { Title, Paragraph, Text } = Typography
+const CAPABILITIES = [
+  {
+    icon: <FileTextOutlined />,
+    title: 'WPS / PQR / pPQR',
+    description: '工艺规程与评定记录统一建档，版本可追溯，导出 Word / PDF。',
+  },
+  {
+    icon: <DatabaseOutlined />,
+    title: '模板与共享库',
+    description: '模块化模板、企业共享库，适配不同工艺标准与协作场景。',
+  },
+  {
+    icon: <TeamOutlined />,
+    title: '企业协作审批',
+    description: '多级审批工作流、角色权限与工厂级数据隔离。',
+  },
+  {
+    icon: <SafetyCertificateOutlined />,
+    title: '焊工·设备·质量',
+    description: '焊工资质、设备台账与质量检验同平台联动管理。',
+  },
+] as const
+
+const STEPS = [
+  {
+    num: '01',
+    title: '创建文档',
+    description: '选用模板快速生成 WPS / PQR，参数与技术要求一次填齐。',
+  },
+  {
+    num: '02',
+    title: '审批流转',
+    description: '按企业流程推送审批，状态实时可见，全程留痕可查。',
+  },
+  {
+    num: '03',
+    title: '导出交付',
+    description: '一键导出正式文档，同步现场与质量团队随时查阅。',
+  },
+] as const
+
+const SIDE_MENUS = [
+  { icon: <BarChartOutlined />, label: '仪表盘', active: true },
+  { icon: <DatabaseOutlined />, label: '资源库' },
+  { icon: <FileTextOutlined />, label: 'WPS管理' },
+  { icon: <ExperimentOutlined />, label: 'PQR管理' },
+  { icon: <SettingOutlined />, label: 'pPQR管理' },
+  { icon: <TeamOutlined />, label: '焊工管理' },
+  { icon: <ToolOutlined />, label: '设备管理' },
+  { icon: <PartitionOutlined />, label: '质量管理' },
+] as const
+
+const OVERVIEW_CARDS = [
+  { icon: <FileTextOutlined />, title: 'WPS记录', value: '12', color: '#1890ff' },
+  { icon: <ExperimentOutlined />, title: 'PQR记录', value: '8', color: '#52c41a' },
+  { icon: <TeamOutlined />, title: '认证焊工', value: '24', color: '#fa8c16' },
+  { icon: <ToolOutlined />, title: '设备台账', value: '6', color: '#722ed1' },
+] as const
+
+/** 还原真实「侧栏 + 仪表盘」界面，避免与产品不符的假图 */
+const AppShellPreview: React.FC = () => (
+  <div className="welcome-shell" aria-hidden>
+    <aside className="welcome-shell__sider">
+      <div className="welcome-shell__logo">
+        <span className="welcome-shell__logo-mark">
+          <SafetyCertificateOutlined />
+        </span>
+        <span className="welcome-shell__logo-text">
+          <strong>焊序</strong>
+          <em>Hanxu</em>
+        </span>
+      </div>
+      <nav className="welcome-shell__menu">
+        {SIDE_MENUS.map((item) => (
+          <div
+            key={item.label}
+            className={`welcome-shell__menu-item${item.active ? ' is-active' : ''}`}
+          >
+            <span className="welcome-shell__menu-icon">{item.icon}</span>
+            <span>{item.label}</span>
+          </div>
+        ))}
+      </nav>
+    </aside>
+
+    <div className="welcome-shell__main">
+      <header className="welcome-shell__header">
+        <span className="welcome-shell__header-left">
+          <MenuFoldOutlined />
+          <span className="welcome-shell__search">
+            <SearchOutlined />
+            搜索 WPS / PQR / 焊工…
+          </span>
+        </span>
+        <span className="welcome-shell__header-right">
+          <BellOutlined />
+          <span className="welcome-shell__avatar">工</span>
+        </span>
+      </header>
+
+      <div className="welcome-shell__body">
+        <div className="welcome-shell__banner">
+          <div>
+            <div className="welcome-shell__banner-title">欢迎回来，工程师</div>
+            <div className="welcome-shell__banner-desc">
+              这是您的焊序概览，高效管理焊接工艺、资质评定和焊工信息。
+            </div>
+          </div>
+          <div className="welcome-shell__banner-stats">
+            <div>
+              <b>12</b>
+              <span>WPS记录</span>
+            </div>
+            <div>
+              <b>8</b>
+              <span>PQR记录</span>
+            </div>
+            <div>
+              <b>24</b>
+              <span>认证焊工</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="welcome-shell__row">
+          <div className="welcome-shell__panel">
+            <div className="welcome-shell__panel-head">
+              <CrownOutlined />
+              <span>个人专业版</span>
+            </div>
+            <div className="welcome-shell__panel-sub">存储 128MB / 500MB</div>
+            <div className="welcome-shell__bar">
+              <i style={{ width: '26%' }} />
+            </div>
+          </div>
+          <div className="welcome-shell__panel">
+            <div className="welcome-shell__panel-head">
+              <SettingOutlined />
+              <span>快速操作</span>
+            </div>
+            <div className="welcome-shell__actions">
+              <span>
+                <PlusOutlined /> 创建WPS
+              </span>
+              <span>
+                <PlusOutlined /> 创建PQR
+              </span>
+              <span>
+                <BarChartOutlined /> 报表
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="welcome-shell__cards">
+          {OVERVIEW_CARDS.map((card) => (
+            <div key={card.title} className="welcome-shell__card">
+              <span className="welcome-shell__card-icon" style={{ color: card.color }}>
+                {card.icon}
+              </span>
+              <div>
+                <div className="welcome-shell__card-label">{card.title}</div>
+                <div className="welcome-shell__card-value">{card.value}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+)
 
 const Welcome: React.FC = () => {
   const navigate = useNavigate()
 
-  const features = [
-    {
-      icon: <FileTextOutlined style={{ fontSize: 24, color: 'white' }} />,
-      title: 'WPS/PQR管理',
-      description: '全面的焊接工艺规程和工艺评定记录管理系统',
-    },
-    {
-      icon: <ToolOutlined style={{ fontSize: 24, color: 'white' }} />,
-      title: '模块化模板',
-      description: '灵活的模板设计，支持自定义模块和预设模板',
-    },
-    {
-      icon: <TeamOutlined style={{ fontSize: 24, color: 'white' }} />,
-      title: '企业协作',
-      description: '支持多用户协作，工厂管理，员工权限控制',
-    },
-    {
-      icon: <SafetyOutlined style={{ fontSize: 24, color: 'white' }} />,
-      title: '数据安全',
-      description: '完善的权限管理和数据隔离，确保数据安全',
-    },
-  ]
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [])
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
-      padding: '0'
-    }}>
-      {/* 导航栏 */}
+    <div className="welcome-page">
       <PublicNavbar />
 
-      {/* Hero Section */}
-      <div style={{
-        background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
-        paddingTop: '80px',
-        paddingBottom: '64px'
-      }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
-          <Row gutter={48} align="middle">
-            <Col xs={24} md={12}>
-              <div style={{ marginBottom: 24 }}>
-                <Title level={1} style={{
-                  fontSize: '3rem',
-                  fontWeight: 700,
-                  color: '#1a202c',
-                  marginBottom: 24,
-                  lineHeight: 1.2
-                }}>
-                  <span style={{ color: '#1F5EFF' }}>焊序</span><br />
-                  专业的焊接工艺管理平台
-                </Title>
-                <Paragraph style={{
-                  fontSize: '1.25rem',
-                  color: '#4A5568',
-                  marginBottom: 32,
-                  lineHeight: 1.6
-                }}>
-                  为焊接工程师和企业提供全面的WPS/PQR/pPQR管理解决方案，
-                  支持焊接工艺规程管理、审批流程和统计分析
-                </Paragraph>
-                <Space size="large" style={{ marginBottom: 32 }}>
-                  <Button
-                    type="primary"
-                    size="large"
-                    icon={<UserAddOutlined />}
-                    onClick={() => navigate('/register')}
-                    style={{
-                      height: 44,
-                      fontSize: 16,
-                      padding: '0 24px',
-                      background: '#1F5EFF',
-                      borderColor: '#1F5EFF',
-                      borderRadius: 8,
-                      fontWeight: 500
-                    }}
-                  >
-                    免费开始
-                  </Button>
-                  <Button
-                    size="large"
-                    icon={<LoginOutlined />}
-                    onClick={() => navigate('/login')}
-                    style={{
-                      height: 44,
-                      fontSize: 16,
-                      padding: '0 24px',
-                      borderColor: '#1F5EFF',
-                      color: '#1F5EFF',
-                      borderRadius: 8,
-                      fontWeight: 500
-                    }}
-                  >
-                    登录
-                  </Button>
-                </Space>
-                <div style={{ display: 'flex', gap: 24, fontSize: 14, color: '#4A5568' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#38A169' }} />
-                    <span>永久免费基础版</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#38A169' }} />
-                    <span>企业级安全保障</span>
-                  </div>
-                </div>
-              </div>
-            </Col>
-            <Col xs={24} md={12}>
-              <div style={{
-                background: 'white',
-                borderRadius: 16,
-                padding: 24,
-                boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
-              }}>
-                <div style={{
-                  height: 300,
-                  background: 'linear-gradient(135deg, #1F5EFF 0%, #1a4fe6 100%)',
-                  borderRadius: 12,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'white',
-                  fontSize: 18
-                }}>
-                  仪表板预览
-                </div>
-              </div>
-            </Col>
-          </Row>
-        </div>
-      </div>
-
-      {/* Workflow Section */}
-      <div style={{ background: '#F7FAFC', padding: '64px 0' }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
-          <div style={{ textAlign: 'center', marginBottom: 48 }}>
-            <Title level={2} style={{ fontSize: '2rem', fontWeight: 700, color: '#1a202c', marginBottom: 16 }}>
-              简单三步，高效管理
-            </Title>
-            <Paragraph style={{ fontSize: '1.25rem', color: '#4A5568' }}>
-              从创建到审批，再到导出使用，全流程智能化管理
-            </Paragraph>
+      <section className="welcome-hero">
+        <div className="welcome-hero__glow" aria-hidden />
+        <div className="welcome-hero__inner">
+          <div className="welcome-hero__copy">
+            <p className="welcome-eyebrow">焊接工艺数字化管理</p>
+            <h1 className="welcome-brand">焊序</h1>
+            <p className="welcome-headline">把 WPS / PQR 管成可审批、可追溯的数字资产</p>
+            <p className="welcome-lead">
+              覆盖工艺创建、审批流转与文档导出，服务焊接工程师与制造企业质量体系。
+            </p>
+            <div className="welcome-cta">
+              <button
+                type="button"
+                className="welcome-btn welcome-btn--primary"
+                onClick={() => navigate('/register')}
+              >
+                免费开始
+                <ArrowRightOutlined />
+              </button>
+              <button
+                type="button"
+                className="welcome-btn welcome-btn--ghost"
+                onClick={() => navigate('/login')}
+              >
+                登录账号
+              </button>
+            </div>
           </div>
 
-          <Row gutter={[24, 24]} style={{ marginBottom: 48 }}>
-            <Col xs={24} md={8}>
-              <Card
-                hoverable
-                style={{
-                  borderRadius: 12,
-                  border: '1px solid #e2e8f0',
-                  textAlign: 'center',
-                  padding: 16,
-                  transition: 'all 0.3s ease'
-                }}
-              >
-                <div style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: '50%',
-                  background: '#1F5EFF',
-                  color: 'white',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 24,
-                  fontWeight: 'bold',
-                  margin: '0 auto 16px'
-                }}>
-                  1
-                </div>
-                <Title level={4} style={{ marginBottom: 12 }}>创建文档</Title>
-                <Text style={{ color: '#4A5568' }}>
-                  使用模块化模板快速创建WPS/PQR文档，支持自定义参数和技术要求
-                </Text>
-              </Card>
-            </Col>
-
-            <Col xs={24} md={8}>
-              <Card
-                hoverable
-                style={{
-                  borderRadius: 12,
-                  border: '1px solid #e2e8f0',
-                  textAlign: 'center',
-                  padding: 16,
-                  transition: 'all 0.3s ease'
-                }}
-              >
-                <div style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: '50%',
-                  background: '#1F5EFF',
-                  color: 'white',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 24,
-                  fontWeight: 'bold',
-                  margin: '0 auto 16px'
-                }}>
-                  2
-                </div>
-                <Title level={4} style={{ marginBottom: 12 }}>审批流程</Title>
-                <Text style={{ color: '#4A5568' }}>
-                  智能化审批工作流，支持多级审批，实时跟踪审批状态
-                </Text>
-              </Card>
-            </Col>
-
-            <Col xs={24} md={8}>
-              <Card
-                hoverable
-                style={{
-                  borderRadius: 12,
-                  border: '1px solid #e2e8f0',
-                  textAlign: 'center',
-                  padding: 16,
-                  transition: 'all 0.3s ease'
-                }}
-              >
-                <div style={{
-                  width: 64,
-                  height: 64,
-                  borderRadius: '50%',
-                  background: '#1F5EFF',
-                  color: 'white',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 24,
-                  fontWeight: 'bold',
-                  margin: '0 auto 16px'
-                }}>
-                  3
-                </div>
-                <Title level={4} style={{ marginBottom: 12 }}>导出使用</Title>
-                <Text style={{ color: '#4A5568' }}>
-                  一键导出PDF格式，支持分享给团队成员，移动端查看
-                </Text>
-              </Card>
-            </Col>
-          </Row>
+          <div className="welcome-hero__visual">
+            <AppShellPreview />
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Features Section */}
-      <div style={{ background: 'white', padding: '64px 0' }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
-          <div style={{ textAlign: 'center', marginBottom: 48 }}>
-            <Title level={2} style={{ fontSize: '2rem', fontWeight: 700, color: '#1a202c', marginBottom: 16 }}>
-              核心功能优势
-            </Title>
-            <Paragraph style={{ fontSize: '1.25rem', color: '#4A5568' }}>
-              专业的功能设计，满足焊接工艺管理的全方位需求
-            </Paragraph>
+      <section className="welcome-section welcome-flow" aria-labelledby="welcome-flow-title">
+        <div className="welcome-section__inner">
+          <div className="welcome-section__head welcome-section__head--center">
+            <span className="welcome-kicker">工作流</span>
+            <h2 id="welcome-flow-title" className="welcome-h2">
+              三步完成工艺文档闭环
+            </h2>
+            <p className="welcome-section-lead">从起草到现场使用，少一次来回，多一份可追溯记录。</p>
           </div>
 
-          <Row gutter={[32, 32]}>
-            {features.map((feature, index) => (
-              <Col xs={24} sm={12} md={6} key={index}>
-                <Card
-                  hoverable
-                  style={{
-                    borderRadius: 12,
-                    border: '1px solid #e2e8f0',
-                    textAlign: 'center',
-                    padding: 8,
-                    height: '100%'
-                  }}
-                >
-                  <div style={{
-                    width: 48,
-                    height: 48,
-                    background: '#1F5EFF',
-                    borderRadius: 12,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    margin: '0 auto 16px'
-                  }}>
-                    {feature.icon}
-                  </div>
-                  <Title level={4} style={{ fontSize: '1.125rem', marginBottom: 12 }}>
-                    {feature.title}
-                  </Title>
-                  <Text style={{ color: '#4A5568', fontSize: 14 }}>
-                    {feature.description}
-                  </Text>
-                </Card>
-              </Col>
+          <div className="welcome-steps">
+            {STEPS.map((step) => (
+              <article key={step.num} className="welcome-step">
+                <div className="welcome-step__num">{step.num}</div>
+                <h3 className="welcome-step__title">{step.title}</h3>
+                <p className="welcome-step__desc">{step.description}</p>
+              </article>
             ))}
-          </Row>
-        </div>
-      </div>
-
-      {/* CTA Section */}
-      <div style={{ background: '#1F5EFF', padding: '64px 0' }}>
-        <div style={{ maxWidth: 1000, margin: '0 auto', padding: '0 24px', textAlign: 'center' }}>
-          <Title level={2} style={{ fontSize: '2rem', fontWeight: 700, color: 'white', marginBottom: 16 }}>
-            准备好提升焊接工艺管理效率了吗？
-          </Title>
-          <Paragraph style={{ fontSize: '1.25rem', color: 'rgba(255,255,255,0.9)', marginBottom: 32 }}>
-            立即加入焊序，体验专业的焊接工艺管理平台
-          </Paragraph>
-          <Space size="large">
-            <Button
-              size="large"
-              icon={<UserAddOutlined />}
-              onClick={() => navigate('/register')}
-              style={{
-                height: 44,
-                fontSize: 16,
-                padding: '0 32px',
-                background: 'white',
-                color: '#1F5EFF',
-                border: 'none',
-                borderRadius: 8,
-                fontWeight: 600
-              }}
-            >
-              免费注册体验
-            </Button>
-            <Button
-              size="large"
-              icon={<LoginOutlined />}
-              onClick={() => navigate('/login')}
-              style={{
-                height: 44,
-                fontSize: 16,
-                padding: '0 32px',
-                background: 'transparent',
-                borderColor: 'white',
-                color: 'white',
-                borderRadius: 8,
-                fontWeight: 600,
-                borderWidth: 2
-              }}
-            >
-              立即登录
-            </Button>
-          </Space>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div style={{ background: '#1A1D23', padding: '48px 0' }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
-          <Row gutter={[32, 32]} style={{ marginBottom: 32 }}>
-            <Col xs={24} sm={12} md={6}>
-              <div>
-                <Title level={4} style={{ color: 'white', marginBottom: 16 }}>焊序</Title>
-                <Text style={{ color: '#9CA3AF', fontSize: 14 }}>
-                  专业的焊接工艺管理平台，为焊接工程师和企业提供全面的WPS/PQR管理解决方案。
-                </Text>
-              </div>
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <div>
-                <Title level={4} style={{ color: 'white', marginBottom: 16 }}>产品功能</Title>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <a href="/features" style={{ color: '#9CA3AF', fontSize: 14, textDecoration: 'none' }}>产品功能</a>
-                  <a href="/analytics" style={{ color: '#9CA3AF', fontSize: 14, textDecoration: 'none' }}>统计分析</a>
-                  <a href="#" style={{ color: '#9CA3AF', fontSize: 14, textDecoration: 'none' }}>模块化模板</a>
-                  <a href="#" style={{ color: '#9CA3AF', fontSize: 14, textDecoration: 'none' }}>企业协作</a>
-                </div>
-              </div>
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <div>
-                <Title level={4} style={{ color: 'white', marginBottom: 16 }}>支持服务</Title>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <a href="/about" style={{ color: '#9CA3AF', fontSize: 14, textDecoration: 'none' }}>关于我们</a>
-                  <a href="#" style={{ color: '#9CA3AF', fontSize: 14, textDecoration: 'none' }}>使用文档</a>
-                  <a href="#" style={{ color: '#9CA3AF', fontSize: 14, textDecoration: 'none' }}>视频教程</a>
-                  <a href="#" style={{ color: '#9CA3AF', fontSize: 14, textDecoration: 'none' }}>技术支持</a>
-                </div>
-              </div>
-            </Col>
-            <Col xs={24} sm={12} md={6}>
-              <div>
-                <Title level={4} style={{ color: 'white', marginBottom: 16 }}>法律信息</Title>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <a href="/terms-of-service" style={{ color: '#9CA3AF', fontSize: 14, textDecoration: 'none' }}>用户协议</a>
-                  <a href="/privacy-policy" style={{ color: '#9CA3AF', fontSize: 14, textDecoration: 'none' }}>隐私政策</a>
-                  <a href="/refund-policy" style={{ color: '#9CA3AF', fontSize: 14, textDecoration: 'none' }}>退款政策</a>
-                  <a href="/pricing-info" style={{ color: '#9CA3AF', fontSize: 14, textDecoration: 'none' }}>价格说明</a>
-                </div>
-              </div>
-            </Col>
-          </Row>
-
-          <div style={{ borderTop: '1px solid #374151', paddingTop: 32, textAlign: 'center' }}>
-            <Text style={{ color: '#9CA3AF', fontSize: 14 }}>
-              © 2024 焊序. 保留所有权利. {' '}
-              <a
-                href="https://beian.miit.gov.cn/"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: '#9CA3AF', textDecoration: 'none' }}
-              >
-                鲁ICP备2025191429号-1
-              </a>
-            </Text>
           </div>
         </div>
-      </div>
+      </section>
+
+      <section className="welcome-section welcome-capabilities" aria-labelledby="welcome-cap-title">
+        <div className="welcome-section__inner">
+          <div className="welcome-section__head">
+            <span className="welcome-kicker">能力</span>
+            <h2 id="welcome-cap-title" className="welcome-h2">
+              与登录后工作台一致的专业能力
+            </h2>
+            <p className="welcome-section-lead">
+              仪表盘、WPS/PQR、焊工设备与质量模块同一套工作区，所见即所用。
+            </p>
+          </div>
+
+          <div className="welcome-cap-list">
+            {CAPABILITIES.map((item) => (
+              <article key={item.title} className="welcome-cap">
+                <div className="welcome-cap__icon">{item.icon}</div>
+                <div>
+                  <h3 className="welcome-cap__title">{item.title}</h3>
+                  <p className="welcome-cap__desc">{item.description}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="welcome-cta-band" aria-labelledby="welcome-cta-title">
+        <div className="welcome-cta-band__inner">
+          <h2 id="welcome-cta-title" className="welcome-h2">
+            今天就开始规范管理工艺文件
+          </h2>
+          <p className="welcome-section-lead">基础版永久免费，注册即可进入与上图一致的工作台。</p>
+          <div className="welcome-cta">
+            <button
+              type="button"
+              className="welcome-btn welcome-btn--light"
+              onClick={() => navigate('/register')}
+            >
+              免费注册
+            </button>
+            <button
+              type="button"
+              className="welcome-btn welcome-btn--outline-light"
+              onClick={() => navigate('/features')}
+            >
+              了解功能
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <footer className="welcome-footer">
+        <div className="welcome-footer__inner">
+          <div className="welcome-footer__grid">
+            <div>
+              <p className="welcome-footer__brand">焊序</p>
+              <p className="welcome-footer__about">
+                专业焊接工艺管理平台，帮助工程师与企业高效管理 WPS、PQR 与生产质量资料。
+              </p>
+            </div>
+            <div className="welcome-footer__col">
+              <h4>产品</h4>
+              <nav>
+                <Link to="/features">产品功能</Link>
+                <Link to="/analytics">统计分析</Link>
+                <Link to="/about">关于我们</Link>
+              </nav>
+            </div>
+            <div className="welcome-footer__col">
+              <h4>账户</h4>
+              <nav>
+                <Link to="/login">登录</Link>
+                <Link to="/register">注册</Link>
+                <Link to="/features">功能介绍</Link>
+              </nav>
+            </div>
+            <div className="welcome-footer__col">
+              <h4>法律</h4>
+              <nav>
+                <Link to="/terms-of-service">用户协议</Link>
+                <Link to="/privacy-policy">隐私政策</Link>
+                <Link to="/refund-policy">退款政策</Link>
+                <Link to="/pricing-info">价格说明</Link>
+              </nav>
+            </div>
+          </div>
+          <div className="welcome-footer__bar">
+            © {new Date().getFullYear()} 焊序 ·{' '}
+            <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">
+              鲁ICP备2025191429号-1
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
   )
 }
 
 export default Welcome
-

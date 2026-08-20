@@ -16,172 +16,228 @@ const PublicNavbar: React.FC = () => {
   ]
 
   return (
-    <nav
-      style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 1000,
-        background: 'rgba(255, 255, 255, 0.95)',
-        backdropFilter: 'blur(10px)',
-        borderBottom: '1px solid #E2E8F0',
-        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05)',
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 1200,
-          margin: '0 auto',
-          padding: '0 24px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          height: 64,
-        }}
-      >
-        {/* Logo */}
-        <Link
-          to="/"
-          style={{
-            fontSize: 24,
-            fontWeight: 700,
-            color: '#1F5EFF',
-            textDecoration: 'none',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          <span style={{ fontSize: 28 }}>⚡</span>
+    <nav className="public-navbar">
+      <div className="public-navbar__inner">
+        <Link to="/" className="public-navbar__brand">
           焊序
         </Link>
 
-        {/* Desktop Navigation */}
-        <div
-          style={{
-            display: 'flex',
-            gap: 32,
-            alignItems: 'center',
-          }}
-          className="desktop-nav"
-        >
+        <div className="public-navbar__desktop">
           {navLinks.map((link) => (
             <Link
               key={link.path}
               to={link.path}
-              style={{
-                fontSize: 16,
-                fontWeight: 500,
-                color: isActive(link.path) ? '#1F5EFF' : '#4A5568',
-                textDecoration: 'none',
-                padding: '8px 0',
-                borderBottom: isActive(link.path) ? '2px solid #1F5EFF' : '2px solid transparent',
-                transition: 'all 0.3s ease',
-              }}
-              onMouseEnter={(e) => {
-                if (!isActive(link.path)) {
-                  e.currentTarget.style.color = '#1F5EFF'
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isActive(link.path)) {
-                  e.currentTarget.style.color = '#4A5568'
-                }
-              }}
+              className={`public-navbar__link${isActive(link.path) ? ' is-active' : ''}`}
             >
               {link.label}
             </Link>
           ))}
 
-          {/* CTA Buttons */}
-          <div style={{ display: 'flex', gap: 12, marginLeft: 16 }}>
-            <Link to="/login">
-              <button
-                style={{
-                  padding: '8px 20px',
-                  fontSize: 14,
-                  fontWeight: 500,
-                  color: '#1F5EFF',
-                  background: 'transparent',
-                  border: '1px solid #1F5EFF',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  transition: 'all 0.3s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#F0F5FF'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent'
-                }}
-              >
-                登录
-              </button>
+          <div className="public-navbar__actions">
+            <Link to="/login" className="public-navbar__btn public-navbar__btn--ghost">
+              登录
             </Link>
-            <Link to="/register">
-              <button
-                style={{
-                  padding: '8px 20px',
-                  fontSize: 14,
-                  fontWeight: 500,
-                  color: '#fff',
-                  background: '#1F5EFF',
-                  border: 'none',
-                  borderRadius: 6,
-                  cursor: 'pointer',
-                  transition: 'all 0.3s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#1850E0'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = '#1F5EFF'
-                }}
-              >
-                免费注册
-              </button>
+            <Link to="/register" className="public-navbar__btn public-navbar__btn--solid">
+              免费注册
             </Link>
           </div>
         </div>
 
-        {/* Mobile Menu Button */}
         <button
-          className="mobile-menu-btn"
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          style={{
-            display: 'none',
-            background: 'transparent',
-            border: 'none',
-            fontSize: 24,
-            color: '#1F5EFF',
-            cursor: 'pointer',
-          }}
+          type="button"
+          className="public-navbar__menu-btn"
+          aria-label={mobileMenuOpen ? '关闭菜单' : '打开菜单'}
+          aria-expanded={mobileMenuOpen}
+          onClick={() => setMobileMenuOpen((open) => !open)}
         >
           {mobileMenuOpen ? <CloseOutlined /> : <MenuOutlined />}
         </button>
       </div>
 
-      {/* Mobile Menu */}
       {mobileMenuOpen && (
-        <div
-          className="mobile-menu"
-          style={{
-            display: 'none',
-            background: '#fff',
-            borderTop: '1px solid #E2E8F0',
-            padding: '16px 24px',
-          }}
-        >
-          {/* Mobile menu content will be added here */}
+        <div className="public-navbar__mobile">
+          {navLinks.map((link) => (
+            <Link
+              key={link.path}
+              to={link.path}
+              className={`public-navbar__mobile-link${isActive(link.path) ? ' is-active' : ''}`}
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              {link.label}
+            </Link>
+          ))}
+          <div className="public-navbar__mobile-actions">
+            <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
+              登录
+            </Link>
+            <Link to="/register" onClick={() => setMobileMenuOpen(false)}>
+              免费注册
+            </Link>
+          </div>
         </div>
       )}
 
       <style>{`
+        .public-navbar {
+          position: sticky;
+          top: 0;
+          z-index: 1000;
+          background: rgba(247, 248, 250, 0.82);
+          backdrop-filter: blur(12px);
+          border-bottom: 1px solid rgba(20, 24, 31, 0.06);
+          font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        }
+
+        .public-navbar__inner {
+          max-width: 1120px;
+          margin: 0 auto;
+          padding: 0 24px;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          height: 64px;
+        }
+
+        .public-navbar__brand {
+          font-family: 'Noto Serif SC', 'Songti SC', 'STSong', serif;
+          font-size: 1.35rem;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+          color: #14181f;
+          text-decoration: none;
+        }
+
+        .public-navbar__desktop {
+          display: flex;
+          gap: 28px;
+          align-items: center;
+        }
+
+        .public-navbar__link {
+          font-size: 14px;
+          font-weight: 500;
+          color: #6b7385;
+          text-decoration: none;
+          padding: 6px 0;
+          border-bottom: 2px solid transparent;
+          transition: color 160ms ease, border-color 160ms ease;
+        }
+
+        .public-navbar__link:hover,
+        .public-navbar__link.is-active {
+          color: #1f5eff;
+        }
+
+        .public-navbar__link.is-active {
+          border-bottom-color: #1f5eff;
+        }
+
+        .public-navbar__actions {
+          display: flex;
+          gap: 10px;
+          margin-left: 8px;
+        }
+
+        .public-navbar__btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 36px;
+          padding: 0 16px;
+          font-size: 13px;
+          font-weight: 600;
+          border-radius: 6px;
+          text-decoration: none;
+          transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+        }
+
+        .public-navbar__btn--ghost {
+          color: #1f5eff;
+          border: 1px solid rgba(31, 94, 255, 0.45);
+          background: transparent;
+        }
+
+        .public-navbar__btn--ghost:hover {
+          background: rgba(31, 94, 255, 0.06);
+        }
+
+        .public-navbar__btn--solid {
+          color: #fff;
+          background: #1f5eff;
+          border: 1px solid #1f5eff;
+        }
+
+        .public-navbar__btn--solid:hover {
+          background: #1546c9;
+          border-color: #1546c9;
+        }
+
+        .public-navbar__menu-btn {
+          display: none;
+          background: transparent;
+          border: none;
+          font-size: 22px;
+          color: #14181f;
+          cursor: pointer;
+          padding: 8px;
+        }
+
+        .public-navbar__mobile {
+          display: none;
+          background: #fff;
+          border-top: 1px solid rgba(20, 24, 31, 0.06);
+          padding: 12px 24px 20px;
+        }
+
+        .public-navbar__mobile-link {
+          display: block;
+          padding: 12px 0;
+          font-size: 15px;
+          font-weight: 500;
+          color: #3a4254;
+          text-decoration: none;
+          border-bottom: 1px solid rgba(20, 24, 31, 0.06);
+        }
+
+        .public-navbar__mobile-link.is-active {
+          color: #1f5eff;
+        }
+
+        .public-navbar__mobile-actions {
+          display: flex;
+          gap: 12px;
+          margin-top: 16px;
+        }
+
+        .public-navbar__mobile-actions a {
+          flex: 1;
+          text-align: center;
+          padding: 12px;
+          border-radius: 6px;
+          font-weight: 600;
+          text-decoration: none;
+          font-size: 14px;
+        }
+
+        .public-navbar__mobile-actions a:first-child {
+          color: #1f5eff;
+          border: 1px solid rgba(31, 94, 255, 0.45);
+        }
+
+        .public-navbar__mobile-actions a:last-child {
+          color: #fff;
+          background: #1f5eff;
+        }
+
         @media (max-width: 768px) {
-          .desktop-nav {
-            display: none !important;
+          .public-navbar__desktop {
+            display: none;
           }
-          .mobile-menu-btn {
-            display: block !important;
+          .public-navbar__menu-btn {
+            display: block;
+          }
+          .public-navbar__mobile {
+            display: block;
           }
         }
       `}</style>
@@ -190,4 +246,3 @@ const PublicNavbar: React.FC = () => {
 }
 
 export default PublicNavbar
-

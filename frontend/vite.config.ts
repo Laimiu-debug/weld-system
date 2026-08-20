@@ -13,7 +13,9 @@ export default defineConfig({
   root: '.',
   publicDir: 'public',
   server: {
-    port: 3000,
+    // 避开 Docker 用户端 3100 / 管理端 3001；3000 常被占用
+    port: 5173,
+    strictPort: true,
     open: true,
     host: true,
     proxy: {
