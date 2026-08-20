@@ -339,6 +339,7 @@ const EnterpriseManagement: React.FC = () => {
             columns={columns}
             dataSource={enterpriseData}
             loading={loading}
+            scroll={{ x: 1100 }}
             expandable={{
               expandedRowRender,
               rowExpandable: (record) => record.members && record.members.length > 0,

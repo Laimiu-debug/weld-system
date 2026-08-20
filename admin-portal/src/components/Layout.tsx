@@ -159,7 +159,14 @@ const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
         />
       </Sider>
 
-      <AntLayout style={{ marginLeft: collapsed ? 80 : 200, transition: 'margin-left 0.2s' }}>
+      <AntLayout
+        style={{
+          marginLeft: collapsed ? 80 : 200,
+          transition: 'margin-left 0.2s',
+          minWidth: 0,
+          overflow: 'hidden',
+        }}
+      >
         <Header
           style={{
             padding: '0 24px',
@@ -168,6 +175,9 @@ const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
             alignItems: 'center',
             justifyContent: 'space-between',
             borderBottom: '1px solid #f0f0f0',
+            position: 'sticky',
+            top: 0,
+            zIndex: 10,
           }}
         >
           <Button

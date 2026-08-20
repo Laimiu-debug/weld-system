@@ -225,6 +225,8 @@ const UserManagement: React.FC = () => {
     {
       title: '用户信息',
       key: 'user_info',
+      width: 200,
+      ellipsis: true,
       render: (_, record) => (
         <div>
           <div style={{ fontWeight: 500 }}>{record.full_name || record.username}</div>
@@ -238,6 +240,7 @@ const UserManagement: React.FC = () => {
       title: '会员等级',
       dataIndex: 'membership_tier',
       key: 'membership_tier',
+      width: 150,
       render: (tier: string, record: User) => (
         <Space direction="vertical" size={0}>
           <Tag color={getMembershipColor(tier)}>
@@ -266,6 +269,7 @@ const UserManagement: React.FC = () => {
     {
       title: '状态',
       key: 'status',
+      width: 110,
       render: (_, record) => (
         <Space direction="vertical" size={0}>
           <Tag color={record.is_active ? 'green' : 'red'}>
@@ -294,6 +298,7 @@ const UserManagement: React.FC = () => {
       title: '注册时间',
       dataIndex: 'created_at',
       key: 'created_at',
+      width: 160,
       render: (date: string) => dayjs(date).format('YYYY-MM-DD HH:mm'),
       sorter: true,
     },
@@ -301,13 +306,15 @@ const UserManagement: React.FC = () => {
       title: '最后登录',
       dataIndex: 'last_login_at',
       key: 'last_login_at',
+      width: 160,
       render: (date: string) => date ? dayjs(date).format('YYYY-MM-DD HH:mm') : '从未登录',
     },
     {
       title: '配额使用',
       key: 'quotas',
+      width: 150,
       render: (_, record) => (
-        <div style={{ fontSize: '12px' }}>
+        <div style={{ fontSize: '12px', lineHeight: 1.5, whiteSpace: 'nowrap' }}>
           <div>WPS: {record.quotas?.current_wps || 0}/{record.quotas?.wps_limit || 0}</div>
           <div>PQR: {record.quotas?.current_pqr || 0}/{record.quotas?.pqr_limit || 0}</div>
           <div>pPQR: {record.quotas?.current_ppqr || 0}/{record.quotas?.ppqr_limit || 0}</div>
@@ -317,7 +324,7 @@ const UserManagement: React.FC = () => {
     {
       title: '操作',
       key: 'actions',
-      width: 280,
+      width: 180,
       render: (_, record) => (
         <Space size="small">
           <Tooltip title="查看详情">
@@ -414,8 +421,8 @@ const UserManagement: React.FC = () => {
 
       {/* 筛选区域 */}
       <Card className="filter-section" style={{ marginBottom: 16 }}>
-        <Row gutter={16}>
-          <Col xs={24} sm={12} md={6}>
+        <Row gutter={[12, 12]} align="middle">
+          <Col xs={24} sm={12} md={8} lg={6}>
             <Search
               placeholder="搜索用户名或邮箱"
               allowClear
@@ -423,7 +430,7 @@ const UserManagement: React.FC = () => {
               style={{ width: '100%' }}
             />
           </Col>
-          <Col xs={24} sm={12} md={4}>
+          <Col xs={12} sm={12} md={6} lg={4}>
             <Select
               placeholder="会员等级"
               allowClear
@@ -439,7 +446,7 @@ const UserManagement: React.FC = () => {
               <Option value="enterprise_pro_max">企业版PRO MAX</Option>
             </Select>
           </Col>
-          <Col xs={24} sm={12} md={4}>
+          <Col xs={12} sm={12} md={6} lg={3}>
             <Select
               placeholder="用户状态"
               allowClear
@@ -450,18 +457,19 @@ const UserManagement: React.FC = () => {
               <Option value={false}>已禁用</Option>
             </Select>
           </Col>
-          <Col xs={24} sm={12} md={6}>
+          <Col xs={24} sm={12} md={8} lg={7}>
             <RangePicker
               style={{ width: '100%' }}
               onChange={handleDateRangeChange}
               placeholder={['开始日期', '结束日期']}
             />
           </Col>
-          <Col xs={24} sm={12} md={4}>
+          <Col xs={24} sm={12} md={4} lg={4}>
             <Button
               type="primary"
               icon={<SearchOutlined />}
               onClick={loadUsers}
+              block
             >
               搜索
             </Button>
@@ -476,6 +484,7 @@ const UserManagement: React.FC = () => {
           dataSource={usersData?.items || []}
           loading={isLoading}
           rowKey="id"
+          scroll={{ x: 1200 }}
           pagination={{
             current: filters.page,
             pageSize: filters.page_size,

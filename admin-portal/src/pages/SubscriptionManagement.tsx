@@ -291,6 +291,7 @@ const SubscriptionManagement: React.FC = () => {
             columns={columns}
             dataSource={subscriptionData}
             loading={loading}
+            scroll={{ x: 1100 }}
             pagination={{
               current: currentPage,
               pageSize: pageSize,

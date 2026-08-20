@@ -28,11 +28,45 @@ code {
   min-height: 100vh;
 }
 
+/* 固定侧栏布局下，内容区必须允许收缩，避免表格撑破并盖住侧栏 */
+.admin-layout > .ant-layout {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
 .admin-content {
   margin: 24px;
   padding: 24px;
   background: #fff;
   border-radius: 8px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  box-sizing: border-box;
+}
+
+.admin-content .ant-card,
+.admin-content .ant-table-wrapper {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* 防止表头/单元格中文被压成竖排 */
+.admin-content .ant-table-thead > tr > th {
+  white-space: nowrap !important;
+}
+
+.admin-content .ant-table-tbody > tr > td {
+  word-break: keep-all;
+  overflow-wrap: normal;
+}
+
+.admin-content .ant-table-cell {
+  vertical-align: middle;
+}
+
+.admin-content .filter-section .ant-row {
+  row-gap: 12px;
 }
 
 .admin-header {

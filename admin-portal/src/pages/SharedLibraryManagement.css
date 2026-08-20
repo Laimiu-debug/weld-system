@@ -80,22 +80,17 @@
   }
 }
 
-/* 动画效果 */
+/* 动画效果（避免 transform，以免破坏表格 sticky/固定列定位） */
 .shared-library-management .ant-card {
-  transition: all 0.3s ease;
+  transition: box-shadow 0.3s ease;
 }
 
 .shared-library-management .ant-card:hover {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  transform: translateY(-2px);
 }
 
 .shared-library-management .ant-btn {
-  transition: all 0.2s ease;
-}
-
-.shared-library-management .ant-btn:hover {
-  transform: translateY(-1px);
+  transition: box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
 /* 状态标签样式 */
