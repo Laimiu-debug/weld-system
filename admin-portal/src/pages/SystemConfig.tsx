@@ -3,13 +3,13 @@ import {
   Card,
   Form,
   Switch,
-  Input,
   InputNumber,
   Button,
   Space,
   message,
   Row,
   Col,
+  Alert,
 } from 'antd';
 import { SaveOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { apiService } from '@/services/api';
@@ -55,7 +55,7 @@ const SystemConfig: React.FC = () => {
     try {
       setSaving(true);
       await apiService.put('/system/config', values);
-      message.success('系统配置保存成功');
+      message.success('系统配置已保存并生效');
       await loadConfig();
     } catch (error) {
       message.error('保存失败');
@@ -74,6 +74,14 @@ const SystemConfig: React.FC = () => {
           </Button>
         </Space>
       </div>
+
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message="配置会持久化并立即影响用户端"
+        description="维护模式会拦截用户 API；关闭注册后无法新注册；会话超时影响新签发的登录令牌；上传上限影响通用附件上传。"
+      />
 
       <Form
         form={form}
@@ -96,9 +104,9 @@ const SystemConfig: React.FC = () => {
                 name="maintenance_mode"
                 label="维护模式"
                 valuePropName="checked"
-                extra="启用后用户将无法访问系统（部分字段暂未持久化）"
+                extra="开启后用户端接口返回 503；管理门户不受影响"
               >
-                <Switch />
+                <Switch checkedChildren="开" unCheckedChildren="关" />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -106,17 +114,26 @@ const SystemConfig: React.FC = () => {
                 name="registration_enabled"
                 label="用户注册"
                 valuePropName="checked"
+                extra="关闭后注册接口拒绝新用户"
               >
-                <Switch />
+                <Switch checkedChildren="允许" unCheckedChildren="关闭" />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="max_upload_size_mb" label="最大上传 (MB)">
+              <Form.Item
+                name="max_upload_size_mb"
+                label="最大上传 (MB)"
+                extra="通用附件上传上限（头像另有 5MB 封顶）"
+              >
                 <InputNumber min={1} max={1024} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="session_timeout_minutes" label="会话超时 (分钟)">
+              <Form.Item
+                name="session_timeout_minutes"
+                label="会话超时 (分钟)"
+                extra="影响此后新登录签发的访问令牌有效期"
+              >
                 <InputNumber min={5} max={1440} style={{ width: '100%' }} />
               </Form.Item>
             </Col>

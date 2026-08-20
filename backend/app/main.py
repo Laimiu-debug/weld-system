@@ -30,6 +30,9 @@ app = FastAPI(
 register_exception_handlers(app)
 app.add_middleware(RequestContextMiddleware)
 
+from app.core.maintenance import MaintenanceModeMiddleware
+app.add_middleware(MaintenanceModeMiddleware)
+
 
 if not settings.DEVELOPMENT:
     app.add_middleware(

@@ -10,7 +10,6 @@ import {
   Input,
   InputNumber,
   message,
-  Popconfirm,
   Row,
   Col,
   Statistic,
@@ -18,6 +17,7 @@ import {
   Tooltip,
   Alert,
   Typography,
+  Radio,
 } from 'antd';
 import {
   EditOutlined,
@@ -118,6 +118,7 @@ const PricingManagement: React.FC = () => {
   const handleSetDiscount = (plan: SubscriptionPlan) => {
     setCurrentPlan(plan);
     discountForm.setFieldsValue({
+      adjust_mode: 'percent',
       monthly_discount_percent: 0,
       quarterly_discount_percent: 0,
       yearly_discount_percent: 0,
@@ -133,9 +134,16 @@ const PricingManagement: React.FC = () => {
       const values = await form.validateFields();
       setLoading(true);
 
+      let features: string[] = [];
+      if (Array.isArray(values.features)) {
+        features = values.features.map((f: string) => String(f).trim()).filter(Boolean);
+      } else if (typeof values.features === 'string') {
+        features = values.features.split(',').map((f: string) => f.trim()).filter(Boolean);
+      }
+
       const updateData = {
         ...values,
-        features: Array.isArray(values.features) ? values.features : values.features.split(','),
+        features,
       };
 
       await apiService.updateSubscriptionPlan(String(currentPlan?.id), updateData);
@@ -144,7 +152,12 @@ const PricingManagement: React.FC = () => {
       loadPlans();
     } catch (error: any) {
       console.error('更新订阅计划失败:', error);
-      message.error('更新失败: ' + (error.message || '未知错误'));
+      const detail = error?.response?.data?.detail;
+      message.error(
+        detail === '需要超级管理员权限'
+          ? '需要超级管理员权限才能修改套餐'
+          : `更新失败: ${detail || error.message || '未知错误'}`
+      );
     } finally {
       setLoading(false);
     }
@@ -157,33 +170,48 @@ const PricingManagement: React.FC = () => {
 
       if (!currentPlan) return;
 
-      // 计算新价格
-      const newPrices: any = {};
+      const mode = values.adjust_mode || 'percent';
+      const newPrices: Record<string, number> = {
+        monthly_price: currentPlan.monthly_price,
+        quarterly_price: currentPlan.quarterly_price,
+        yearly_price: currentPlan.yearly_price,
+      };
 
-      // 按百分比调整（正数为涨价，负数为降价）
-      if (values.monthly_discount_percent !== undefined && values.monthly_discount_percent !== 0) {
-        newPrices.monthly_price = currentPlan.monthly_price * (1 + values.monthly_discount_percent / 100);
-      }
-      if (values.quarterly_discount_percent !== undefined && values.quarterly_discount_percent !== 0) {
-        newPrices.quarterly_price = currentPlan.quarterly_price * (1 + values.quarterly_discount_percent / 100);
-      }
-      if (values.yearly_discount_percent !== undefined && values.yearly_discount_percent !== 0) {
-        newPrices.yearly_price = currentPlan.yearly_price * (1 + values.yearly_discount_percent / 100);
+      if (mode === 'percent') {
+        if (values.monthly_discount_percent) {
+          newPrices.monthly_price =
+            currentPlan.monthly_price * (1 + values.monthly_discount_percent / 100);
+        }
+        if (values.quarterly_discount_percent) {
+          newPrices.quarterly_price =
+            currentPlan.quarterly_price * (1 + values.quarterly_discount_percent / 100);
+        }
+        if (values.yearly_discount_percent) {
+          newPrices.yearly_price =
+            currentPlan.yearly_price * (1 + values.yearly_discount_percent / 100);
+        }
+      } else {
+        if (values.monthly_discount_amount) {
+          newPrices.monthly_price = Math.max(
+            0,
+            currentPlan.monthly_price + values.monthly_discount_amount
+          );
+        }
+        if (values.quarterly_discount_amount) {
+          newPrices.quarterly_price = Math.max(
+            0,
+            currentPlan.quarterly_price + values.quarterly_discount_amount
+          );
+        }
+        if (values.yearly_discount_amount) {
+          newPrices.yearly_price = Math.max(
+            0,
+            currentPlan.yearly_price + values.yearly_discount_amount
+          );
+        }
       }
 
-      // 按固定金额调整（正数为涨价，负数为降价）
-      if (values.monthly_discount_amount !== undefined && values.monthly_discount_amount !== 0) {
-        newPrices.monthly_price = Math.max(0, currentPlan.monthly_price + values.monthly_discount_amount);
-      }
-      if (values.quarterly_discount_amount !== undefined && values.quarterly_discount_amount !== 0) {
-        newPrices.quarterly_price = Math.max(0, currentPlan.quarterly_price + values.quarterly_discount_amount);
-      }
-      if (values.yearly_discount_amount !== undefined && values.yearly_discount_amount !== 0) {
-        newPrices.yearly_price = Math.max(0, currentPlan.yearly_price + values.yearly_discount_amount);
-      }
-
-      // 保留两位小数
-      Object.keys(newPrices).forEach(key => {
+      Object.keys(newPrices).forEach((key) => {
         newPrices[key] = Math.round(newPrices[key] * 100) / 100;
       });
 
@@ -193,7 +221,12 @@ const PricingManagement: React.FC = () => {
       loadPlans();
     } catch (error: any) {
       console.error('设置折扣失败:', error);
-      message.error('设置折扣失败: ' + (error.message || '未知错误'));
+      const detail = error?.response?.data?.detail;
+      message.error(
+        detail === '需要超级管理员权限'
+          ? '需要超级管理员权限才能调价'
+          : `设置折扣失败: ${detail || error.message || '未知错误'}`
+      );
     } finally {
       setLoading(false);
     }
@@ -277,6 +310,10 @@ const PricingManagement: React.FC = () => {
           <div>WPS: {record.max_wps_files}</div>
           <div>PQR: {record.max_pqr_files}</div>
           <div>pPQR: {record.max_ppqr_files}</div>
+          <div>材料: {record.max_materials}</div>
+          <div>焊工: {record.max_welders}</div>
+          <div>设备: {record.max_equipment}</div>
+          {record.max_factories > 0 && <div>工厂: {record.max_factories}</div>}
           {record.max_employees > 0 && <div>员工: {record.max_employees}</div>}
         </div>
       ),
@@ -329,7 +366,7 @@ const PricingManagement: React.FC = () => {
 
       <Alert
         message="价格管理说明"
-        description="在此页面可以管理所有订阅计划的价格。支持按百分比折扣或固定金额降价两种方式调整价格。"
+        description="可编辑套餐价格与配额。调价支持百分比或固定金额（二选一），正数涨价、负数降价。修改需超级管理员账号。"
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
@@ -406,6 +443,40 @@ const PricingManagement: React.FC = () => {
               </Form.Item>
             </Col>
           </Row>
+          <Row gutter={16}>
+            <Col span={8}>
+              <Form.Item name="max_materials" label="材料数">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="max_welders" label="焊工数">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="max_equipment" label="设备数">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={8}>
+              <Form.Item name="max_factories" label="工厂数">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="max_employees" label="员工数">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="sort_order" label="排序">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
 
           <Row gutter={16}>
             <Col span={12}>
@@ -450,7 +521,7 @@ const PricingManagement: React.FC = () => {
       >
         <Alert
           message="调价说明"
-          description="可以选择按百分比调整或按固定金额调整。正数表示涨价，负数表示降价。如果同时设置，将优先使用固定金额调整。"
+          description="请选择一种调价方式：百分比或固定金额。正数涨价，负数降价。"
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
@@ -488,85 +559,76 @@ const PricingManagement: React.FC = () => {
         )}
 
         <Form form={discountForm} layout="vertical">
-          <Typography.Title level={5} style={{ marginTop: 24, marginBottom: 16 }}>按百分比调整</Typography.Title>
-          <Alert
-            message="正数为涨价，负数为降价。例如：10 表示涨价10%，-10 表示降价10%"
-            type="info"
-            showIcon
-            style={{ marginBottom: 16 }}
-          />
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item name="monthly_discount_percent" label="月付调整 (%)">
-                <InputNumber
-                  min={-100}
-                  max={1000}
-                  style={{ width: '100%' }}
-                  precision={1}
-                  placeholder="正数涨价，负数降价"
-                />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="quarterly_discount_percent" label="季付调整 (%)">
-                <InputNumber
-                  min={-100}
-                  max={1000}
-                  style={{ width: '100%' }}
-                  precision={1}
-                  placeholder="正数涨价，负数降价"
-                />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="yearly_discount_percent" label="年付调整 (%)">
-                <InputNumber
-                  min={-100}
-                  max={1000}
-                  style={{ width: '100%' }}
-                  precision={1}
-                  placeholder="正数涨价，负数降价"
-                />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item name="adjust_mode" label="调价方式" initialValue="percent">
+            <Radio.Group>
+              <Radio.Button value="percent">按百分比</Radio.Button>
+              <Radio.Button value="amount">按固定金额</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
 
-          <Typography.Title level={5} style={{ marginTop: 24, marginBottom: 16 }}>按固定金额调整</Typography.Title>
-          <Alert
-            message="正数为涨价，负数为降价。例如：100 表示涨价100元，-100 表示降价100元"
-            type="info"
-            showIcon
-            style={{ marginBottom: 16 }}
-          />
-          <Row gutter={16}>
-            <Col span={8}>
-              <Form.Item name="monthly_discount_amount" label="月付调整 (¥)">
-                <InputNumber
-                  style={{ width: '100%' }}
-                  precision={2}
-                  placeholder="正数涨价，负数降价"
-                />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="quarterly_discount_amount" label="季付调整 (¥)">
-                <InputNumber
-                  style={{ width: '100%' }}
-                  precision={2}
-                  placeholder="正数涨价，负数降价"
-                />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
-              <Form.Item name="yearly_discount_amount" label="年付调整 (¥)">
-                <InputNumber
-                  style={{ width: '100%' }}
-                  precision={2}
-                  placeholder="正数涨价，负数降价"
-                />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.adjust_mode !== cur.adjust_mode}>
+            {({ getFieldValue }) =>
+              getFieldValue('adjust_mode') === 'amount' ? (
+                <>
+                  <Typography.Title level={5} style={{ marginBottom: 16 }}>
+                    按固定金额调整
+                  </Typography.Title>
+                  <Alert
+                    message="例如：100 涨价 100 元，-100 降价 100 元"
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                  />
+                  <Row gutter={16}>
+                    <Col span={8}>
+                      <Form.Item name="monthly_discount_amount" label="月付调整 (¥)">
+                        <InputNumber style={{ width: '100%' }} precision={2} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name="quarterly_discount_amount" label="季付调整 (¥)">
+                        <InputNumber style={{ width: '100%' }} precision={2} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name="yearly_discount_amount" label="年付调整 (¥)">
+                        <InputNumber style={{ width: '100%' }} precision={2} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </>
+              ) : (
+                <>
+                  <Typography.Title level={5} style={{ marginBottom: 16 }}>
+                    按百分比调整
+                  </Typography.Title>
+                  <Alert
+                    message="例如：10 涨价 10%，-10 降价 10%"
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                  />
+                  <Row gutter={16}>
+                    <Col span={8}>
+                      <Form.Item name="monthly_discount_percent" label="月付调整 (%)">
+                        <InputNumber min={-100} max={1000} style={{ width: '100%' }} precision={1} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name="quarterly_discount_percent" label="季付调整 (%)">
+                        <InputNumber min={-100} max={1000} style={{ width: '100%' }} precision={1} />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item name="yearly_discount_percent" label="年付调整 (%)">
+                        <InputNumber min={-100} max={1000} style={{ width: '100%' }} precision={1} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </>
+              )
+            }
+          </Form.Item>
         </Form>
       </Modal>
     </div>

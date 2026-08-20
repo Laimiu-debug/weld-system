@@ -30,6 +30,7 @@ interface EnterpriseDetailData {
   company_name: string;
   membership_tier: string;
   subscription_status: string;
+  subscription_end_date?: string;
   max_employees: number;
   max_factories: number;
   created_at: string;
@@ -63,32 +64,17 @@ const EnterpriseDetail: React.FC = () => {
 
     setLoading(true);
     try {
-      // 先获取企业列表，然后找到对应的企业
-      const response = await apiService.get('/enterprises', {
-        params: {
-          page: 1,
-          page_size: 100
-        }
-      });
-
-      if (response && response.data && response.data.items) {
-        // 将 enterpriseId 转换为数字进行比较（因为 company_id 可能是数字类型）
-        const enterprise = response.data.items.find(
-          (item: any) => String(item.company_id) === String(enterpriseId)
-        );
-
-        if (enterprise) {
-          console.log('找到企业信息:', enterprise);
-          setEnterpriseData(enterprise);
-        } else {
-          console.error('未找到企业信息，enterpriseId:', enterpriseId, '可用企业:', response.data.items.map((i: any) => i.company_id));
-          message.error('未找到企业信息');
-          navigate('/enterprises');
-        }
+      const enterprise = await apiService.getEnterpriseDetail(enterpriseId);
+      if (enterprise) {
+        setEnterpriseData(enterprise as EnterpriseDetailData);
+      } else {
+        message.error('未找到企业信息');
+        navigate('/enterprises');
       }
     } catch (error: any) {
       console.error('获取企业详情失败:', error);
       message.error(error.response?.data?.detail || '获取企业详情失败');
+      navigate('/enterprises');
     } finally {
       setLoading(false);
     }
@@ -186,7 +172,7 @@ const EnterpriseDetail: React.FC = () => {
   }
 
   const employeeUsagePercentage = Math.round(
-    (enterpriseData.members.length / enterpriseData.max_employees) * 100
+    ((enterpriseData.members?.length || 0) / Math.max(enterpriseData.max_employees || 1, 1)) * 100
   );
 
   return (
@@ -227,8 +213,13 @@ const EnterpriseDetail: React.FC = () => {
           </Descriptions.Item>
           <Descriptions.Item label="订阅状态">
             <Tag color={enterpriseData.subscription_status === 'active' ? 'success' : 'default'}>
-              {enterpriseData.subscription_status === 'active' ? '激活' : '未激活'}
+              {enterpriseData.subscription_status === 'active' ? '激活' : enterpriseData.subscription_status || '未激活'}
             </Tag>
+            {enterpriseData.subscription_end_date && (
+              <span style={{ marginLeft: 8, color: '#8c8c8c', fontSize: 12 }}>
+                到期 {new Date(enterpriseData.subscription_end_date).toLocaleDateString()}
+              </span>
+            )}
           </Descriptions.Item>
           <Descriptions.Item label="创建时间">
             {new Date(enterpriseData.created_at).toLocaleString('zh-CN')}
@@ -259,8 +250,8 @@ const EnterpriseDetail: React.FC = () => {
             <Card>
               <Statistic
                 title="员工配额"
-                value={enterpriseData.members.length}
-                suffix={`/ ${enterpriseData.max_employees}`}
+                value={enterpriseData.members?.length || 0}
+                suffix={`/ ${enterpriseData.max_employees || 0}`}
                 prefix={<TeamOutlined />}
               />
               <Progress
@@ -293,13 +284,13 @@ const EnterpriseDetail: React.FC = () => {
         title={
           <Space>
             <TeamOutlined />
-            <span>员工列表 ({enterpriseData.members.length})</span>
+            <span>员工列表 ({enterpriseData.members?.length || 0})</span>
           </Space>
         }
       >
         <Table
           columns={employeeColumns}
-          dataSource={enterpriseData.members}
+          dataSource={enterpriseData.members || []}
           rowKey="id"
           pagination={{
             pageSize: 10,

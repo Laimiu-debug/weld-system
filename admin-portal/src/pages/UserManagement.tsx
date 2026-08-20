@@ -33,6 +33,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import apiService from '@/services/api';
 import { User } from '@/types';
+import { downloadCsv } from '@/utils/csv';
 import dayjs from 'dayjs';
 
 const { Search } = Input;
@@ -52,6 +53,7 @@ const UserManagement: React.FC = () => {
   const [apiError, setApiError] = useState<string | null>(null);
   const [usersData, setUsersData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [searchInput, setSearchInput] = useState('');
 
   // 安全的API调用函数
   const safeApiCall = async (apiCall: () => Promise<any>, errorMessage: string) => {
@@ -61,11 +63,12 @@ const UserManagement: React.FC = () => {
     } catch (error: any) {
       console.error(`UserManagement: API call failed: ${errorMessage}`, error);
 
+      const detail = error.response?.data?.detail || error.message || '未知错误';
       // 如果是401错误，不自动清除认证状态
       if (error.response?.status === 401) {
         setApiError('API认证失败，但保持登录状态。请检查后端服务是否正常运行。');
       } else {
-        setApiError(`${errorMessage}: ${error.message || '未知错误'}`);
+        setApiError(`${errorMessage}: ${detail}`);
       }
       return null;
     }
@@ -87,13 +90,48 @@ const UserManagement: React.FC = () => {
     setIsLoading(false);
   };
 
+  // 支持从订阅管理跳转 ?search=
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('search');
+    if (q) {
+      setSearchInput(q);
+      setFilters((prev: any) => ({ ...prev, search: q, page: 1 }));
+    }
+  }, []);
+
   // 组件挂载时加载数据
   React.useEffect(() => {
     loadUsers();
   }, [filters]);
 
   const handleSearch = (value: string) => {
+    setSearchInput(value);
     setFilters((prev: any) => ({ ...prev, search: value, page: 1 }));
+  };
+
+  const handleExport = () => {
+    const items = usersData?.items || [];
+    if (!items.length) {
+      message.warning('当前没有可导出的用户');
+      return;
+    }
+    downloadCsv(
+      `users-${new Date().toISOString().slice(0, 10)}.csv`,
+      ['用户名', '邮箱', '姓名', '手机', '会员等级', '状态', '邮箱验证', '注册时间', '最后登录'],
+      items.map((u: User) => [
+        u.username,
+        u.email,
+        u.full_name,
+        u.phone,
+        getMembershipText(u.membership_tier),
+        u.is_active ? '正常' : '已禁用',
+        u.is_verified ? '已验证' : '未验证',
+        u.created_at ? dayjs(u.created_at).format('YYYY-MM-DD HH:mm') : '',
+        u.last_login_at ? dayjs(u.last_login_at).format('YYYY-MM-DD HH:mm') : '从未登录',
+      ]),
+    );
+    message.success('已导出当前页用户');
   };
 
   const handleFilterChange = (key: string, value: any) => {
@@ -398,11 +436,8 @@ const UserManagement: React.FC = () => {
           <Button icon={<ReloadOutlined />} onClick={loadUsers}>
             刷新
           </Button>
-          <Button icon={<ExportOutlined />}>
+          <Button icon={<ExportOutlined />} onClick={handleExport}>
             导出
-          </Button>
-          <Button onClick={() => window.location.href = '/auth-test'}>
-            认证测试
           </Button>
         </Space>
       </div>
@@ -426,6 +461,8 @@ const UserManagement: React.FC = () => {
             <Search
               placeholder="搜索用户名或邮箱"
               allowClear
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               onSearch={handleSearch}
               style={{ width: '100%' }}
             />
@@ -500,6 +537,11 @@ const UserManagement: React.FC = () => {
           }}
           onChange={handleTableChange}
         />
+        {selectedRowKeys.length > 0 && (
+          <div style={{ marginTop: 12, color: '#8c8c8c' }}>
+            已选 {selectedRowKeys.length} 项（批量操作后续开放；删除请逐个确认）
+          </div>
+        )}
       </Card>
 
       {/* 会员调整弹窗 */}
@@ -539,8 +581,8 @@ const UserManagement: React.FC = () => {
           </Form.Item>
 
           <Alert
-            message="配额自动设置"
-            description="系统将根据选择的会员等级自动设置相应的配额限制（WPS、PQR、pPQR等），无需手动配置。"
+            message="配额与订阅同步"
+            description="系统会按会员等级自动更新配额；企业档将同步企业记录；并写入/更新订阅记录，便于在订阅管理中查看。"
             type="info"
             showIcon
             style={{ marginBottom: 16 }}

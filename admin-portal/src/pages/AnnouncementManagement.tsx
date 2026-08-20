@@ -156,8 +156,11 @@ const AnnouncementManagement: React.FC = () => {
         priority: announcement.priority,
         target_audience: announcement.target_audience,
         is_pinned: announcement.is_pinned,
-        publish_time: announcement.publish_at && announcement.expire_at
-          ? [dayjs(announcement.publish_at), dayjs(announcement.expire_at)]
+        publish_time: announcement.publish_at || announcement.expire_at
+          ? [
+              announcement.publish_at ? dayjs(announcement.publish_at) : null,
+              announcement.expire_at ? dayjs(announcement.expire_at) : null,
+            ]
           : undefined,
       });
     } else {
@@ -185,9 +188,9 @@ const AnnouncementManagement: React.FC = () => {
         priority: values.priority,
         target_audience: values.target_audience,
         is_pinned: values.is_pinned || false,
-        publish_at: values.publish_time?.[0]?.toISOString(),
-        expire_at: values.publish_time?.[1]?.toISOString(),
-      };
+        publish_at: values.publish_time?.[0]?.toISOString() ?? null,
+        expire_at: values.publish_time?.[1]?.toISOString() ?? null,
+      } as CreateAnnouncementData;
 
       if (editingAnnouncement) {
         await updateAnnouncement(editingAnnouncement.id, data);
@@ -251,6 +254,7 @@ const AnnouncementManagement: React.FC = () => {
       const result = await runDailyNotificationTasks();
       message.success(
         `每日通知任务执行完成！共发送 ${result.total_notifications} 条通知\n` +
+        `定时公告发布: ${result.published_count || 0} 条\n` +
         `会员到期提醒: ${result.expiring_count} 条\n` +
         `过期处理: ${result.expired_count} 条\n` +
         `自动续费: ${result.renewed_count} 条\n` +
@@ -685,13 +689,14 @@ const AnnouncementManagement: React.FC = () => {
           <Form.Item
             label="发布和过期时间"
             name="publish_time"
-            tooltip="如果不设置，公告将立即发布且永不过期"
+            tooltip="可只填发布时间。未来时间：点「发布」后到点生效；草稿到期会由每日任务自动发布。清空过期时间表示永不过期。"
           >
             <RangePicker
               showTime
               format="YYYY-MM-DD HH:mm"
               style={{ width: '100%' }}
               placeholder={['发布时间', '过期时间']}
+              allowEmpty={[true, true]}
             />
           </Form.Item>
 

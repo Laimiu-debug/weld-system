@@ -44,6 +44,17 @@ def system_branding() -> Any:
     }
 
 
+@router.get("/public-config")
+def system_public_config() -> Any:
+    """公开运行时开关（维护模式/注册开关），无需登录."""
+    from app.services.system_config_service import get_public_system_config
+
+    return {
+        "success": True,
+        "data": get_public_system_config(),
+    }
+
+
 @router.put("/branding")
 def update_system_branding(
     payload: dict,

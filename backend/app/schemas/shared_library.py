@@ -241,6 +241,8 @@ class LibraryStats(BaseModel):
     pending_templates: int = Field(..., description="待审核模板数")
     total_downloads: int = Field(..., description="总下载数")
     total_ratings: int = Field(..., description="总评分数")
+    featured_modules: int = Field(0, description="推荐模块数")
+    featured_templates: int = Field(0, description="推荐模板数")
 
 
 class LibrarySearchQuery(BaseModel):

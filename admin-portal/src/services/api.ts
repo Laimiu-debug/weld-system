@@ -71,6 +71,9 @@ class ApiService {
         return response.data;
       },
       (error) => {
+        if (error?.config?.silent) {
+          return Promise.reject(error);
+        }
         const { response } = error;
 
         if (response) {
@@ -121,6 +124,9 @@ class ApiService {
         return response.data;
       },
       (error) => {
+        if (error?.config?.silent) {
+          return Promise.reject(error);
+        }
         const { response } = error;
 
         if (response) {
@@ -301,6 +307,10 @@ class ApiService {
       });
     }
     return this.api.get('/enterprises', { params });
+  }
+
+  async getEnterpriseDetail(companyId: string) {
+    return this.api.get(`/enterprises/${companyId}`);
   }
 
   async getSubscriptions(params: any) {

@@ -37,6 +37,25 @@ class NotificationService:
     def __init__(self, db: Session):
         self.db = db
 
+    def publish_due_announcements(self) -> int:
+        """将已到预定发布时间、仍为草稿的公告自动发布。"""
+        now = datetime.utcnow()
+        due = self.db.query(SystemAnnouncement).filter(
+            SystemAnnouncement.is_published == False,  # noqa: E712
+            SystemAnnouncement.publish_at.isnot(None),
+            SystemAnnouncement.publish_at <= now,
+            or_(
+                SystemAnnouncement.expire_at.is_(None),
+                SystemAnnouncement.expire_at > now,
+            ),
+        ).all()
+        for announcement in due:
+            announcement.is_published = True
+            announcement.updated_at = now
+        if due:
+            self.db.commit()
+        return len(due)
+
     def deliver_user_notification(
         self,
         user: User,
@@ -328,20 +347,34 @@ class NotificationService:
 
         # 用户只能看到在其注册时间之后发布的通知
         user_created_at = user.created_at
+        now = datetime.utcnow()
+
+        audience_conditions = [
+            SystemAnnouncement.target_audience == "all",
+            SystemAnnouncement.created_by == user_id,
+        ]
+        if getattr(user, "membership_type", None) == "enterprise":
+            audience_conditions.append(SystemAnnouncement.target_audience == "enterprise")
+        else:
+            audience_conditions.append(SystemAnnouncement.target_audience == "user")
 
         query = self.db.query(SystemAnnouncement).filter(
+            or_(*audience_conditions),
+            SystemAnnouncement.is_published == True,  # noqa: E712
             or_(
-                SystemAnnouncement.target_audience == "all",
-                SystemAnnouncement.target_audience == "user",
-                SystemAnnouncement.created_by == user_id
+                and_(
+                    SystemAnnouncement.publish_at.is_(None),
+                    SystemAnnouncement.created_at >= user_created_at,
+                ),
+                and_(
+                    SystemAnnouncement.publish_at <= now,
+                    SystemAnnouncement.publish_at >= user_created_at,
+                ),
             ),
-            SystemAnnouncement.is_published == True,
-            SystemAnnouncement.publish_at <= datetime.utcnow(),
-            SystemAnnouncement.publish_at >= user_created_at,  # 只显示用户注册后发布的通知
             or_(
                 SystemAnnouncement.expire_at.is_(None),
-                SystemAnnouncement.expire_at > datetime.utcnow()
-            )
+                SystemAnnouncement.expire_at > now,
+            ),
         )
 
         if unread_only:

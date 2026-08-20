@@ -331,10 +331,20 @@ def update_announcement_admin(
         announcement.is_published = announcement_data["is_published"]
     if "is_pinned" in announcement_data:
         announcement.is_pinned = announcement_data["is_pinned"]
-    if "publish_at" in announcement_data and announcement_data["publish_at"]:
-        announcement.publish_at = datetime.fromisoformat(announcement_data["publish_at"])
-    if "expire_at" in announcement_data and announcement_data["expire_at"]:
-        announcement.expire_at = datetime.fromisoformat(announcement_data["expire_at"])
+    if "publish_at" in announcement_data:
+        publish_raw = announcement_data["publish_at"]
+        announcement.publish_at = (
+            datetime.fromisoformat(publish_raw.replace("Z", "+00:00")).replace(tzinfo=None)
+            if publish_raw
+            else None
+        )
+    if "expire_at" in announcement_data:
+        expire_raw = announcement_data["expire_at"]
+        announcement.expire_at = (
+            datetime.fromisoformat(expire_raw.replace("Z", "+00:00")).replace(tzinfo=None)
+            if expire_raw
+            else None
+        )
 
     announcement.updated_at = datetime.utcnow()
     announcement.updated_by = current_admin.user_id
@@ -379,8 +389,11 @@ def publish_announcement_admin(
         )
 
     announcement.is_published = True
-    announcement.publish_at = datetime.utcnow()
-    announcement.updated_at = datetime.utcnow()
+    now = datetime.utcnow()
+    # 保留未来预定发布时间；未设置或已到期则立即生效
+    if not announcement.publish_at or announcement.publish_at <= now:
+        announcement.publish_at = now
+    announcement.updated_at = now
     announcement.updated_by = current_admin.user_id
 
     db.commit()
@@ -504,6 +517,9 @@ def run_daily_notification_tasks(
     try:
         notification_service = NotificationService(db)
 
+        # 0. 自动发布到期的定时公告
+        published_count = notification_service.publish_due_announcements()
+
         # 1. 检查并通知即将到期的会员
         expiring_count = notification_service.send_expiration_reminders(days_ahead=7)
 
@@ -525,6 +541,7 @@ def run_daily_notification_tasks(
             message=f"管理员 {admin_email} 手动触发了每日通知任务",
             user_id=current_admin.user_id,
             details={
+                "published_count": published_count,
                 "expiring_count": expiring_count,
                 "expired_count": expired_count,
                 "renewed_count": renewed_count,
@@ -536,6 +553,7 @@ def run_daily_notification_tasks(
             "success": True,
             "message": "每日通知任务执行完成",
             "data": {
+                "published_count": published_count,
                 "expiring_count": expiring_count,
                 "expired_count": expired_count,
                 "renewed_count": renewed_count,

@@ -39,7 +39,9 @@ def admin_login(
             detail="管理员账户已被禁用",
         )
 
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    from app.services.system_config_service import get_access_token_expire_minutes
+
+    access_token_expires = timedelta(minutes=get_access_token_expire_minutes())
     access_token = create_access_token(
         subject=str(admin.id),
         expires_delta=access_token_expires

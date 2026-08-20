@@ -769,8 +769,14 @@ class SharedLibraryService:
 
     # ==================== 管理员功能 ====================
 
-    def review_shared_resource(self, resource_type: str, resource_id: str, review_action: ReviewAction, reviewer_id: int) -> bool:
-        """审核共享资源"""
+    def review_shared_resource(
+        self,
+        resource_type: str,
+        resource_id: str,
+        review_action: ReviewAction,
+        reviewer_id: Optional[int] = None,
+    ) -> bool:
+        """审核共享资源。reviewer_id 须为 users.id；管理端无绑定用户时可为空。"""
         if resource_type == "module":
             resource = self.db.query(SharedModule).filter(
                 SharedModule.id == resource_id
@@ -787,7 +793,8 @@ class SharedLibraryService:
             )
 
         resource.status = review_action.status
-        resource.reviewer_id = reviewer_id
+        if reviewer_id is not None:
+            resource.reviewer_id = reviewer_id
         resource.review_comment = review_action.review_comment
         resource.review_time = func.now()
 

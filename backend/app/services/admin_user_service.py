@@ -8,10 +8,11 @@ from datetime import datetime, timedelta, date
 from uuid import UUID
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_, text
+from sqlalchemy.exc import IntegrityError
 
 from app.models.user import User
 from app.models.admin import Admin
-from app.models.company import CompanyEmployee
+from app.models.company import Company, CompanyEmployee
 
 logger = logging.getLogger(__name__)
 
@@ -183,14 +184,34 @@ class AdminUserService:
             except AttributeError:
                 pass
 
+        end_date = None
         if expires_at:
             try:
-                end_date = datetime.fromisoformat(expires_at)
-                # 同时更新两个字段以保持兼容性
+                # 兼容 YYYY-MM-DD 与完整 ISO
+                raw = expires_at.replace("Z", "+00:00") if isinstance(expires_at, str) else expires_at
+                end_date = datetime.fromisoformat(raw) if isinstance(raw, str) else raw
+                if end_date.tzinfo is not None:
+                    end_date = end_date.replace(tzinfo=None)
+                # 日期-only 视为当天结束
+                if isinstance(expires_at, str) and len(expires_at) <= 10:
+                    end_date = end_date.replace(hour=23, minute=59, second=59)
                 user.subscription_end_date = end_date
                 user.subscription_expires_at = end_date
-            except (ValueError, AttributeError):
-                pass
+            except (ValueError, AttributeError, TypeError):
+                end_date = None
+
+        # 付费档默认激活；免费档清除状态
+        try:
+            if membership_tier in (None, "free", "personal_free"):
+                if membership_tier in ("free", "personal_free"):
+                    user.subscription_status = "inactive"
+            else:
+                if end_date:
+                    user.subscription_status = "active" if end_date > datetime.utcnow() else "expired"
+                else:
+                    user.subscription_status = "active"
+        except AttributeError:
+            pass
 
         # 自动根据会员等级更新配额和权限（如果没有手动指定配额）
         if membership_tier and not quotas:
@@ -226,22 +247,42 @@ class AdminUserService:
 
         user.updated_at = datetime.utcnow()
 
-        # 同时更新订阅表（如果存在）
-        subscription = db.query(Subscription).filter(Subscription.user_id == user.id).first()
-        if subscription:
-            if membership_tier:
-                subscription.plan_id = membership_tier
-            if expires_at:
-                try:
-                    subscription.end_date = datetime.fromisoformat(expires_at)
-                    # 更新状态为激活（如果未来时间）
-                    if datetime.fromisoformat(expires_at) > datetime.utcnow():
-                        subscription.status = 'active'
-                    else:
-                        subscription.status = 'expired'
-                except (ValueError, AttributeError):
-                    pass
-            subscription.updated_at = datetime.utcnow()
+        # 同步 / 补建订阅记录（管理员授会也要在订阅管理可见）
+        now = datetime.utcnow()
+        subscription = (
+            db.query(Subscription)
+            .filter(Subscription.user_id == user.id)
+            .order_by(Subscription.created_at.desc())
+            .first()
+        )
+        paid_tier = membership_tier and membership_tier not in ("free", "personal_free")
+        if paid_tier:
+            sub_end = end_date or (now + timedelta(days=30))
+            sub_status = "active" if sub_end > now else "expired"
+            if subscription:
+                if membership_tier:
+                    subscription.plan_id = membership_tier
+                if end_date:
+                    subscription.end_date = end_date
+                subscription.status = sub_status
+                subscription.updated_at = now
+            else:
+                subscription = Subscription(
+                    user_id=user.id,
+                    plan_id=membership_tier,
+                    status=sub_status,
+                    billing_cycle="yearly",
+                    price=0,
+                    currency="CNY",
+                    start_date=now,
+                    end_date=sub_end,
+                    auto_renew=False,
+                    payment_method="admin_grant",
+                )
+                db.add(subscription)
+        elif subscription and membership_tier in ("free", "personal_free"):
+            subscription.status = "cancelled"
+            subscription.updated_at = now
 
         db.commit()
         db.refresh(user)
@@ -450,36 +491,67 @@ class AdminUserService:
         current_admin: Admin = None
     ) -> Dict[str, Any]:
         """
-        删除用户
+        删除用户。会先清理订阅/员工/通知已读等直接依赖；
+        若为企业所有者或仍有业务外键引用，抛出明确错误（建议改用禁用）。
         """
+        from app.models.subscription import Subscription, SubscriptionTransaction
+        from app.models.user_notification import UserNotificationReadStatus
+
+        user_info = {
+            "id": str(user.id),
+            "email": user.email,
+            "username": user.username,
+            "full_name": user.full_name,
+        }
+
+        owned_company = db.query(Company).filter(Company.owner_id == user.id).first()
+        if owned_company:
+            raise ValueError(
+                f"该用户是企业「{owned_company.name}」的所有者，无法直接删除。"
+                "请先转移企业归属，或改用「禁用」账号。"
+            )
+
         try:
-            user_info = {
-                "id": str(user.id),
-                "email": user.email,
-                "username": user.username,
-                "full_name": user.full_name
-            }
+            # 员工关系
+            for emp in db.query(CompanyEmployee).filter(CompanyEmployee.user_id == user.id).all():
+                db.delete(emp)
 
-            company_employees = db.query(CompanyEmployee).filter(
-                CompanyEmployee.user_id == user.id
-            ).all()
+            # 订阅及交易
+            subscriptions = db.query(Subscription).filter(Subscription.user_id == user.id).all()
+            for sub in subscriptions:
+                for tx in db.query(SubscriptionTransaction).filter(
+                    SubscriptionTransaction.subscription_id == sub.id
+                ).all():
+                    db.delete(tx)
+                db.delete(sub)
 
-            if company_employees:
-                for emp in company_employees:
-                    db.delete(emp)
-                db.flush()
+            # 通知已读状态
+            for row in db.query(UserNotificationReadStatus).filter(
+                UserNotificationReadStatus.user_id == user.id
+            ).all():
+                db.delete(row)
 
+            db.flush()
             db.delete(user)
             db.commit()
 
             logger.info("Deleted user id=%s", user_info["id"])
-
             return {
                 "deleted_user": user_info,
-                "deleted_at": datetime.utcnow().isoformat()
+                "deleted_at": datetime.utcnow().isoformat(),
             }
+        except ValueError:
+            db.rollback()
+            raise
+        except IntegrityError:
+            db.rollback()
+            logger.exception("Integrity error deleting user id=%s", user_info["id"])
+            raise ValueError(
+                "该用户仍有业务数据引用（如项目/单据创建人），无法硬删除。"
+                "请改用「禁用」账号。"
+            )
         except Exception:
-            logger.exception("Failed to delete user id=%s", getattr(user, "id", None))
+            logger.exception("Failed to delete user id=%s", user_info["id"])
             db.rollback()
             raise
 
@@ -490,108 +562,129 @@ class AdminUserService:
         end_date: Optional[date] = None
     ) -> Dict[str, Any]:
         """
-        获取用户统计数据
+        获取用户统计数据。
+        - total_users: 当前启用账号总数（不受区间限制）
+        - new_users: 区间内新注册
+        - growth_rate: 相对区间起点存量的增长率
+        - active_users: 近 30 天有登录
+        - inactive_users: 启用但近 30 天未登录
         """
-        base_query = db.query(User)
+        if not end_date:
+            end_date = datetime.utcnow().date()
+        if not start_date:
+            start_date = end_date - timedelta(days=29)
 
-        # 应用日期筛选
-        if start_date:
-            base_query = base_query.filter(User.created_at >= start_date)
-        if end_date:
-            base_query = base_query.filter(User.created_at <= end_date)
+        start_dt = datetime.combine(start_date, datetime.min.time())
+        end_dt = datetime.combine(end_date, datetime.max.time())
 
-        # 总用户数
-        total_users = base_query.count()
+        # 总启用用户（当前快照）
+        total_users = db.query(User).filter(User.is_active == True).count()  # noqa: E712
+        disabled_users = db.query(User).filter(User.is_active == False).count()  # noqa: E712
 
-        # 新增用户数（在指定时间范围内）
-        if start_date or end_date:
-            new_users_query = db.query(User)
-            if start_date:
-                new_users_query = new_users_query.filter(User.created_at >= start_date)
-            if end_date:
-                new_users_query = new_users_query.filter(User.created_at <= end_date)
-            new_users = new_users_query.count()
-        else:
-            # 默认统计最近30天的新增用户
-            recent_date = datetime.utcnow() - timedelta(days=30)
-            new_users = db.query(User).filter(User.created_at >= recent_date).count()
-
-        # 活跃用户数（最近30天有登录）
-        active_date = datetime.utcnow() - timedelta(days=30)
-        active_users = db.query(User).filter(
-            and_(
-                User.last_login_at >= active_date if hasattr(User, 'last_login_at') else False,
-                User.is_active == True
-            )
+        # 区间内新增
+        new_users = db.query(User).filter(
+            and_(User.created_at >= start_dt, User.created_at <= end_dt)
         ).count()
 
-        # 按会员等级统计
+        # 区间起点之前的存量（用于增长率）
+        users_before = db.query(User).filter(User.created_at < start_dt).count()
+        growth_rate = (
+            round((new_users / users_before) * 100, 2) if users_before > 0 else (100.0 if new_users > 0 else 0.0)
+        )
+
+        # 近 30 天活跃（登录口径，与区间筛选独立）
+        active_cutoff = datetime.utcnow() - timedelta(days=30)
+        active_users = db.query(User).filter(
+            and_(
+                User.is_active == True,  # noqa: E712
+                User.last_login_at >= active_cutoff,
+            )
+        ).count()
+        # 启用但久未登录
+        inactive_users = max(total_users - active_users, 0)
+
+        # 等级分布
         try:
             tier_stats = db.execute(text("""
-                SELECT member_tier, COUNT(id) as count
+                SELECT COALESCE(member_tier, 'free') AS member_tier, COUNT(id) AS count
                 FROM users
                 WHERE is_active = TRUE
-                GROUP BY member_tier
+                GROUP BY COALESCE(member_tier, 'free')
             """)).fetchall()
             by_tier = {tier: count for tier, count in tier_stats}
         except Exception:
-            # 如果member_tier字段不存在，使用默认值
-            all_users = db.query(User).filter(User.is_active == True).all()
-            by_tier = {"free": len(all_users)}
+            by_tier = {"free": total_users}
 
-        # 按状态统计
-        active_count = db.query(User).filter(User.is_active == True).count()
-        inactive_count = db.query(User).filter(User.is_active == False).count()
+        # 每日新增 / 登录活跃（聚合一次）；累计用「起点存量 + 逐日新增」
+        new_rows = db.execute(
+            text("""
+                SELECT DATE(created_at) AS d, COUNT(*) AS c
+                FROM users
+                WHERE created_at >= :start_dt AND created_at <= :end_dt
+                GROUP BY DATE(created_at)
+            """),
+            {"start_dt": start_dt, "end_dt": end_dt},
+        ).fetchall()
+        new_map = {str(r[0]): int(r[1]) for r in new_rows}
 
-        # 增长率计算
-        growth_rate = round((new_users / total_users * 100), 2) if total_users > 0 else 0
+        active_rows = db.execute(
+            text("""
+                SELECT DATE(last_login_at) AS d, COUNT(*) AS c
+                FROM users
+                WHERE is_active = TRUE
+                  AND last_login_at IS NOT NULL
+                  AND last_login_at >= :start_dt AND last_login_at <= :end_dt
+                GROUP BY DATE(last_login_at)
+            """),
+            {"start_dt": start_dt, "end_dt": end_dt},
+        ).fetchall()
+        active_map = {str(r[0]): int(r[1]) for r in active_rows}
 
-        # 趋势数据（简化版）
+        # 起点前启用用户存量
+        cumulative_base = db.query(User).filter(
+            and_(
+                User.is_active == True,  # noqa: E712
+                User.created_at < start_dt,
+            )
+        ).count()
+
         trend = []
-        if start_date and end_date:
-            # 生成日期范围内的趋势数据
-            current_date = start_date
-            while current_date <= end_date:
-                next_date = current_date + timedelta(days=1)
-                count = db.query(User).filter(
-                    and_(
-                        User.created_at >= current_date,
-                        User.created_at < next_date
-                    )
-                ).count()
-                trend.append({
-                    "date": current_date.isoformat(),
-                    "count": count
-                })
-                current_date = next_date
-        else:
-            # 默认返回最近7天的趋势
-            for i in range(7):
-                date_point = datetime.utcnow() - timedelta(days=6-i)
-                next_date = date_point + timedelta(days=1)
-                count = db.query(User).filter(
-                    and_(
-                        User.created_at >= date_point,
-                        User.created_at < next_date
-                    )
-                ).count()
-                trend.append({
-                    "date": date_point.date().isoformat(),
-                    "count": count
-                })
+        current = start_date
+        running = cumulative_base
+        max_days = 366
+        day_count = 0
+        while current <= end_date and day_count < max_days:
+            key = current.isoformat()
+            new_count = new_map.get(key, 0)
+            running += new_count
+            trend.append({
+                "date": key,
+                "count": new_count,
+                "new_users": new_count,
+                "active_users": active_map.get(key, 0),
+                "total_users": running,
+            })
+            current = current + timedelta(days=1)
+            day_count += 1
 
         return {
             "total_users": total_users,
             "new_users": new_users,
             "active_users": active_users,
-            "inactive_users": inactive_count,
+            "inactive_users": inactive_users,
+            "disabled_users": disabled_users,
             "by_tier": by_tier,
             "by_status": {
-                "active": active_count,
-                "inactive": inactive_count
+                "active": active_users,
+                "inactive": inactive_users,
+                "disabled": disabled_users,
             },
             "growth_rate": growth_rate,
-            "trend": trend
+            "trend": trend,
+            "period": {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+            },
         }
 
     def get_subscription_statistics(
@@ -601,115 +694,71 @@ class AdminUserService:
         end_date: Optional[date] = None
     ) -> Dict[str, Any]:
         """
-        获取订阅统计数据
+        获取订阅统计数据（基于 Subscription / 交易，排除企业继承员工）。
         """
-        base_query = db.query(User)
-
-        # 应用日期筛选
-        if start_date:
-            base_query = base_query.filter(User.created_at >= start_date)
-        if end_date:
-            base_query = base_query.filter(User.created_at <= end_date)
-
-        # 总用户数（用于计算转化率）
-        try:
-            total_users = base_query.count()
-        except Exception:
-            total_users = 0
-
-        # 总订阅数（非免费用户）
-        try:
-            total_subscriptions = base_query.filter(text("member_tier != 'free'")).count()
-        except Exception:
-            # 如果member_tier字段不存在，返回0
-            total_subscriptions = 0
-
-        # 活跃订阅数
-        try:
-            active_subscriptions = base_query.filter(
-                and_(
-                    text("member_tier != 'free'"),
-                    User.is_active == True
-                )
-            ).count()
-        except Exception:
-            active_subscriptions = 0
-
-        # 新增订阅数（在指定时间范围内）
-        if start_date or end_date:
-            new_subscriptions_query = db.query(User)
-            if start_date:
-                new_subscriptions_query = new_subscriptions_query.filter(User.created_at >= start_date)
-            if end_date:
-                new_subscriptions_query = new_subscriptions_query.filter(User.created_at <= end_date)
-            try:
-                new_subscriptions = new_subscriptions_query.filter(text("member_tier != 'free'")).count()
-            except Exception:
-                new_subscriptions = 0
-        else:
-            # 默认统计最近30天的新增订阅
-            recent_date = datetime.utcnow() - timedelta(days=30)
-            try:
-                new_subscriptions = db.query(User).filter(
-                    and_(
-                        User.created_at >= recent_date,
-                        text("member_tier != 'free'")
-                    )
-                ).count()
-            except Exception:
-                new_subscriptions = 0
-
-        # 按订阅类型统计
-        try:
-            subscription_stats = db.execute(text("""
-                SELECT member_tier, COUNT(id) as count
-                FROM users
-                WHERE is_active = TRUE AND member_tier != 'free'
-                GROUP BY member_tier
-            """)).fetchall()
-            by_type = {tier: count for tier, count in subscription_stats}
-        except Exception:
-            # 如果查询失败，返回空统计
-            by_type = {}
-
-        # 订阅状态分布
-        try:
-            status_stats = db.execute(text("""
-                SELECT
-                    CASE
-                        WHEN member_tier = 'free' THEN 'free'
-                        WHEN member_tier LIKE 'enterprise%' THEN 'enterprise'
-                        WHEN member_tier LIKE 'personal%' THEN 'personal'
-                        ELSE 'other'
-                    END as category,
-                    COUNT(id) as count
-                FROM users
-                WHERE is_active = TRUE
-                GROUP BY category
-            """)).fetchall()
-            by_status = {status: count for status, count in status_stats}
-        except Exception:
-            by_status = {"free": total_subscriptions, "personal": 0, "enterprise": 0}
-
-        # 收入统计 - 从实际交易记录计算
         from app.models.subscription import SubscriptionTransaction, Subscription
-        from app.models.company import CompanyEmployee, Company
+        from app.models.company import Company
 
-        # 获取所有继承会员的用户ID（企业员工但不是企业所有者）
+        if not end_date:
+            end_date = datetime.utcnow().date()
+        if not start_date:
+            start_date = end_date - timedelta(days=29)
+
+        start_dt = datetime.combine(start_date, datetime.min.time())
+        end_dt = datetime.combine(end_date, datetime.max.time())
+
         try:
             inherited_user_ids_subquery = db.query(CompanyEmployee.user_id).join(
                 Company, CompanyEmployee.company_id == Company.id
             ).filter(
                 and_(
                     CompanyEmployee.status == "active",
-                    CompanyEmployee.user_id != Company.owner_id
+                    CompanyEmployee.user_id != Company.owner_id,
                 )
             ).subquery()
         except Exception:
-            # 如果表不存在，使用空子查询
             inherited_user_ids_subquery = db.query(User.id).filter(User.id == -1).subquery()
 
-        # 总收入 - 只计算付费用户的成功交易
+        paid_base = db.query(Subscription).filter(
+            ~Subscription.user_id.in_(inherited_user_ids_subquery)
+        )
+
+        total_subscriptions = paid_base.count()
+        active_subscriptions = paid_base.filter(Subscription.status == "active").count()
+
+        # 区间内新建 / 取消
+        new_subscriptions = paid_base.filter(
+            and_(Subscription.created_at >= start_dt, Subscription.created_at <= end_dt)
+        ).count()
+
+        cancelled_q = paid_base.filter(Subscription.status.in_(["cancelled", "canceled", "expired"]))
+        # 优先用 updated_at 落入区间；若无更新时间则回退全量 cancelled 计数
+        try:
+            cancelled_in_period = cancelled_q.filter(
+                and_(Subscription.updated_at >= start_dt, Subscription.updated_at <= end_dt)
+            ).count()
+        except Exception:
+            cancelled_in_period = cancelled_q.count()
+
+        cancelled_total = cancelled_q.count()
+
+        # 流失率：区间取消 / (当前活跃 + 区间取消) 近似期初活跃
+        churn_base = max(active_subscriptions + cancelled_in_period, 1)
+        churn_rate = round((cancelled_in_period / churn_base) * 100, 2) if cancelled_in_period else 0.0
+
+        # 按会员等级（用户表）分布 — 前端仍用 by_type 展示
+        try:
+            subscription_stats = db.execute(text("""
+                SELECT COALESCE(member_tier, 'free') AS member_tier, COUNT(id) AS count
+                FROM users
+                WHERE is_active = TRUE AND COALESCE(member_tier, 'free') != 'free'
+                GROUP BY COALESCE(member_tier, 'free')
+            """)).fetchall()
+            by_type = {tier: count for tier, count in subscription_stats}
+        except Exception:
+            by_type = {}
+
+        # 收入
         try:
             total_revenue = db.query(
                 func.sum(SubscriptionTransaction.amount)
@@ -718,15 +767,13 @@ class AdminUserService:
             ).filter(
                 and_(
                     SubscriptionTransaction.status == "success",
-                    ~Subscription.user_id.in_(inherited_user_ids_subquery)
+                    ~Subscription.user_id.in_(inherited_user_ids_subquery),
                 )
             ).scalar() or 0
         except Exception:
             total_revenue = 0
 
-        # 本月收入 - 只计算付费用户的成功交易
         try:
-            current_month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
             monthly_revenue = db.query(
                 func.sum(SubscriptionTransaction.amount)
             ).join(
@@ -734,48 +781,74 @@ class AdminUserService:
             ).filter(
                 and_(
                     SubscriptionTransaction.status == "success",
-                    SubscriptionTransaction.transaction_date >= current_month_start,
-                    ~Subscription.user_id.in_(inherited_user_ids_subquery)
+                    SubscriptionTransaction.transaction_date >= start_dt,
+                    SubscriptionTransaction.transaction_date <= end_dt,
+                    ~Subscription.user_id.in_(inherited_user_ids_subquery),
                 )
             ).scalar() or 0
         except Exception:
             monthly_revenue = 0
 
-        # 年收入估算（本月收入 × 12）
-        annual_revenue = monthly_revenue * 12
+        # 年累计收入（近 365 天实收，而非月×12）
+        year_start = datetime.utcnow() - timedelta(days=365)
+        try:
+            annual_revenue = db.query(
+                func.sum(SubscriptionTransaction.amount)
+            ).join(
+                Subscription, SubscriptionTransaction.subscription_id == Subscription.id
+            ).filter(
+                and_(
+                    SubscriptionTransaction.status == "success",
+                    SubscriptionTransaction.transaction_date >= year_start,
+                    ~Subscription.user_id.in_(inherited_user_ids_subquery),
+                )
+            ).scalar() or 0
+        except Exception:
+            annual_revenue = float(monthly_revenue)
 
-        # 统计继承会员数量
         try:
             inherited_members_count = db.query(User).filter(
                 and_(
-                    User.is_active == True,
-                    User.id.in_(inherited_user_ids_subquery)
+                    User.is_active == True,  # noqa: E712
+                    User.id.in_(inherited_user_ids_subquery),
                 )
             ).count()
         except Exception:
             inherited_members_count = 0
 
+        total_users = db.query(User).filter(User.is_active == True).count()  # noqa: E712
+
         return {
             "total_subscriptions": total_subscriptions,
             "active_subscriptions": active_subscriptions,
             "new_subscriptions": new_subscriptions,
-            "cancelled_subscriptions": 0,  # 需要从订单表或取消记录表中获取
+            "cancelled_subscriptions": cancelled_in_period,
+            "cancelled_subscriptions_total": cancelled_total,
             "revenue": {
                 "monthly": float(monthly_revenue),
+                "period": float(monthly_revenue),
                 "annual": float(annual_revenue),
-                "total": float(total_revenue)
+                "total": float(total_revenue),
             },
             "by_type": by_type,
-            "by_status": by_status,
+            "by_status": {
+                "active": active_subscriptions,
+                "cancelled": cancelled_total,
+            },
             "conversion_rate": round((active_subscriptions / total_users * 100), 2) if total_users > 0 else 0,
-            "churn_rate": 0,  # 需要实际计算
-            "average_revenue_per_user": round((monthly_revenue / active_subscriptions), 2) if active_subscriptions > 0 else 0,
-            "inherited_members_count": inherited_members_count
+            "churn_rate": churn_rate,
+            "average_revenue_per_user": (
+                round((float(monthly_revenue) / active_subscriptions), 2) if active_subscriptions > 0 else 0
+            ),
+            "inherited_members_count": inherited_members_count,
+            "period": {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+            },
         }
 
     def _format_user_data(self, user: User, detailed: bool = False) -> Dict[str, Any]:
         """格式化用户数据"""
-        from app.models.company import CompanyEmployee, Company
         from sqlalchemy.orm import object_session
 
         # 安全获取用户属性
@@ -802,28 +875,29 @@ class AdminUserService:
         else:
             parsed_permissions = {}
 
-        # 检查用户是否通过企业继承会员权限
+        # 检查用户是否通过企业继承会员权限，并解析关联企业 ID
         is_inherited_from_company = False
         company_name = None
+        company_id = None
 
-        # 如果用户是企业会员类型，检查是否是企业员工（非企业所有者）
-        if membership_type == "enterprise":
-            db = object_session(user)
-            if db:
-                # 查询用户是否是某个企业的员工
+        db = object_session(user)
+        if db:
+            owned = db.query(Company).filter(Company.owner_id == user.id).first()
+            if owned:
+                company_id = str(owned.id)
+                company_name = owned.name
+            elif membership_type == "enterprise":
                 employee = db.query(CompanyEmployee).filter(
                     CompanyEmployee.user_id == user.id,
-                    CompanyEmployee.status == "active"
+                    CompanyEmployee.status == "active",
                 ).first()
-
                 if employee:
-                    # 获取企业信息
                     company_obj = db.query(Company).filter(Company.id == employee.company_id).first()
                     if company_obj:
-                        # 如果用户不是企业所有者，说明是通过企业继承的会员权限
+                        company_id = str(company_obj.id)
+                        company_name = company_obj.name
                         if company_obj.owner_id != user.id:
                             is_inherited_from_company = True
-                            company_name = company_obj.name
 
         user_data = {
             "id": str(user.id),
@@ -843,6 +917,7 @@ class AdminUserService:
             "subscription_expires_at": subscription_expires_at.isoformat() if subscription_expires_at else None,
             "is_inherited_from_company": is_inherited_from_company,
             "company_name": company_name,
+            "company_id": company_id,
             "quotas": {
                 "wps_limit": self._get_wps_limit(membership_tier),
                 "pqr_limit": self._get_pqr_limit(membership_tier),
@@ -1012,6 +1087,69 @@ class AdminUserService:
 
         return json.dumps(permissions_config.get(tier, permissions_config["personal_free"]))
 
+    def get_enterprise_by_id(self, db: Session, company_id: str) -> Optional[Dict[str, Any]]:
+        """按企业 ID 获取详情（含管理员与员工列表）。"""
+        try:
+            cid = int(company_id)
+        except (TypeError, ValueError):
+            raise ValueError("无效的企业ID格式")
+
+        company = db.query(Company).filter(Company.id == cid).first()
+        if not company:
+            return None
+
+        owner = db.query(User).filter(User.id == company.owner_id).first()
+        employees = db.query(CompanyEmployee).filter(
+            CompanyEmployee.company_id == company.id,
+            CompanyEmployee.status == "active",
+        ).all()
+
+        members_list = []
+        for emp in employees:
+            emp_user = db.query(User).filter(User.id == emp.user_id).first()
+            if emp_user:
+                members_list.append({
+                    "id": str(emp_user.id),
+                    "username": emp_user.username,
+                    "email": emp_user.email,
+                    "full_name": emp_user.full_name,
+                    "role": emp.role,
+                    "is_active": emp_user.is_active,
+                    "position": emp.position,
+                    "department": emp.department,
+                    "employee_number": emp.employee_number,
+                })
+
+        return {
+            "company_id": str(company.id),
+            "company_name": company.name,
+            "admin_user": {
+                "id": str(owner.id) if owner else None,
+                "username": owner.username if owner else "N/A",
+                "email": owner.email if owner else "N/A",
+                "full_name": owner.full_name if owner else "N/A",
+                "is_active": owner.is_active if owner else False,
+                "membership_tier": owner.member_tier if owner else "free",
+                "membership_type": owner.membership_type if owner else "personal",
+                "subscription_expires_at": (
+                    owner.subscription_expires_at.isoformat()
+                    if owner and getattr(owner, "subscription_expires_at", None)
+                    else None
+                ),
+            },
+            "members": members_list,
+            "membership_tier": company.membership_tier,
+            "subscription_status": company.subscription_status,
+            "subscription_end_date": (
+                company.subscription_end_date.isoformat()
+                if getattr(company, "subscription_end_date", None)
+                else None
+            ),
+            "max_employees": company.max_employees,
+            "max_factories": company.max_factories,
+            "created_at": company.created_at.isoformat() if company.created_at else None,
+        }
+
     def get_enterprise_users(
         self,
         db: Session,
@@ -1023,10 +1161,8 @@ class AdminUserService:
         获取企业用户列表
         从 companies 表获取真实的企业数据，包括企业信息和员工信息
         """
-        from app.models.company import Company, CompanyEmployee
-
         # 查询所有企业
-        companies_query = db.query(Company).filter(Company.is_active == True)
+        companies_query = db.query(Company).filter(Company.is_active == True)  # noqa: E712
 
         # 应用搜索筛选
         if search:
@@ -1052,56 +1188,10 @@ class AdminUserService:
         total_employees = 0
 
         for company in companies:
-            # 获取企业所有者信息
-            owner = db.query(User).filter(User.id == company.owner_id).first()
-
-            # 获取企业员工列表
-            employees = db.query(CompanyEmployee).filter(
-                CompanyEmployee.company_id == company.id,
-                CompanyEmployee.status == "active"
-            ).all()
-
-            # 格式化员工数据
-            members_list = []
-            for emp in employees:
-                emp_user = db.query(User).filter(User.id == emp.user_id).first()
-                if emp_user:
-                    member_data = {
-                        "id": str(emp_user.id),
-                        "username": emp_user.username,
-                        "email": emp_user.email,
-                        "full_name": emp_user.full_name,
-                        "role": emp.role,  # admin, manager, employee
-                        "is_active": emp_user.is_active,
-                        "position": emp.position,
-                        "department": emp.department,
-                        "employee_number": emp.employee_number
-                    }
-                    members_list.append(member_data)
-
-            total_employees += len(members_list)
-
-            # 格式化企业数据
-            company_data = {
-                "company_id": str(company.id),
-                "company_name": company.name,
-                "admin_user": {
-                    "id": str(owner.id) if owner else None,
-                    "username": owner.username if owner else "N/A",
-                    "email": owner.email if owner else "N/A",
-                    "full_name": owner.full_name if owner else "N/A",
-                    "is_active": owner.is_active if owner else False,
-                    "membership_tier": owner.member_tier if owner else "free",
-                    "membership_type": owner.membership_type if owner else "personal"
-                },
-                "members": members_list,
-                "membership_tier": company.membership_tier,
-                "subscription_status": company.subscription_status,
-                "max_employees": company.max_employees,
-                "max_factories": company.max_factories,
-                "created_at": company.created_at.isoformat() if company.created_at else None
-            }
-            companies_list.append(company_data)
+            detail = self.get_enterprise_by_id(db, str(company.id))
+            if detail:
+                total_employees += len(detail.get("members") or [])
+                companies_list.append(detail)
 
         return {
             "items": companies_list,
@@ -1120,75 +1210,101 @@ class AdminUserService:
         db: Session,
         page: int = 1,
         page_size: int = 20,
-        search: Optional[str] = None
+        search: Optional[str] = None,
+        membership_type: Optional[str] = None,
+        membership_tier: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        获取订阅管理用户列表
-        只显示非免费版和非企业版会员
+        获取订阅管理用户列表：所有非免费付费档（个人 + 企业）。
+        含管理员直接授会的 enterprise_pro_max 等高等级。
         """
-        # 获取付费个人用户（非免费且非企业）
+        free_tiers = ["free", "personal_free", ""]
+
         paid_users_query = db.query(User).filter(
             and_(
-                User.is_active == True,
-                text("member_tier != 'free'"),
-                text("member_tier != 'enterprise'"),
-                or_(
-                    text("member_tier LIKE 'personal_%'"),
-                    text("member_tier IN ('personal_pro', 'personal_advanced', 'personal_flagship')")
-                )
+                User.is_active == True,  # noqa: E712
+                User.member_tier.isnot(None),
+                ~User.member_tier.in_(free_tiers),
             )
         )
 
-        # 应用搜索筛选
+        if membership_type in ("personal", "enterprise"):
+            paid_users_query = paid_users_query.filter(User.membership_type == membership_type)
+
+        if membership_tier:
+            paid_users_query = paid_users_query.filter(User.member_tier == membership_tier)
+
         if search:
             search_filter = or_(
                 User.email.ilike(f"%{search}%"),
                 User.username.ilike(f"%{search}%"),
                 User.full_name.ilike(f"%{search}%"),
-                User.phone.ilike(f"%{search}%")
+                User.phone.ilike(f"%{search}%"),
             )
             paid_users_query = paid_users_query.filter(search_filter)
 
-        # 按创建时间排序
         paid_users_query = paid_users_query.order_by(User.created_at.desc())
 
-        # 总数统计
         total = paid_users_query.count()
-
-        # 分页查询
         offset = (page - 1) * page_size
         users = paid_users_query.offset(offset).limit(page_size).all()
 
-        # 转换为响应格式
         user_items = []
         for user in users:
             user_data = self._format_user_data(user, detailed=True)
-            # 添加订阅相关信息
+            expires = getattr(user, "subscription_expires_at", None) or getattr(
+                user, "subscription_end_date", None
+            )
+            status = getattr(user, "subscription_status", None) or "inactive"
+            # 到期时间在未来但状态未激活时，展示为 active（兼容历史脏数据）
+            if expires and isinstance(expires, datetime) and expires > datetime.utcnow():
+                if status in (None, "", "inactive"):
+                    status = "active"
+            elif expires and isinstance(expires, datetime) and expires <= datetime.utcnow():
+                status = "expired"
+
             user_data["subscription_info"] = {
-                "tier": getattr(user, 'member_tier', 'free'),
-                "type": getattr(user, 'membership_type', 'personal'),
-                "status": getattr(user, 'subscription_status', 'active'),
-                "expires_at": getattr(user, 'subscription_expires_at', None),
-                "auto_renewal": getattr(user, 'auto_renewal', False)
+                "tier": getattr(user, "member_tier", "free"),
+                "type": getattr(user, "membership_type", "personal"),
+                "status": status,
+                "expires_at": expires.isoformat() if expires else None,
+                "auto_renewal": getattr(user, "auto_renewal", False),
             }
             user_items.append(user_data)
 
-        # 按会员等级分组统计
-        tier_counts = {}
-        for user in users:
-            tier = getattr(user, 'member_tier', 'free')
-            tier_counts[tier] = tier_counts.get(tier, 0) + 1
+        # 全量等级分布与付费总数（不受列表筛选影响）
+        base_paid = db.query(User).filter(
+            and_(
+                User.is_active == True,  # noqa: E712
+                User.member_tier.isnot(None),
+                ~User.member_tier.in_(free_tiers),
+            )
+        )
+        total_paid_users = base_paid.count()
+        tier_rows = (
+            db.query(User.member_tier, func.count(User.id))
+            .filter(
+                and_(
+                    User.is_active == True,  # noqa: E712
+                    User.member_tier.isnot(None),
+                    ~User.member_tier.in_(free_tiers),
+                )
+            )
+            .group_by(User.member_tier)
+            .all()
+        )
+        tier_counts = {tier: count for tier, count in tier_rows}
 
         return {
             "items": user_items,
             "total": total,
             "page": page,
             "page_size": page_size,
-            "total_pages": (total + page_size - 1) // page_size,
+            "total_pages": (total + page_size - 1) // page_size if total else 0,
             "summary": {
-                "total_paid_users": total,
-                "tier_distribution": tier_counts
-            }
+                "total_paid_users": total_paid_users,
+                "tier_distribution": tier_counts,
+            },
         }
 
 

@@ -21,6 +21,43 @@ from app.services.notification_prefs import (
 router = APIRouter()
 
 
+def _audience_filter(user):
+    """按目标受众过滤：all / user(个人) / enterprise(企业会员)。"""
+    conditions = [
+        SystemAnnouncement.target_audience == "all",
+        SystemAnnouncement.created_by == user.id,
+    ]
+    if getattr(user, "membership_type", None) == "enterprise":
+        conditions.append(SystemAnnouncement.target_audience == "enterprise")
+    else:
+        conditions.append(SystemAnnouncement.target_audience == "user")
+    return or_(*conditions)
+
+
+def _visible_announcement_filters(user):
+    """用户可见且已生效的公告条件（已发布、未过期、到达发布时间）。"""
+    now = datetime.utcnow()
+    user_created_at = user.created_at
+    return and_(
+        SystemAnnouncement.is_published == True,  # noqa: E712
+        or_(
+            and_(
+                SystemAnnouncement.publish_at.is_(None),
+                SystemAnnouncement.created_at >= user_created_at,
+            ),
+            and_(
+                SystemAnnouncement.publish_at <= now,
+                SystemAnnouncement.publish_at >= user_created_at,
+            ),
+        ),
+        or_(
+            SystemAnnouncement.expire_at.is_(None),
+            SystemAnnouncement.expire_at > now,
+        ),
+        _audience_filter(user),
+    )
+
+
 @router.get("/")
 def get_notifications(
     unread_only: bool = Query(False, description="只获取未读通知"),
@@ -32,26 +69,8 @@ def get_notifications(
     """获取用户通知列表"""
     user_id = current_user.id
 
-    # 获取用户注册时间
-    user_created_at = current_user.created_at
-
-    # 查询有效的系统公告 - 只显示用户注册后发布的通知
-    query = db.query(SystemAnnouncement).filter(
-        and_(
-            SystemAnnouncement.is_published == True,
-            SystemAnnouncement.publish_at <= datetime.utcnow(),
-            SystemAnnouncement.publish_at >= user_created_at,  # 只显示用户注册后发布的通知
-            or_(
-                SystemAnnouncement.expire_at.is_(None),
-                SystemAnnouncement.expire_at > datetime.utcnow()
-            ),
-            or_(
-                SystemAnnouncement.target_audience == "all",
-                SystemAnnouncement.target_audience == "user",
-                SystemAnnouncement.created_by == user_id
-            )
-        )
-    )
+    # 查询有效的系统公告
+    query = db.query(SystemAnnouncement).filter(_visible_announcement_filters(current_user))
 
     # 获取所有符合条件的公告ID
     all_announcements = query.all()
@@ -142,25 +161,8 @@ def get_unread_count(
     """获取未读通知数量"""
     user_id = current_user.id
 
-    # 获取用户注册时间
-    user_created_at = current_user.created_at
-
-    # 查询有效的系统公告 - 只显示用户注册后发布的通知
     all_announcements = db.query(SystemAnnouncement).filter(
-        and_(
-            SystemAnnouncement.is_published == True,
-            SystemAnnouncement.publish_at <= datetime.utcnow(),
-            SystemAnnouncement.publish_at >= user_created_at,  # 只显示用户注册后发布的通知
-            or_(
-                SystemAnnouncement.expire_at.is_(None),
-                SystemAnnouncement.expire_at > datetime.utcnow()
-            ),
-            or_(
-                SystemAnnouncement.target_audience == "all",
-                SystemAnnouncement.target_audience == "user",
-                SystemAnnouncement.created_by == user_id
-            )
-        )
+        _visible_announcement_filters(current_user)
     ).all()
 
     announcement_ids = [a.id for a in all_announcements]
@@ -207,15 +209,15 @@ def mark_notification_as_read(
 ) -> Any:
     """标记通知为已读"""
     user_id = current_user.id
-    
+
     # 检查通知是否存在
     announcement = db.query(SystemAnnouncement).filter(
         SystemAnnouncement.id == notification_id
     ).first()
-    
+
     if not announcement:
         raise HTTPException(status_code=404, detail="通知不存在")
-    
+
     # 查找或创建已读状态
     read_status = db.query(UserNotificationReadStatus).filter(
         and_(
@@ -223,11 +225,13 @@ def mark_notification_as_read(
             UserNotificationReadStatus.announcement_id == notification_id
         )
     ).first()
-    
+
+    first_view = False
     if read_status:
         if not read_status.is_read:
             read_status.is_read = True
             read_status.read_at = datetime.utcnow()
+            first_view = True
     else:
         read_status = UserNotificationReadStatus(
             user_id=user_id,
@@ -236,9 +240,14 @@ def mark_notification_as_read(
             read_at=datetime.utcnow()
         )
         db.add(read_status)
-    
+        first_view = True
+
+    # 首次阅读计入浏览量
+    if first_view:
+        announcement.view_count = (announcement.view_count or 0) + 1
+
     db.commit()
-    
+
     return {
         "success": True,
         "data": None,
@@ -254,27 +263,10 @@ def mark_all_notifications_as_read(
     """标记所有通知为已读"""
     user_id = current_user.id
 
-    # 获取用户注册时间
-    user_created_at = current_user.created_at
-
-    # 获取所有有效的公告 - 只显示用户注册后发布的通知
     all_announcements = db.query(SystemAnnouncement).filter(
-        and_(
-            SystemAnnouncement.is_published == True,
-            SystemAnnouncement.publish_at <= datetime.utcnow(),
-            SystemAnnouncement.publish_at >= user_created_at,  # 只显示用户注册后发布的通知
-            or_(
-                SystemAnnouncement.expire_at.is_(None),
-                SystemAnnouncement.expire_at > datetime.utcnow()
-            ),
-            or_(
-                SystemAnnouncement.target_audience == "all",
-                SystemAnnouncement.target_audience == "user",
-                SystemAnnouncement.created_by == user_id
-            )
-        )
+        _visible_announcement_filters(current_user)
     ).all()
-    
+
     # 为每个公告创建或更新已读状态
     for announcement in all_announcements:
         read_status = db.query(UserNotificationReadStatus).filter(
@@ -283,12 +275,13 @@ def mark_all_notifications_as_read(
                 UserNotificationReadStatus.announcement_id == announcement.id
             )
         ).first()
-        
+
         if read_status:
             if not read_status.is_read:
                 read_status.is_read = True
                 read_status.read_at = datetime.utcnow()
                 read_status.is_deleted = False
+                announcement.view_count = (announcement.view_count or 0) + 1
         else:
             read_status = UserNotificationReadStatus(
                 user_id=user_id,
@@ -297,9 +290,10 @@ def mark_all_notifications_as_read(
                 read_at=datetime.utcnow()
             )
             db.add(read_status)
-    
+            announcement.view_count = (announcement.view_count or 0) + 1
+
     db.commit()
-    
+
     return {
         "success": True,
         "data": None,
@@ -314,23 +308,9 @@ def clear_all_notifications(
 ) -> Any:
     """清空当前用户可见的全部通知（软删除）"""
     user_id = current_user.id
-    user_created_at = current_user.created_at
 
     all_announcements = db.query(SystemAnnouncement).filter(
-        and_(
-            SystemAnnouncement.is_published == True,
-            SystemAnnouncement.publish_at <= datetime.utcnow(),
-            SystemAnnouncement.publish_at >= user_created_at,
-            or_(
-                SystemAnnouncement.expire_at.is_(None),
-                SystemAnnouncement.expire_at > datetime.utcnow()
-            ),
-            or_(
-                SystemAnnouncement.target_audience == "all",
-                SystemAnnouncement.target_audience == "user",
-                SystemAnnouncement.created_by == user_id
-            )
-        )
+        _visible_announcement_filters(current_user)
     ).all()
 
     cleared = 0

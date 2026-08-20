@@ -83,29 +83,35 @@ const PaymentManagement: React.FC = () => {
         }
       });
 
-      console.log('支付数据响应:', response);
+      const items = Array.isArray(response)
+        ? response
+        : Array.isArray((response as any)?.items)
+          ? (response as any).items
+          : [];
 
-      if (response && Array.isArray(response)) {
-        setPayments(response);
+      setPayments(items);
 
-        // 计算统计数据
-        const pending = response.filter(p => p.status === 'pending_confirm');
-        const confirmed = response.filter(p => p.status === 'success');
-        const rejected = response.filter(p => p.status === 'rejected');
-        const pendingAmount = pending.reduce((sum, p) => sum + (p.amount || 0), 0);
-
+      const remoteStats = (response as any)?.stats;
+      if (remoteStats) {
         setStats({
-          total_pending: pending.length,
-          total_confirmed: confirmed.length,
-          total_rejected: rejected.length,
-          total_amount_pending: pendingAmount,
+          total_pending: remoteStats.total_pending || 0,
+          total_confirmed: remoteStats.total_confirmed || 0,
+          total_rejected: remoteStats.total_rejected || 0,
+          total_amount_pending: remoteStats.total_amount_pending || 0,
         });
       } else {
-        setPayments([]);
+        // 兼容旧响应：仅当前列表估算
+        const pending = items.filter((p: PaymentRecord) => p.status === 'pending_confirm');
+        setStats({
+          total_pending: pending.length,
+          total_confirmed: items.filter((p: PaymentRecord) => p.status === 'success').length,
+          total_rejected: items.filter((p: PaymentRecord) => p.status === 'rejected').length,
+          total_amount_pending: pending.reduce((sum: number, p: PaymentRecord) => sum + (p.amount || 0), 0),
+        });
       }
     } catch (error: any) {
       console.error('获取支付数据失败:', error);
-      message.error('获取支付数据失败');
+      message.error(error?.response?.data?.detail || '获取支付数据失败');
       setPayments([]);
     } finally {
       setLoading(false);
@@ -136,8 +142,7 @@ const PaymentManagement: React.FC = () => {
 
           // 请求成功
           message.success('支付已确认,会员已开通');
-          // 切换到"全部"状态以显示已确认的订单
-          setStatusFilter('all');
+          setDetailVisible(false);
           loadPayments();
         } catch (error: any) {
           console.error('确认支付失败:', error);
@@ -165,8 +170,7 @@ const PaymentManagement: React.FC = () => {
 
           // 请求成功
           message.success('支付已拒绝');
-          // 切换到"全部"状态以显示已拒绝的订单
-          setStatusFilter('all');
+          setDetailVisible(false);
           loadPayments();
         } catch (error: any) {
           console.error('拒绝支付失败:', error);
@@ -363,6 +367,7 @@ const PaymentManagement: React.FC = () => {
               prefix={<ClockCircleOutlined />}
               valueStyle={{ color: '#faad14' }}
             />
+            <div style={{ marginTop: 4, fontSize: 12, color: '#8c8c8c' }}>全量统计</div>
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
@@ -374,6 +379,7 @@ const PaymentManagement: React.FC = () => {
               precision={2}
               valueStyle={{ color: '#ff4d4f' }}
             />
+            <div style={{ marginTop: 4, fontSize: 12, color: '#8c8c8c' }}>全量统计</div>
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
@@ -384,6 +390,7 @@ const PaymentManagement: React.FC = () => {
               prefix={<CheckOutlined />}
               valueStyle={{ color: '#52c41a' }}
             />
+            <div style={{ marginTop: 4, fontSize: 12, color: '#8c8c8c' }}>全量统计</div>
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
@@ -394,6 +401,7 @@ const PaymentManagement: React.FC = () => {
               prefix={<StopOutlined />}
               valueStyle={{ color: '#8c8c8c' }}
             />
+            <div style={{ marginTop: 4, fontSize: 12, color: '#8c8c8c' }}>全量统计</div>
           </Card>
         </Col>
       </Row>

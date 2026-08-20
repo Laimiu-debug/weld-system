@@ -7,8 +7,10 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.api.deps import get_current_user
+from app.api.admin_deps import get_current_active_admin
 from app.core.auth import oauth2_scheme
 from app.models.user import User
+from app.models.admin import Admin
 from app.models.shared_library import SharedModule, SharedTemplate, SharedComment
 from app.services.shared_library_service import SharedLibraryService
 from app.schemas.shared_library import (
@@ -517,32 +519,27 @@ def get_comments(
     }
 
 
-# ==================== 管理员API ====================
+# ==================== 管理员API（管理门户 Admin Token） ====================
 
 @router.post("/admin/review/{resource_type}/{resource_id}")
 def review_shared_resource(
     resource_type: str,
     resource_id: str,
     review_action: ReviewAction,
-    current_user: User = Depends(get_current_user),
+    current_admin: Admin = Depends(get_current_active_admin),
     db: Session = Depends(get_db)
 ):
-    """审核共享资源（管理员功能）"""
-    # 检查管理员权限
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="需要管理员权限"
-        )
-
+    """审核共享资源（管理门户）"""
     if resource_type not in ["module", "template"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="无效的资源类型"
         )
 
+    # reviewer_id 外键指向 users.id；未绑定门户用户时留空，避免 FK 失败
+    reviewer_id = current_admin.user_id
     service = SharedLibraryService(db)
-    success = service.review_shared_resource(resource_type, resource_id, review_action, current_user.id)
+    success = service.review_shared_resource(resource_type, resource_id, review_action, reviewer_id)
 
     if success:
         return {"message": "审核成功"}
@@ -558,17 +555,10 @@ def set_featured_resource(
     resource_type: str,
     resource_id: str,
     featured_action: FeaturedAction,
-    current_user: User = Depends(get_current_user),
+    current_admin: Admin = Depends(get_current_active_admin),
     db: Session = Depends(get_db)
 ):
-    """设置/取消推荐共享资源（管理员功能）"""
-    # 检查管理员权限
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="需要管理员权限"
-        )
-
+    """设置/取消推荐共享资源（管理门户）"""
     if resource_type not in ["module", "template"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -589,17 +579,10 @@ def set_featured_resource(
 
 @router.get("/admin/stats", response_model=LibraryStats)
 def get_library_stats(
-    current_user: User = Depends(get_current_user),
+    current_admin: Admin = Depends(get_current_active_admin),
     db: Session = Depends(get_db)
 ):
-    """获取共享库统计信息（管理员功能）"""
-    # 检查管理员权限
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="需要管理员权限"
-        )
-
+    """获取共享库统计信息（管理门户）"""
     service = SharedLibraryService(db)
     stats = service.get_library_stats()
     return stats
@@ -610,17 +593,10 @@ def get_pending_resources(
     resource_type: str,
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
-    current_user: User = Depends(get_current_user),
+    current_admin: Admin = Depends(get_current_active_admin),
     db: Session = Depends(get_db)
 ):
-    """获取待审核资源列表（管理员功能）"""
-    # 检查管理员权限
-    if not current_user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="需要管理员权限"
-        )
-
+    """获取待审核资源列表（管理门户）"""
     if resource_type not in ["module", "template"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -639,14 +615,12 @@ def get_pending_resources(
 
     if resource_type == "module":
         resources, total = service.get_shared_modules(query)
-        # 序列化模块
         from pydantic import TypeAdapter
         from app.schemas.shared_library import SharedModule as SharedModuleSchema
         adapter = TypeAdapter(list[SharedModuleSchema])
         serialized_resources = adapter.dump_python(resources, mode='json')
     else:
         resources, total = service.get_shared_templates(query)
-        # 序列化模板
         from pydantic import TypeAdapter
         from app.schemas.shared_library import SharedTemplate as SharedTemplateSchema
         adapter = TypeAdapter(list[SharedTemplateSchema])
@@ -659,3 +633,84 @@ def get_pending_resources(
         "page_size": page_size,
         "pages": (total + page_size - 1) // page_size
     }
+
+
+@router.get("/admin/resources/{resource_type}")
+def get_admin_resources(
+    resource_type: str,
+    status: Optional[str] = Query(None, description="状态筛选，空或 all 表示全部"),
+    keyword: Optional[str] = Query(None, description="搜索关键词"),
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=100, description="每页数量"),
+    sort_by: str = Query("created_at", description="排序字段"),
+    sort_order: str = Query("desc", regex="^(asc|desc)$", description="排序方向"),
+    current_admin: Admin = Depends(get_current_active_admin),
+    db: Session = Depends(get_db),
+):
+    """管理端资源列表（含全部状态）"""
+    if resource_type not in ["module", "template"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="无效的资源类型"
+        )
+
+    query_status = None if (not status or status == "all") else status
+    query = LibrarySearchQuery(
+        keyword=keyword,
+        status=query_status,
+        page=page,
+        page_size=page_size,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
+
+    service = SharedLibraryService(db)
+    if resource_type == "module":
+        resources, total = service.get_shared_modules(query)
+        from pydantic import TypeAdapter
+        from app.schemas.shared_library import SharedModule as SharedModuleSchema
+        adapter = TypeAdapter(list[SharedModuleSchema])
+        serialized_resources = adapter.dump_python(resources, mode="json")
+    else:
+        resources, total = service.get_shared_templates(query)
+        from pydantic import TypeAdapter
+        from app.schemas.shared_library import SharedTemplate as SharedTemplateSchema
+        adapter = TypeAdapter(list[SharedTemplateSchema])
+        serialized_resources = adapter.dump_python(resources, mode="json")
+
+    return {
+        "items": serialized_resources,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": (total + page_size - 1) // page_size,
+    }
+
+
+@router.get("/admin/resources/{resource_type}/{resource_id}")
+def get_admin_resource_detail(
+    resource_type: str,
+    resource_id: str,
+    current_admin: Admin = Depends(get_current_active_admin),
+    db: Session = Depends(get_db),
+):
+    """管理端资源详情（不增加浏览量）"""
+    if resource_type not in ["module", "template"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="无效的资源类型"
+        )
+
+    service = SharedLibraryService(db)
+    if resource_type == "module":
+        resource = service.get_shared_module_by_id(resource_id, user_id=None)
+    else:
+        resource = service.get_shared_template_by_id(resource_id, user_id=None)
+
+    if not resource:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="共享资源不存在"
+        )
+
+    return resource

@@ -22,7 +22,6 @@ import {
   Typography
 } from 'antd';
 import {
-  SearchOutlined,
   CheckOutlined,
   CloseOutlined,
   StarOutlined,
@@ -31,17 +30,15 @@ import {
   LikeOutlined,
   DislikeOutlined,
   ExclamationCircleOutlined,
-  SettingOutlined,
-  BarChartOutlined
+  BarChartOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons';
 import { useAuthContext } from '@/contexts/AuthContext';
 import apiService from '@/services/api';
-import './SharedLibraryManagement.css';
 
-const { Search } = Input;
 const { Option } = Select;
 const { TextArea } = Input;
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 // 类型定义
 interface LibraryStats {
@@ -52,6 +49,9 @@ interface LibraryStats {
   total_downloads: number;
   featured_modules: number;
   featured_templates: number;
+  approved_modules?: number;
+  approved_templates?: number;
+  total_ratings?: number;
 }
 
 interface SharedModule {
@@ -113,24 +113,26 @@ class SharedLibraryService {
     });
   }
 
-  static async getSharedModules(params: {
+  static async getAdminResources(params: {
+    resourceType: 'module' | 'template';
     page?: number;
     page_size?: number;
     status?: string;
+    keyword?: string;
     sort_by?: string;
     sort_order?: string;
-  }): Promise<{ items: SharedModule[], total: number }> {
-    return apiService.authGet('/shared-library/modules', { params });
+  }): Promise<{ items: SharedModule[] | SharedTemplate[], total: number }> {
+    const { resourceType, ...query } = params;
+    return apiService.authGet(`/shared-library/admin/resources/${resourceType}`, {
+      params: query,
+    });
   }
 
-  static async getSharedTemplates(params: {
-    page?: number;
-    page_size?: number;
-    status?: string;
-    sort_by?: string;
-    sort_order?: string;
-  }): Promise<{ items: SharedTemplate[], total: number }> {
-    return apiService.authGet('/shared-library/templates', { params });
+  static async getAdminResourceDetail(
+    resourceType: 'module' | 'template',
+    resourceId: string
+  ): Promise<SharedModule | SharedTemplate> {
+    return apiService.authGet(`/shared-library/admin/resources/${resourceType}/${resourceId}`);
   }
 
   static async reviewSharedResource(
@@ -160,8 +162,13 @@ const SharedLibraryManagement: React.FC = () => {
   const [allModules, setAllModules] = useState<SharedModule[]>([]);
   const [allTemplates, setAllTemplates] = useState<SharedTemplate[]>([]);
 
-  // 分页状态
-  const [pendingPagination, setPendingPagination] = useState({
+  // 分页状态（待审模块/模板分开，避免互相覆盖）
+  const [pendingModulePagination, setPendingModulePagination] = useState({
+    current: 1,
+    pageSize: 10,
+    total: 0
+  });
+  const [pendingTemplatePagination, setPendingTemplatePagination] = useState({
     current: 1,
     pageSize: 10,
     total: 0
@@ -190,29 +197,11 @@ const SharedLibraryManagement: React.FC = () => {
   // 加载统计信息
   const loadStats = async () => {
     try {
-      // 使用普通API端点计算统计信息（page_size最大100）
-      const [allModules, allTemplates, pendingModules, pendingTemplates] = await Promise.all([
-        SharedLibraryService.getSharedModules({ status: 'all', page: 1, page_size: 100 }),
-        SharedLibraryService.getSharedTemplates({ status: 'all', page: 1, page_size: 100 }),
-        SharedLibraryService.getSharedModules({ status: 'pending', page: 1, page_size: 100 }),
-        SharedLibraryService.getSharedTemplates({ status: 'pending', page: 1, page_size: 100 })
-      ]);
-
-      const stats: LibraryStats = {
-        total_modules: allModules.total,
-        total_templates: allTemplates.total,
-        pending_modules: pendingModules.total,
-        pending_templates: pendingTemplates.total,
-        total_downloads: allModules.items.reduce((sum, m) => sum + (m.download_count || 0), 0) +
-                        allTemplates.items.reduce((sum, t) => sum + (t.download_count || 0), 0),
-        featured_modules: allModules.items.filter(m => m.is_featured).length,
-        featured_templates: allTemplates.items.filter(t => t.is_featured).length
-      };
-
+      const stats = await SharedLibraryService.getLibraryStats();
       setStats(stats);
     } catch (error) {
       console.error('加载统计信息失败:', error);
-      // 静默失败，不显示错误消息
+      message.error('加载统计信息失败');
     }
   };
 
@@ -220,22 +209,16 @@ const SharedLibraryManagement: React.FC = () => {
   const loadPendingModules = async (page = 1, pageSize = 10) => {
     setLoading(true);
     try {
-      const response = await SharedLibraryService.getSharedModules({
-        page,
-        page_size: pageSize,
-        status: 'pending',
-        sort_by: 'created_at',
-        sort_order: 'desc'
-      });
-      setPendingModules(response.items);
-      setPendingPagination(prev => ({
-        ...prev,
+      const response = await SharedLibraryService.getPendingResources('module', page, pageSize);
+      setPendingModules(response.items as SharedModule[]);
+      setPendingModulePagination({
         current: page,
+        pageSize,
         total: response.total
-      }));
+      });
     } catch (error) {
       console.error('加载待审核模块失败:', error);
-      // 静默失败，不显示错误消息
+      message.error('加载待审核模块失败');
     } finally {
       setLoading(false);
     }
@@ -245,22 +228,16 @@ const SharedLibraryManagement: React.FC = () => {
   const loadPendingTemplates = async (page = 1, pageSize = 10) => {
     setLoading(true);
     try {
-      const response = await SharedLibraryService.getSharedTemplates({
-        page,
-        page_size: pageSize,
-        status: 'pending',
-        sort_by: 'created_at',
-        sort_order: 'desc'
-      });
-      setPendingTemplates(response.items);
-      setPendingPagination(prev => ({
-        ...prev,
+      const response = await SharedLibraryService.getPendingResources('template', page, pageSize);
+      setPendingTemplates(response.items as SharedTemplate[]);
+      setPendingTemplatePagination({
         current: page,
+        pageSize,
         total: response.total
-      }));
+      });
     } catch (error) {
       console.error('加载待审核模板失败:', error);
-      // 静默失败，不显示错误消息
+      message.error('加载待审核模板失败');
     } finally {
       setLoading(false);
     }
@@ -270,19 +247,20 @@ const SharedLibraryManagement: React.FC = () => {
   const loadAllModules = async (page = 1, pageSize = 10) => {
     setLoading(true);
     try {
-      const response = await SharedLibraryService.getSharedModules({
+      const response = await SharedLibraryService.getAdminResources({
+        resourceType: 'module',
         page,
         page_size: pageSize,
-        status: 'all',  // 管理员查看所有状态的资源
+        status: 'all',
         sort_by: 'created_at',
         sort_order: 'desc'
       });
-      setAllModules(response.items);
-      setAllPagination(prev => ({
-        ...prev,
+      setAllModules(response.items as SharedModule[]);
+      setAllPagination({
         current: page,
+        pageSize,
         total: response.total
-      }));
+      });
     } catch (error) {
       console.error('加载所有模块失败:', error);
       message.error('加载所有模块失败');
@@ -295,19 +273,20 @@ const SharedLibraryManagement: React.FC = () => {
   const loadAllTemplates = async (page = 1, pageSize = 10) => {
     setLoading(true);
     try {
-      const response = await SharedLibraryService.getSharedTemplates({
+      const response = await SharedLibraryService.getAdminResources({
+        resourceType: 'template',
         page,
         page_size: pageSize,
-        status: 'all',  // 管理员查看所有状态的资源
+        status: 'all',
         sort_by: 'created_at',
         sort_order: 'desc'
       });
-      setAllTemplates(response.items);
-      setAllPagination(prev => ({
-        ...prev,
+      setAllTemplates(response.items as SharedTemplate[]);
+      setAllPagination({
         current: page,
+        pageSize,
         total: response.total
-      }));
+      });
     } catch (error) {
       console.error('加载所有模板失败:', error);
       message.error('加载所有模板失败');
@@ -358,8 +337,8 @@ const SharedLibraryManagement: React.FC = () => {
 
       // 重新加载数据
       if (activeTab === 'pending') {
-        loadPendingModules(pendingPagination.current, pendingPagination.pageSize);
-        loadPendingTemplates(pendingPagination.current, pendingPagination.pageSize);
+        loadPendingModules(pendingModulePagination.current, pendingModulePagination.pageSize);
+        loadPendingTemplates(pendingTemplatePagination.current, pendingTemplatePagination.pageSize);
       } else if (activeTab === 'modules') {
         loadAllModules(allPagination.current, allPagination.pageSize);
       } else if (activeTab === 'templates') {
@@ -411,10 +390,18 @@ const SharedLibraryManagement: React.FC = () => {
     }
   };
 
-  // 查看详情
-  const handleViewDetail = (item: SharedModule | SharedTemplate) => {
-    setCurrentItem(item);
+  // 查看详情（拉取完整资源，不增加浏览量）
+  const handleViewDetail = async (item: SharedModule | SharedTemplate) => {
+    const resourceType = 'fields' in item ? 'module' : 'template';
     setDetailModalVisible(true);
+    setCurrentItem(item);
+    try {
+      const detail = await SharedLibraryService.getAdminResourceDetail(resourceType, item.id);
+      setCurrentItem(detail);
+    } catch (error) {
+      console.error('加载详情失败:', error);
+      message.warning('详情加载不完整，已展示列表数据');
+    }
   };
 
   // 删除资源
@@ -446,8 +433,8 @@ const SharedLibraryManagement: React.FC = () => {
           } else if (activeTab === 'templates') {
             loadAllTemplates(allPagination.current, allPagination.pageSize);
           } else if (activeTab === 'pending') {
-            loadPendingModules(pendingPagination.current, pendingPagination.pageSize);
-            loadPendingTemplates(pendingPagination.current, pendingPagination.pageSize);
+            loadPendingModules(pendingModulePagination.current, pendingModulePagination.pageSize);
+            loadPendingTemplates(pendingTemplatePagination.current, pendingTemplatePagination.pageSize);
           }
           loadStats();
         } catch (error: any) {
@@ -763,25 +750,40 @@ const SharedLibraryManagement: React.FC = () => {
 
   if (!user) {
     return (
-      <div style={{ padding: '24px', textAlign: 'center' }}>
-        <ExclamationCircleOutlined style={{ fontSize: '48px', color: '#ff4d4f', marginBottom: '16px' }} />
-        <Title level={3}>权限不足</Title>
-        <Text>需要管理员权限才能访问此页面</Text>
+      <div style={{ textAlign: 'center', padding: '48px 0' }}>
+        <ExclamationCircleOutlined style={{ fontSize: 48, color: '#ff4d4f', marginBottom: 16 }} />
+        <h1 className="page-title" style={{ marginBottom: 8 }}>权限不足</h1>
+        <Text type="secondary">需要管理员权限才能访问此页面</Text>
       </div>
     );
   }
 
   return (
-    <div className="shared-library-management">
-      <div className="page-header">
-        <Title level={2}>
-          <SettingOutlined /> 共享库管理
-        </Title>
+    <div>
+      <div className="admin-header">
+        <h1 className="page-title">共享库管理</h1>
+        <Space>
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => {
+              loadStats();
+              if (activeTab === 'pending') {
+                loadPendingModules(pendingModulePagination.current, pendingModulePagination.pageSize);
+                loadPendingTemplates(pendingTemplatePagination.current, pendingTemplatePagination.pageSize);
+              } else if (activeTab === 'modules') {
+                loadAllModules(allPagination.current, allPagination.pageSize);
+              } else {
+                loadAllTemplates(allPagination.current, allPagination.pageSize);
+              }
+            }}
+          >
+            刷新
+          </Button>
+        </Space>
       </div>
 
-      {/* 统计信息 */}
       {stats && (
-        <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
+        <Row gutter={16} style={{ marginBottom: 16 }}>
           <Col xs={24} sm={12} md={6}>
             <Card>
               <Statistic
@@ -822,7 +824,6 @@ const SharedLibraryManagement: React.FC = () => {
         </Row>
       )}
 
-      {/* 主要内容 */}
       <Card>
         <Tabs
           activeKey={activeTab}
@@ -843,22 +844,22 @@ const SharedLibraryManagement: React.FC = () => {
                 <Tabs size="small" items={[
                   {
                     key: 'pending-modules',
-                    label: `模块 (${pendingModules.length})`,
+                    label: `模块 (${stats?.pending_modules ?? pendingModulePagination.total})`,
                     children: (
                       <Table
                         columns={pendingModuleColumns}
                         dataSource={pendingModules}
                         rowKey="id"
                         loading={loading}
+                        scroll={{ x: 900 }}
                         pagination={{
-                          current: pendingPagination.current,
-                          pageSize: pendingPagination.pageSize,
-                          total: pendingPagination.total,
+                          current: pendingModulePagination.current,
+                          pageSize: pendingModulePagination.pageSize,
+                          total: pendingModulePagination.total,
                           showSizeChanger: true,
                           showQuickJumper: true,
                           onChange: (page, pageSize) => {
-                            setPendingPagination(prev => ({ ...prev, current: page, pageSize: pageSize || 10 }));
-                            loadPendingModules(page, pageSize);
+                            loadPendingModules(page, pageSize || 10);
                           }
                         }}
                       />
@@ -866,22 +867,22 @@ const SharedLibraryManagement: React.FC = () => {
                   },
                   {
                     key: 'pending-templates',
-                    label: `模板 (${pendingTemplates.length})`,
+                    label: `模板 (${stats?.pending_templates ?? pendingTemplatePagination.total})`,
                     children: (
                       <Table
                         columns={pendingTemplateColumns}
                         dataSource={pendingTemplates}
                         rowKey="id"
                         loading={loading}
+                        scroll={{ x: 900 }}
                         pagination={{
-                          current: pendingPagination.current,
-                          pageSize: pendingPagination.pageSize,
-                          total: pendingPagination.total,
+                          current: pendingTemplatePagination.current,
+                          pageSize: pendingTemplatePagination.pageSize,
+                          total: pendingTemplatePagination.total,
                           showSizeChanger: true,
                           showQuickJumper: true,
                           onChange: (page, pageSize) => {
-                            setPendingPagination(prev => ({ ...prev, current: page, pageSize: pageSize || 10 }));
-                            loadPendingTemplates(page, pageSize);
+                            loadPendingTemplates(page, pageSize || 10);
                           }
                         }}
                       />
@@ -892,13 +893,14 @@ const SharedLibraryManagement: React.FC = () => {
             },
             {
               key: 'modules',
-              label: `所有模块 (${allModules.length})`,
+              label: `所有模块 (${stats?.total_modules ?? allPagination.total})`,
               children: (
                 <Table
                   columns={allModuleColumns}
                   dataSource={allModules}
                   rowKey="id"
                   loading={loading}
+                  scroll={{ x: 1000 }}
                   pagination={{
                     current: allPagination.current,
                     pageSize: allPagination.pageSize,
@@ -915,13 +917,14 @@ const SharedLibraryManagement: React.FC = () => {
             },
             {
               key: 'templates',
-              label: `所有模板 (${allTemplates.length})`,
+              label: `所有模板 (${stats?.total_templates ?? allPagination.total})`,
               children: (
                 <Table
                   columns={allTemplateColumns}
                   dataSource={allTemplates}
                   rowKey="id"
                   loading={loading}
+                  scroll={{ x: 1000 }}
                   pagination={{
                     current: allPagination.current,
                     pageSize: allPagination.pageSize,

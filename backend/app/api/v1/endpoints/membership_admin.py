@@ -95,7 +95,9 @@ def create_subscription_plan_admin(
         max_equipment=plan_data.get("max_equipment", 0),
         max_factories=plan_data.get("max_factories", 0),
         max_employees=plan_data.get("max_employees", 0),
-        features=",".join(plan_data.get("features", [])),
+        features=",".join(str(f).strip() for f in (plan_data.get("features") or []) if str(f).strip())
+            if isinstance(plan_data.get("features"), list)
+            else (plan_data.get("features") or ""),
         sort_order=plan_data.get("sort_order", 0),
         is_recommended=plan_data.get("is_recommended", False)
     )
@@ -170,8 +172,18 @@ def update_subscription_plan_admin(
         plan.max_welders = plan_data["max_welders"]
     if "max_equipment" in plan_data:
         plan.max_equipment = plan_data["max_equipment"]
+    if "max_factories" in plan_data:
+        plan.max_factories = plan_data["max_factories"]
+    if "max_employees" in plan_data:
+        plan.max_employees = plan_data["max_employees"]
     if "features" in plan_data:
-        plan.features = ",".join(plan_data["features"])
+        feats = plan_data["features"]
+        if isinstance(feats, list):
+            plan.features = ",".join(str(f).strip() for f in feats if str(f).strip())
+        elif isinstance(feats, str):
+            plan.features = feats
+        else:
+            plan.features = str(feats) if feats is not None else None
     if "sort_order" in plan_data:
         plan.sort_order = plan_data["sort_order"]
     if "is_recommended" in plan_data:

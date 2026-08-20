@@ -24,15 +24,21 @@ class SystemService:
     def get_system_status(self) -> Dict[str, Any]:
         """获取系统状态 - 使用真实数据"""
         try:
+            import os
+
             # CPU 使用率
-            cpu_usage = psutil.cpu_percent(interval=1)
+            cpu_usage = psutil.cpu_percent(interval=0.2)
 
             # 内存使用率
             memory = psutil.virtual_memory()
             memory_usage = memory.percent
 
-            # 磁盘使用率
-            disk = psutil.disk_usage('/')
+            # 磁盘使用率（容器内为 /，Windows 开发环境回退到系统盘）
+            disk_path = "C:\\" if os.name == "nt" else "/"
+            try:
+                disk = psutil.disk_usage(disk_path)
+            except Exception:
+                disk = psutil.disk_usage("/")
             disk_usage = (disk.used / disk.total) * 100
 
             # 系统运行时间
@@ -40,30 +46,43 @@ class SystemService:
 
             # 数据库连接状态
             try:
-                self.db.execute("SELECT 1")
+                from sqlalchemy import text
+                self.db.execute(text("SELECT 1"))
                 database_status = "connected"
             except Exception:
                 database_status = "disconnected"
 
-            # 活跃用户数（最近5分钟） - 使用真实数据
+            # Redis 连接状态
+            redis_status = "unknown"
+            try:
+                from app.core.database import redis_client
+                if redis_client is not None:
+                    redis_client.ping()
+                    redis_status = "connected"
+                else:
+                    redis_status = "unavailable"
+            except Exception:
+                redis_status = "disconnected"
+
+            # 活跃用户数（最近5分钟）
             active_time = datetime.utcnow() - timedelta(minutes=5)
             active_users = self.db.query(User).filter(
                 User.last_login_at >= active_time
             ).count()
 
-            # 总用户数 - 使用真实数据
-            total_users = self.db.query(User).filter(User.is_active == True).count()
+            # 总用户数
+            total_users = self.db.query(User).filter(User.is_active == True).count()  # noqa: E712
 
-            # 今日活跃用户数 - 使用真实数据
+            # 今日活跃用户数
             today_active = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
             today_active_users = self.db.query(User).filter(
                 and_(
                     User.last_login_at >= today_active,
-                    User.is_active == True
+                    User.is_active == True,  # noqa: E712
                 )
             ).count()
 
-            # API请求统计（最近1分钟）- 如果没有日志则显示0
+            # API请求统计（依赖 system_logs 中 log_type=api 的写入；无数据则为 0）
             api_time = datetime.utcnow() - timedelta(minutes=1)
             api_requests = self.db.query(SystemLog).filter(
                 and_(
@@ -72,7 +91,6 @@ class SystemService:
                 )
             ).count()
 
-            # 今日API请求总数
             today_api_requests = self.db.query(SystemLog).filter(
                 and_(
                     SystemLog.log_type == "api",
@@ -80,18 +98,37 @@ class SystemService:
                 )
             ).count()
 
+            # 近 24 小时错误日志
+            recent_errors = self.db.query(SystemLog).filter(
+                and_(
+                    SystemLog.log_level.in_(["error", "critical"]),
+                    SystemLog.created_at >= datetime.utcnow() - timedelta(hours=24),
+                )
+            ).count()
+
+            health = "healthy"
+            if database_status != "connected":
+                health = "unhealthy"
+            elif cpu_usage >= 90 or memory_usage >= 90 or disk_usage >= 95:
+                health = "warning"
+            elif recent_errors >= 20:
+                health = "warning"
+
             return {
-                "status": "healthy" if database_status == "connected" else "unhealthy",
+                "status": health,
                 "uptime_seconds": uptime_seconds,
                 "cpu_usage": round(cpu_usage, 2),
                 "memory_usage": round(memory_usage, 2),
                 "disk_usage": round(disk_usage, 2),
                 "database_status": database_status,
+                "redis_status": redis_status,
+                "active_users": active_users,
                 "active_users_5min": active_users,
                 "active_users_today": today_active_users,
                 "total_users": total_users,
                 "api_requests_per_minute": api_requests,
                 "api_requests_today": today_api_requests,
+                "errors_24h": recent_errors,
                 "timestamp": datetime.utcnow().isoformat()
             }
         except Exception as e:
@@ -413,15 +450,17 @@ class SystemService:
         return log
 
     def get_system_config(self) -> Dict[str, Any]:
-        """获取系统配置"""
+        """获取系统配置（持久化运行时配置 + 品牌信息）"""
         from app.services.branding_service import get_branding
+        from app.services.system_config_service import get_system_runtime_config
 
         branding = get_branding()
+        runtime = get_system_runtime_config()
         return {
-            "maintenance_mode": False,
-            "registration_enabled": True,
-            "max_upload_size_mb": 100,
-            "session_timeout_minutes": 60,
+            "maintenance_mode": runtime["maintenance_mode"],
+            "registration_enabled": runtime["registration_enabled"],
+            "max_upload_size_mb": runtime["max_upload_size_mb"],
+            "session_timeout_minutes": runtime["session_timeout_minutes"],
             "api_rate_limit": 1000,
             "supported_languages": ["zh-CN", "en-US"],
             "default_membership_tier": "free",
@@ -434,21 +473,24 @@ class SystemService:
         }
 
     def update_system_config(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
-        """更新系统配置（管理门户：忽略品牌字段，品牌仅用户端可改）"""
+        """更新系统配置并持久化（管理门户：忽略品牌字段）"""
+        from app.services.system_config_service import (
+            CONFIG_KEYS,
+            update_system_runtime_config,
+        )
+
         branding_keys = ("brand_name", "brand_subtitle", "org_name")
-        filtered = {k: v for k, v in config_data.items() if k not in branding_keys}
+        filtered = {k: v for k, v in config_data.items() if k not in branding_keys and k in CONFIG_KEYS}
+        if filtered:
+            update_system_runtime_config(filtered)
 
         updated_config = self.get_system_config()
-        for key, value in filtered.items():
-            updated_config[key] = value
-
         self.create_system_log(
             log_level="info",
             log_type="system",
             message="系统配置已更新",
             details={k: updated_config.get(k) for k in list(filtered.keys())[:20]},
         )
-
         return updated_config
 
 

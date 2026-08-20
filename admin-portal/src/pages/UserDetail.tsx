@@ -147,7 +147,7 @@ const UserDetail: React.FC = () => {
       loadUserDetail(); // 重新加载数据
     } catch (error: any) {
       console.error('更新用户信息失败:', error);
-      message.error(error.message || '更新用户信息失败');
+      message.error(error.response?.data?.detail || error.message || '更新用户信息失败');
     }
   };
 
@@ -190,17 +190,20 @@ const UserDetail: React.FC = () => {
       navigate('/users'); // 返回用户列表
     } catch (error: any) {
       console.error('删除用户失败:', error);
-      message.error(error.message || '删除用户失败');
+      message.error(error.response?.data?.detail || error.message || '删除用户失败');
     }
   };
 
   const getMembershipColor = (tier: string) => {
     const colors: Record<string, string> = {
       free: 'default',
+      personal_free: 'default',
       personal_pro: 'blue',
       personal_advanced: 'green',
       personal_flagship: 'geekblue',
-      enterprise: 'gold',
+      enterprise: 'orange',
+      enterprise_pro: 'magenta',
+      enterprise_pro_max: 'red',
     };
     return colors[tier] || 'default';
   };
@@ -208,10 +211,13 @@ const UserDetail: React.FC = () => {
   const getMembershipText = (tier: string) => {
     const texts: Record<string, string> = {
       free: '免费版',
+      personal_free: '个人免费版',
       personal_pro: '个人专业版',
       personal_advanced: '个人高级版',
       personal_flagship: '个人旗舰版',
       enterprise: '企业版',
+      enterprise_pro: '企业版PRO',
+      enterprise_pro_max: '企业版PRO MAX',
     };
     return texts[tier] || tier;
   };
@@ -424,11 +430,13 @@ const UserDetail: React.FC = () => {
             rules={[{ required: true, message: '请选择会员等级' }]}
           >
             <Select placeholder="选择会员等级">
-              <Select.Option value="free">免费版</Select.Option>
+              <Select.Option value="personal_free">个人免费版</Select.Option>
               <Select.Option value="personal_pro">个人专业版</Select.Option>
               <Select.Option value="personal_advanced">个人高级版</Select.Option>
               <Select.Option value="personal_flagship">个人旗舰版</Select.Option>
               <Select.Option value="enterprise">企业版</Select.Option>
+              <Select.Option value="enterprise_pro">企业版PRO</Select.Option>
+              <Select.Option value="enterprise_pro_max">企业版PRO MAX</Select.Option>
             </Select>
           </Form.Item>
 

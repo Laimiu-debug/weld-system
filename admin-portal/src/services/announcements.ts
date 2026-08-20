@@ -15,8 +15,8 @@ export interface CreateAnnouncementData {
   priority: 'low' | 'normal' | 'high' | 'urgent';
   target_audience: 'all' | 'user' | 'enterprise';
   is_pinned?: boolean;
-  publish_at?: string;
-  expire_at?: string;
+  publish_at?: string | null;
+  expire_at?: string | null;
 }
 
 export interface UpdateAnnouncementData extends Partial<CreateAnnouncementData> {
@@ -85,6 +85,7 @@ export const unpublishAnnouncement = async (id: number): Promise<void> => {
 // ==================== 自动通知任务 ====================
 
 export const runDailyNotificationTasks = async (): Promise<{
+  published_count?: number;
   expiring_count: number;
   expired_count: number;
   renewed_count: number;

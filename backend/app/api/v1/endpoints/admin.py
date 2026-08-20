@@ -398,10 +398,11 @@ def delete_user_admin(
             "message": f"用户 {result['deleted_user']['email']} 已删除",
             "data": result
         }
-    except ValueError:
+    except ValueError as e:
+        msg = str(e) if str(e) else "无效的用户ID格式"
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="无效的用户ID格式"
+            detail=msg
         )
     except Exception:
         raise HTTPException(
@@ -471,24 +472,57 @@ def get_enterprises_admin(
         )
 
 
+@router.get("/enterprises/{company_id}")
+def get_enterprise_detail_admin(
+    company_id: str,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_active_admin),
+) -> Any:
+    """按 ID 获取企业详情（管理员专用）"""
+    try:
+        result = admin_user_service.get_enterprise_by_id(db, company_id)
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="企业不存在",
+            )
+        return success_payload(result)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e) or "无效的企业ID",
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="获取企业详情失败",
+        )
+
+
 @router.get("/subscriptions")
 def get_subscriptions_admin(
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     search: Optional[str] = Query(None, description="搜索关键词"),
+    membership_type: Optional[str] = Query(None, description="会员类型: personal/enterprise"),
+    membership_tier: Optional[str] = Query(None, description="会员等级筛选"),
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:
     """
     获取订阅管理用户列表（管理员专用）
-    只显示非免费版和非企业版会员
+    显示所有非免费付费用户（含个人与企业高等级）
     """
     try:
         result = admin_user_service.get_subscription_users(
             db=db,
             page=page,
             page_size=page_size,
-            search=search
+            search=search,
+            membership_type=membership_type,
+            membership_tier=membership_tier,
         )
 
         return success_payload(result)
@@ -526,33 +560,17 @@ def get_subscription_statistics_admin(
 
 @router.get("/system/status")
 def get_system_status_admin(
+    db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:
     """
-    获取系统状态（管理员专用）
+    获取系统状态（管理员专用）— 使用 SystemService 真实数据
     """
     try:
-        import psutil
-        import os
+        from app.services.system_service import SystemService
 
-        # 获取系统状态信息
-        cpu_usage = psutil.cpu_percent(interval=1)
-        memory = psutil.virtual_memory()
-        memory_usage = memory.percent
-
-        # 获取活跃用户数（简化版本）
-        active_users = 0  # 这里可以添加实际的逻辑来统计活跃用户
-
-        system_status = {
-            "status": "healthy" if cpu_usage < 80 and memory_usage < 80 else "warning",
-            "cpu_usage": cpu_usage,
-            "memory_usage": memory_usage,
-            "active_users": active_users,
-            "disk_usage": psutil.disk_usage('/').percent if os.name != 'nt' else psutil.disk_usage('C:\\').percent,
-            "uptime": "N/A"  # 可以添加实际的系统运行时间
-        }
-
-        return success_payload(system_status)
+        system_service = SystemService(db)
+        return success_payload(system_service.get_system_status())
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -563,23 +581,30 @@ def get_system_status_admin(
 @router.get("/logs/errors")
 def get_error_logs_admin(
     page: int = Query(1, ge=1, description="页码"),
-    page_size: int = Query(10, ge=1, le=100, description="每页数量"),
+    page_size: int = Query(20, ge=1, le=100, description="每页数量"),
+    level: Optional[str] = Query(None, description="日志级别筛选"),
+    start_date: Optional[date] = Query(None, description="开始日期"),
+    end_date: Optional[date] = Query(None, description="结束日期"),
+    db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:
     """
-    获取错误日志（管理员专用）
+    获取错误日志（管理员专用）— 读取 system_logs 表
     """
     try:
-        # 模拟错误日志数据（实际应用中应该从日志文件或数据库中读取）
-        mock_error_logs = {
-            "items": [],
-            "total": 0,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": 0
-        }
+        from app.services.system_service import SystemService
 
-        return success_payload(mock_error_logs)
+        system_service = SystemService(db)
+        start_datetime = datetime.combine(start_date, datetime.min.time()) if start_date else None
+        end_datetime = datetime.combine(end_date, datetime.max.time()) if end_date else None
+        logs = system_service.get_error_logs(
+            page=page,
+            page_size=page_size,
+            level=level,
+            start_date=start_datetime,
+            end_date=end_datetime,
+        )
+        return success_payload(logs)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -589,61 +614,98 @@ def get_error_logs_admin(
 
 # ==================== 支付管理端点 ====================
 
+def _payment_stats(db: Session) -> Dict[str, Any]:
+    """全量订单统计（不受列表筛选影响）"""
+    from app.models.subscription import SubscriptionTransaction
+    from sqlalchemy import func
+
+    rows = db.query(
+        SubscriptionTransaction.status,
+        func.count(SubscriptionTransaction.id),
+        func.coalesce(func.sum(SubscriptionTransaction.amount), 0),
+    ).group_by(SubscriptionTransaction.status).all()
+
+    by_status = {status: {"count": count, "amount": float(amount or 0)} for status, count, amount in rows}
+    pending = by_status.get("pending_confirm", {"count": 0, "amount": 0.0})
+    confirmed = by_status.get("success", {"count": 0, "amount": 0.0})
+    rejected = by_status.get("rejected", {"count": 0, "amount": 0.0})
+
+    return {
+        "total_pending": pending["count"],
+        "total_confirmed": confirmed["count"],
+        "total_rejected": rejected["count"],
+        "total_amount_pending": pending["amount"],
+        "total_amount_confirmed": confirmed["amount"],
+    }
+
+
+def _billing_delta(billing_cycle: Optional[str]):
+    from dateutil.relativedelta import relativedelta
+
+    if billing_cycle == "quarterly":
+        return relativedelta(months=3)
+    if billing_cycle == "yearly":
+        return relativedelta(years=1)
+    return relativedelta(months=1)
+
+
+def _extract_user_transaction_id(description: Optional[str]) -> str:
+    if description and "用户提交交易号:" in description:
+        return description.split("用户提交交易号:")[1].strip()
+    return ""
+
+
 @router.get("/payments/pending", response_model=Dict[str, Any])
 def get_pending_payments_admin(
     status_filter: str = Query('pending_confirm', description="状态筛选"),
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:
-    """获取待确认支付列表（管理员专用）"""
+    """获取支付订单列表（管理员专用）"""
     from app.models.subscription import SubscriptionTransaction, Subscription, SubscriptionPlan
     from app.models.user import User
+    from sqlalchemy.orm import aliased
 
-    # 查询订单
-    query = db.query(SubscriptionTransaction).join(
-        Subscription, SubscriptionTransaction.subscription_id == Subscription.id
-    ).join(
-        User, Subscription.user_id == User.id
-    ).join(
-        SubscriptionPlan, Subscription.plan_id == SubscriptionPlan.id
+    plan_alias = aliased(SubscriptionPlan)
+
+    query = (
+        db.query(SubscriptionTransaction, Subscription, User, plan_alias)
+        .join(Subscription, SubscriptionTransaction.subscription_id == Subscription.id)
+        .join(User, Subscription.user_id == User.id)
+        .outerjoin(plan_alias, Subscription.plan_id == plan_alias.id)
     )
 
     if status_filter != 'all':
         query = query.filter(SubscriptionTransaction.status == status_filter)
 
-    transactions = query.order_by(
-        SubscriptionTransaction.created_at.desc()
-    ).all()
+    rows = query.order_by(SubscriptionTransaction.created_at.desc()).all()
 
     result = []
-    for t in transactions:
-        subscription = t.subscription
-        user = subscription.user
-        plan = db.query(SubscriptionPlan).filter(
-            SubscriptionPlan.id == subscription.plan_id
-        ).first()
-
-        # 从 description 中提取用户提交的交易号
-        user_transaction_id = ""
-        if t.description and "用户提交交易号:" in t.description:
-            user_transaction_id = t.description.split("用户提交交易号:")[1].strip()
-
+    for t, subscription, user, plan in rows:
         result.append({
             "order_id": t.transaction_id,
             "user_id": user.id,
-            "user_name": user.username,
+            "user_name": user.username or user.full_name or user.email,
             "user_email": user.email,
             "plan_id": subscription.plan_id,
             "plan_name": plan.name if plan else subscription.plan_id,
-            "amount": float(t.amount),
+            "amount": float(t.amount or 0),
+            "currency": t.currency or "CNY",
             "payment_method": t.payment_method,
-            "transaction_id": user_transaction_id,
+            "transaction_id": _extract_user_transaction_id(t.description),
+            "description": t.description,
             "status": t.status,
-            "created_at": t.created_at.isoformat(),
-            "updated_at": t.updated_at.isoformat(),
+            "billing_cycle": subscription.billing_cycle,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "updated_at": t.updated_at.isoformat() if t.updated_at else None,
+            "transaction_date": t.transaction_date.isoformat() if t.transaction_date else None,
         })
 
-    return success_payload(result)
+    return success_payload({
+        "items": result,
+        "stats": _payment_stats(db),
+        "total": len(result),
+    })
 
 
 @router.post("/payments/confirm", response_model=Dict[str, Any])
@@ -652,12 +714,10 @@ def confirm_manual_payment_admin(
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:
-    """管理员确认手动支付"""
+    """管理员确认手动支付（剩余时长可叠加）"""
     from app.models.subscription import SubscriptionTransaction, Subscription, SubscriptionPlan
     from app.models.user import User
-    from dateutil.relativedelta import relativedelta
 
-    # 查找订单
     transaction = db.query(SubscriptionTransaction).filter(
         SubscriptionTransaction.transaction_id == request.order_id
     ).first()
@@ -674,12 +734,10 @@ def confirm_manual_payment_admin(
             detail=f"订单状态不正确，当前状态: {transaction.status}"
         )
 
-    # 更新订单状态
     transaction.status = 'success'
     transaction.transaction_date = datetime.utcnow()
     transaction.updated_at = datetime.utcnow()
 
-    # 激活订阅
     subscription = db.query(Subscription).filter(
         Subscription.id == transaction.subscription_id
     ).first()
@@ -690,7 +748,6 @@ def confirm_manual_payment_admin(
             detail="订阅不存在"
         )
 
-    # 获取套餐信息
     plan = db.query(SubscriptionPlan).filter(
         SubscriptionPlan.id == subscription.plan_id
     ).first()
@@ -701,10 +758,7 @@ def confirm_manual_payment_admin(
             detail="套餐不存在"
         )
 
-    # 计算订阅时间
     now = datetime.utcnow()
-
-    # 获取用户当前信息
     user = db.query(User).filter(User.id == subscription.user_id).first()
     if not user:
         raise HTTPException(
@@ -712,39 +766,44 @@ def confirm_manual_payment_admin(
             detail="用户不存在"
         )
 
-    # 计算订阅结束时间
-    # 订阅开始时间总是从现在开始
-    start_date = now
-
-    # 根据计费周期计算结束时间
-    if subscription.billing_cycle == 'monthly':
-        end_date = start_date + relativedelta(months=1)
-    elif subscription.billing_cycle == 'quarterly':
-        end_date = start_date + relativedelta(months=3)
-    elif subscription.billing_cycle == 'yearly':
-        end_date = start_date + relativedelta(years=1)
+    # 续费叠加：从「现在」与「当前有效到期」中取较晚者再加一个计费周期
+    period_base = now
+    if subscription.end_date and subscription.end_date > now:
+        period_base = subscription.end_date
     else:
-        end_date = start_date + relativedelta(months=1)
+        other_active = (
+            db.query(Subscription)
+            .filter(
+                Subscription.user_id == user.id,
+                Subscription.id != subscription.id,
+                Subscription.plan_id == subscription.plan_id,
+                Subscription.status == "active",
+                Subscription.end_date > now,
+            )
+            .order_by(Subscription.end_date.desc())
+            .first()
+        )
+        if other_active and other_active.end_date:
+            period_base = other_active.end_date
 
-    # 更新订阅信息
+    end_date = period_base + _billing_delta(subscription.billing_cycle)
+    start_date = (
+        subscription.start_date
+        if subscription.start_date and subscription.status == "active"
+        else now
+    )
+
     subscription.status = 'active'
     subscription.start_date = start_date
     subscription.end_date = end_date
     subscription.last_payment_date = now
     subscription.updated_at = now
 
-    # 先提交订阅状态更新
     db.commit()
 
-    # 使用会员等级计算服务更新用户会员信息
-    # 这样可以正确处理多订单场景（自动选择最高等级）
     from app.services.membership_tier_service import MembershipTierService
     tier_service = MembershipTierService(db)
     tier_result = tier_service.update_user_tier(user.id)
-
-    print(f"[管理员确认支付] 用户 {user.id} 会员等级更新: {tier_result['old_tier']} -> {tier_result['new_tier']}")
-
-    # TODO: 发送邮件通知用户
 
     return {
         "success": True,
@@ -754,6 +813,7 @@ def confirm_manual_payment_admin(
             "member_tier": tier_result['new_tier'],
             "old_tier": tier_result['old_tier'],
             "subscription_end_date": end_date.isoformat(),
+            "period_base": period_base.isoformat(),
             "has_next_subscription": tier_result['next_subscription'] is not None
         }
     }
@@ -765,10 +825,9 @@ def reject_manual_payment_admin(
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:
-    """管理员拒绝手动支付"""
-    from app.models.subscription import SubscriptionTransaction
+    """管理员拒绝手动支付（仅待确认）"""
+    from app.models.subscription import SubscriptionTransaction, Subscription
 
-    # 查找订单
     transaction = db.query(SubscriptionTransaction).filter(
         SubscriptionTransaction.transaction_id == request.order_id
     ).first()
@@ -779,15 +838,26 @@ def reject_manual_payment_admin(
             detail="订单不存在"
         )
 
-    # 更新订单状态
+    if transaction.status != 'pending_confirm':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"仅可拒绝待确认订单，当前状态: {transaction.status}"
+        )
+
     transaction.status = 'rejected'
     transaction.updated_at = datetime.utcnow()
 
-    db.commit()
+    subscription = db.query(Subscription).filter(
+        Subscription.id == transaction.subscription_id
+    ).first()
+    if subscription and subscription.status in ("pending", "pending_confirm"):
+        subscription.status = "cancelled"
+        subscription.updated_at = datetime.utcnow()
 
-    # TODO: 发送邮件通知用户
+    db.commit()
 
     return {
         "success": True,
-        "message": "支付已拒绝"
+        "message": "支付已拒绝",
+        "data": {"order_id": request.order_id},
     }

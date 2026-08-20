@@ -1,69 +1,124 @@
-import React, { useState, useEffect } from 'react';
-import { Card, Table, Button, Space, Input, Select, Tag, Badge, Row, Col, message, Empty } from 'antd';
-import { SearchOutlined, ReloadOutlined, ExportOutlined, EyeOutlined, CreditCardOutlined, UserOutlined } from '@ant-design/icons';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Card,
+  Table,
+  Button,
+  Space,
+  Input,
+  Select,
+  Tag,
+  Row,
+  Col,
+  message,
+  Empty,
+  Statistic,
+  Typography,
+} from 'antd';
+import {
+  SearchOutlined,
+  ReloadOutlined,
+  ExportOutlined,
+  EyeOutlined,
+  UserOutlined,
+} from '@ant-design/icons';
 import apiService from '@/services/api';
 import { downloadCsv } from '@/utils/csv';
 
 const { Search } = Input;
 const { Option } = Select;
+const { Text } = Typography;
+
+const TIER_LABELS: Record<string, string> = {
+  personal_pro: '个人专业版',
+  personal_advanced: '个人高级版',
+  personal_flagship: '个人旗舰版',
+  enterprise: '企业版',
+  enterprise_pro: '企业版PRO',
+  enterprise_pro_max: '企业版PRO MAX',
+};
+
+const TIER_COLORS: Record<string, string> = {
+  personal_pro: 'blue',
+  personal_advanced: 'green',
+  personal_flagship: 'geekblue',
+  enterprise: 'orange',
+  enterprise_pro: 'magenta',
+  enterprise_pro_max: 'red',
+};
 
 const SubscriptionManagement: React.FC = () => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [subscriptionData, setSubscriptionData] = useState<any[]>([]);
   const [searchText, setSearchText] = useState('');
+  const [membershipType, setMembershipType] = useState<string | undefined>();
+  const [membershipTier, setMembershipTier] = useState<string | undefined>();
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(20);
   const [total, setTotal] = useState(0);
+  const [summary, setSummary] = useState<{ total_paid_users?: number; tier_distribution?: Record<string, number> }>({});
 
-  // 获取订阅用户数据
-  const fetchSubscriptionData = async (page = currentPage, search = searchText) => {
-    setLoading(true);
-    try {
-      const response = await apiService.get('/subscriptions', {
-        params: {
-          page,
-          page_size: pageSize,
-          search: search || undefined
+  const fetchSubscriptionData = useCallback(
+    async (
+      page = currentPage,
+      search = searchText,
+      type = membershipType,
+      tier = membershipTier,
+      size = pageSize,
+    ) => {
+      setLoading(true);
+      try {
+        const response = await apiService.get('/subscriptions', {
+          params: {
+            page,
+            page_size: size,
+            search: search || undefined,
+            membership_type: type || undefined,
+            membership_tier: tier || undefined,
+          },
+        });
+
+        if (response && response.items) {
+          setSubscriptionData(response.items);
+          setTotal(response.total || 0);
+          setSummary(response.summary || {});
+        } else {
+          setSubscriptionData([]);
+          setTotal(0);
+          setSummary({});
         }
-      });
-
-      if (response && response.items) {
-        setSubscriptionData(response.items);
-        setTotal(response.total || 0);
-      } else {
+      } catch (error: any) {
+        console.error('获取订阅用户数据失败:', error);
+        message.error(error?.response?.data?.detail || '获取订阅用户数据失败');
         setSubscriptionData([]);
         setTotal(0);
+      } finally {
+        setLoading(false);
       }
-    } catch (error: any) {
-      console.error('获取订阅用户数据失败:', error);
-      message.error('获取订阅用户数据失败');
-      setSubscriptionData([]);
-      setTotal(0);
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+    [currentPage, searchText, membershipType, membershipTier, pageSize],
+  );
 
   useEffect(() => {
-    fetchSubscriptionData();
+    void fetchSubscriptionData();
   }, []);
 
-  // 搜索处理
   const handleSearch = () => {
     setCurrentPage(1);
-    fetchSubscriptionData(1, searchText);
+    void fetchSubscriptionData(1, searchText, membershipType, membershipTier, pageSize);
   };
 
-  // 重置搜索
   const handleReset = () => {
     setSearchText('');
+    setMembershipType(undefined);
+    setMembershipTier(undefined);
     setCurrentPage(1);
-    fetchSubscriptionData(1, '');
+    void fetchSubscriptionData(1, '', undefined, undefined, pageSize);
   };
 
-  // 刷新数据
   const handleRefresh = () => {
-    fetchSubscriptionData(currentPage, searchText);
+    void fetchSubscriptionData(currentPage, searchText, membershipType, membershipTier, pageSize);
     message.success('数据已刷新');
   };
 
@@ -83,32 +138,20 @@ const SubscriptionManagement: React.FC = () => {
     );
   };
 
-  // 分页处理
   const handleTableChange = (pagination: any) => {
     setCurrentPage(pagination.current);
     setPageSize(pagination.pageSize);
-    fetchSubscriptionData(pagination.current, searchText);
+    void fetchSubscriptionData(
+      pagination.current,
+      searchText,
+      membershipType,
+      membershipTier,
+      pagination.pageSize,
+    );
   };
 
-  const getPlanColor = (plan: string) => {
-    const colors: Record<string, string> = {
-      personal_pro: 'blue',
-      personal_advanced: 'green',
-      personal_flagship: 'geekblue',
-      enterprise: 'gold',
-    };
-    return colors[plan] || 'default';
-  };
-
-  const getPlanText = (plan: string) => {
-    const texts: Record<string, string> = {
-      personal_pro: '个人专业版',
-      personal_advanced: '个人高级版',
-      personal_flagship: '个人旗舰版',
-      enterprise: '企业版',
-    };
-    return texts[plan] || plan;
-  };
+  const getPlanText = (plan: string) => TIER_LABELS[plan] || plan;
+  const getPlanColor = (plan: string) => TIER_COLORS[plan] || 'default';
 
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
@@ -116,6 +159,7 @@ const SubscriptionManagement: React.FC = () => {
       expired: 'red',
       cancelled: 'orange',
       pending: 'blue',
+      inactive: 'default',
     };
     return colors[status] || 'default';
   };
@@ -126,6 +170,7 @@ const SubscriptionManagement: React.FC = () => {
       expired: '已过期',
       cancelled: '已取消',
       pending: '待支付',
+      inactive: '未激活',
     };
     return texts[status] || status;
   };
@@ -140,13 +185,9 @@ const SubscriptionManagement: React.FC = () => {
             <UserOutlined style={{ marginRight: 4 }} />
             {record.username || 'N/A'}
           </div>
-          <div style={{ color: '#8c8c8c', fontSize: '12px' }}>
-            {record.email || 'N/A'}
-          </div>
+          <div style={{ color: '#8c8c8c', fontSize: '12px' }}>{record.email || 'N/A'}</div>
           {record.full_name && (
-            <div style={{ color: '#8c8c8c', fontSize: '12px' }}>
-              {record.full_name}
-            </div>
+            <div style={{ color: '#8c8c8c', fontSize: '12px' }}>{record.full_name}</div>
           )}
         </div>
       ),
@@ -156,11 +197,7 @@ const SubscriptionManagement: React.FC = () => {
       key: 'membership_tier',
       render: (record: any) => {
         const tier = record.subscription_info?.tier || record.membership_tier || 'free';
-        return (
-          <Tag color={getPlanColor(tier)}>
-            {getPlanText(tier)}
-          </Tag>
-        );
+        return <Tag color={getPlanColor(tier)}>{getPlanText(tier)}</Tag>;
       },
     },
     {
@@ -168,11 +205,7 @@ const SubscriptionManagement: React.FC = () => {
       key: 'subscription_status',
       render: (record: any) => {
         const status = record.subscription_info?.status || record.subscription_status || 'inactive';
-        return (
-          <Tag color={getStatusColor(status)}>
-            {getStatusText(status)}
-          </Tag>
-        );
+        return <Tag color={getStatusColor(status)}>{getStatusText(status)}</Tag>;
       },
     },
     {
@@ -181,8 +214,8 @@ const SubscriptionManagement: React.FC = () => {
       render: (record: any) => {
         const type = record.subscription_info?.type || record.membership_type || 'personal';
         return (
-          <Tag color="cyan">
-            {type === 'personal' ? '个人版' : '企业版'}
+          <Tag color={type === 'enterprise' ? 'orange' : 'cyan'}>
+            {type === 'personal' ? '个人' : '企业'}
           </Tag>
         );
       },
@@ -193,37 +226,24 @@ const SubscriptionManagement: React.FC = () => {
       render: (record: any) => {
         const expiresAt = record.subscription_info?.expires_at || record.subscription_expires_at;
         if (expiresAt) {
-          const date = new Date(expiresAt);
-          return (
-            <div style={{ fontSize: '12px' }}>
-              {date.toLocaleDateString()}
-            </div>
-          );
+          return <div style={{ fontSize: '12px' }}>{new Date(expiresAt).toLocaleDateString()}</div>;
         }
         return <span style={{ color: '#8c8c8c' }}>未设置</span>;
       },
     },
     {
-      title: '自动续费',
-      key: 'auto_renewal',
-      render: (record: any) => {
-        const autoRenew = record.subscription_info?.auto_renewal || record.auto_renewal || false;
-        return (
-          <Tag color={autoRenew ? 'green' : 'red'}>
-            {autoRenew ? '已开启' : '已关闭'}
-          </Tag>
-        );
-      },
-    },
-    {
-      title: '配额使用情况',
+      title: '配额',
       key: 'quotas',
       render: (record: any) => {
         const quotas = record.quotas || {};
         return (
           <div style={{ fontSize: '12px' }}>
-            <div>WPS: {quotas.current_wps || 0}/{quotas.wps_limit || 0}</div>
-            <div>PQR: {quotas.current_pqr || 0}/{quotas.pqr_limit || 0}</div>
+            <div>
+              WPS: {quotas.current_wps || quotas.wps_quota_used || 0}/{quotas.wps_limit || 0}
+            </div>
+            <div>
+              PQR: {quotas.current_pqr || quotas.pqr_quota_used || 0}/{quotas.pqr_limit || 0}
+            </div>
           </div>
         );
       },
@@ -233,13 +253,45 @@ const SubscriptionManagement: React.FC = () => {
       key: 'actions',
       render: (record: any) => (
         <Space size="small">
-          <Button type="link" size="small" icon={<EyeOutlined />}>
-            查看详情
+          <Button
+            type="link"
+            size="small"
+            icon={<EyeOutlined />}
+            onClick={() => navigate(`/users?search=${encodeURIComponent(record.email || record.username || '')}`)}
+          >
+            用户
           </Button>
+          {record.company_id ||
+          record.membership_type === 'enterprise' ||
+          (record.subscription_info?.type || '').startsWith('enterprise') ||
+          String(record.subscription_info?.tier || '').startsWith('enterprise') ? (
+            <Button
+              type="link"
+              size="small"
+              onClick={() => {
+                if (record.company_id) {
+                  navigate(`/enterprises/${record.company_id}`);
+                } else {
+                  navigate(
+                    `/enterprises?search=${encodeURIComponent(record.email || record.company_name || record.username || '')}`,
+                  );
+                }
+              }}
+            >
+              企业
+            </Button>
+          ) : null}
         </Space>
       ),
     },
   ];
+
+  const personalCount = Object.entries(summary.tier_distribution || {})
+    .filter(([k]) => k.startsWith('personal'))
+    .reduce((s, [, n]) => s + n, 0);
+  const enterpriseCount = Object.entries(summary.tier_distribution || {})
+    .filter(([k]) => k.startsWith('enterprise'))
+    .reduce((s, [, n]) => s + n, 0);
 
   return (
     <div>
@@ -255,11 +307,33 @@ const SubscriptionManagement: React.FC = () => {
         </Space>
       </div>
 
+      <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+        展示所有非免费付费用户（含个人与企业高等级，含管理员直接授会）
+      </Text>
+
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col xs={24} sm={8}>
+          <Card>
+            <Statistic title="付费用户" value={summary.total_paid_users ?? total} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={8}>
+          <Card>
+            <Statistic title="个人付费" value={personalCount} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={8}>
+          <Card>
+            <Statistic title="企业付费" value={enterpriseCount} valueStyle={{ color: '#fa8c16' }} />
+          </Card>
+        </Col>
+      </Row>
+
       <Card className="filter-section" style={{ marginBottom: 16 }}>
         <Row gutter={16}>
           <Col xs={24} sm={12} md={8}>
             <Search
-              placeholder="搜索用户名、邮箱或姓名"
+              placeholder="搜索用户名、邮箱、姓名或手机"
               allowClear
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
@@ -268,12 +342,39 @@ const SubscriptionManagement: React.FC = () => {
             />
           </Col>
           <Col xs={24} sm={12} md={4}>
-            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
+            <Select
+              allowClear
+              placeholder="会员类型"
+              value={membershipType}
+              onChange={(v) => setMembershipType(v)}
+              style={{ width: '100%' }}
+            >
+              <Option value="personal">个人</Option>
+              <Option value="enterprise">企业</Option>
+            </Select>
+          </Col>
+          <Col xs={24} sm={12} md={5}>
+            <Select
+              allowClear
+              placeholder="会员等级"
+              value={membershipTier}
+              onChange={(v) => setMembershipTier(v)}
+              style={{ width: '100%' }}
+            >
+              {Object.entries(TIER_LABELS).map(([value, label]) => (
+                <Option key={value} value={value}>
+                  {label}
+                </Option>
+              ))}
+            </Select>
+          </Col>
+          <Col xs={24} sm={12} md={3}>
+            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch} block>
               搜索
             </Button>
           </Col>
-          <Col xs={24} sm={12} md={4}>
-            <Button onClick={handleReset}>
+          <Col xs={24} sm={12} md={2}>
+            <Button onClick={handleReset} block>
               重置
             </Button>
           </Col>
@@ -282,10 +383,7 @@ const SubscriptionManagement: React.FC = () => {
 
       <Card>
         {subscriptionData.length === 0 && !loading ? (
-          <Empty
-            description="暂无付费订阅用户"
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-          />
+          <Empty description="暂无付费订阅用户" image={Empty.PRESENTED_IMAGE_SIMPLE} />
         ) : (
           <Table
             columns={columns}
@@ -298,8 +396,8 @@ const SubscriptionManagement: React.FC = () => {
               total: total,
               showSizeChanger: true,
               showQuickJumper: true,
-              showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条订阅用户`,
-              onChange: handleTableChange,
+              showTotal: (t, range) => `第 ${range[0]}-${range[1]} 条，共 ${t} 条付费用户`,
+              onChange: (page, size) => handleTableChange({ current: page, pageSize: size }),
             }}
             rowKey="id"
           />

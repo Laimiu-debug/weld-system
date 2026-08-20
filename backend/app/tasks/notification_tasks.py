@@ -21,6 +21,10 @@ def run_daily_notification_tasks():
         notification_service = NotificationService(db)
         
         logger.info(f"[定时任务] 开始执行每日通知任务 - {datetime.utcnow()}")
+
+        logger.info("[定时任务] 自动发布到期公告...")
+        published_count = notification_service.publish_due_announcements()
+        logger.info(f"[定时任务] 自动发布了 {published_count} 条公告")
         
         # 1. 检查并通知即将到期的会员（7天、3天、1天前）
         logger.info("[定时任务] 检查即将到期的会员...")

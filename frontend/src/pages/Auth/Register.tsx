@@ -33,7 +33,30 @@ const Register: React.FC = () => {
   const [searchParams] = useSearchParams()
   const inviteToken = searchParams.get('invite') || undefined
   const [inviteInfo, setInviteInfo] = useState<{ company_name?: string; email?: string } | null>(null)
+  const [registrationEnabled, setRegistrationEnabled] = useState(true)
+  const [maintenanceMode, setMaintenanceMode] = useState(false)
   const { register, isAuthenticated } = useAuthStore()
+
+  useEffect(() => {
+    const loadPublicConfig = async () => {
+      try {
+        const base = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+        const resp = await fetch(`${base}/system/public-config`)
+        if (!resp.ok) return
+        const body = await resp.json()
+        const data = body?.data || body
+        if (typeof data?.registration_enabled === 'boolean') {
+          setRegistrationEnabled(data.registration_enabled)
+        }
+        if (typeof data?.maintenance_mode === 'boolean') {
+          setMaintenanceMode(data.maintenance_mode)
+        }
+      } catch {
+        // 公开配置失败时不阻断页面
+      }
+    }
+    void loadPublicConfig()
+  }, [])
 
   useEffect(() => {
     if (!inviteToken) return
@@ -53,6 +76,10 @@ const Register: React.FC = () => {
   }, [inviteToken, form])
 
   const onFinish = async (values: any) => {
+    if ((!registrationEnabled && !inviteToken) || maintenanceMode) {
+      message.error(maintenanceMode ? '系统维护中，暂时无法注册' : '系统已关闭新用户注册')
+      return
+    }
     setLoading(true)
     setConfirmLoading(true)
 
@@ -180,6 +207,20 @@ const Register: React.FC = () => {
               className="mb-4"
               message={`你正在加入企业：${inviteInfo.company_name}`}
               description="请使用邀请邮箱完成注册，加入后可进入企业工作区。"
+            />
+          )}
+
+          {(maintenanceMode || (!registrationEnabled && !inviteToken)) && (
+            <Alert
+              type="warning"
+              showIcon
+              className="mb-4"
+              message={maintenanceMode ? '系统维护中' : '暂不开放注册'}
+              description={
+                maintenanceMode
+                  ? '系统正在维护，请稍后再试。'
+                  : '管理员已关闭新用户注册，如需账号请联系管理员。'
+              }
             />
           )}
 
@@ -345,6 +386,7 @@ const Register: React.FC = () => {
                 loading={loading}
                 block
                 size="large"
+                disabled={maintenanceMode || (!registrationEnabled && !inviteToken)}
               >
                 {loading ? '注册中...' : '立即注册'}
               </Button>

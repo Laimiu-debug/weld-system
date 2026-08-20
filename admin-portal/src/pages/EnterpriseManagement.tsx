@@ -30,13 +30,12 @@ const EnterpriseManagement: React.FC = () => {
         }
       });
 
-      if (response && response.data && response.data.items) {
-        setEnterpriseData(response.data.items);
-        setTotal(response.data.total || 0);
-      } else if (response && response.items) {
-        // 兼容旧格式
+      if (response && response.items) {
         setEnterpriseData(response.items);
         setTotal(response.total || 0);
+      } else if (response && response.data && response.data.items) {
+        setEnterpriseData(response.data.items);
+        setTotal(response.data.total || 0);
       } else {
         setEnterpriseData([]);
         setTotal(0);
@@ -52,7 +51,15 @@ const EnterpriseManagement: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchEnterpriseData();
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('search');
+    if (q) {
+      setSearchText(q);
+      setCurrentPage(1);
+      void fetchEnterpriseData(1, q);
+    } else {
+      void fetchEnterpriseData();
+    }
   }, []);
 
   // 搜索处理
@@ -179,7 +186,14 @@ const EnterpriseManagement: React.FC = () => {
       title: '订阅状态',
       key: 'subscription_status',
       render: (record: any) => {
-        const status = record.subscription_status || 'inactive';
+        const end = record.subscription_end_date || record.admin_user?.subscription_expires_at;
+        let status = record.subscription_status || 'inactive';
+        if (end && new Date(end) > new Date() && (status === 'inactive' || !status)) {
+          status = 'active';
+        }
+        if (end && new Date(end) <= new Date()) {
+          status = 'expired';
+        }
         const statusConfig: Record<string, { color: string; text: string }> = {
           active: { color: 'green', text: '活跃' },
           expired: { color: 'red', text: '已过期' },
@@ -187,7 +201,16 @@ const EnterpriseManagement: React.FC = () => {
           inactive: { color: 'default', text: '未激活' },
         };
         const config = statusConfig[status] || statusConfig.inactive;
-        return <Tag color={config.color}>{config.text}</Tag>;
+        return (
+          <div>
+            <Tag color={config.color}>{config.text}</Tag>
+            {end && (
+              <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 4 }}>
+                到期 {new Date(end).toLocaleDateString()}
+              </div>
+            )}
+          </div>
+        );
       },
     },
     {

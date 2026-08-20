@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Card, Row, Col, Statistic, Table, Select, DatePicker, Button, Space, message, Progress, Alert } from 'antd';
+import { Card, Row, Col, Statistic, Table, Select, DatePicker, Button, Space, message, Progress, Alert, Typography } from 'antd';
 import {
   UserOutlined,
   TeamOutlined,
@@ -8,14 +8,14 @@ import {
   ReloadOutlined,
   BarChartOutlined,
   EyeOutlined,
-  TrophyOutlined,
-  FallOutlined
+  FallOutlined,
 } from '@ant-design/icons';
 import apiService from '@/services/api';
 import dayjs from 'dayjs';
 
 const { Option } = Select;
 const { RangePicker } = DatePicker;
+const { Text } = Typography;
 
 const DataStatistics: React.FC = () => {
   const [loading, setLoading] = useState(false);
@@ -23,10 +23,8 @@ const DataStatistics: React.FC = () => {
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null);
   const [userStats, setUserStats] = useState<any>(null);
   const [subscriptionStats, setSubscriptionStats] = useState<any>(null);
-  const [systemStatus, setSystemStatus] = useState<any>(null);
   const [apiError, setApiError] = useState<string | null>(null);
 
-  // 计算日期范围
   const getDateRange = useCallback(() => {
     const now = dayjs();
     let startDate: dayjs.Dayjs;
@@ -56,15 +54,13 @@ const DataStatistics: React.FC = () => {
 
     return {
       start_date: startDate.format('YYYY-MM-DD'),
-      end_date: endDate.format('YYYY-MM-DD')
+      end_date: endDate.format('YYYY-MM-DD'),
     };
   }, [timeRange, dateRange]);
 
-  // 安全的API调用函数
   const safeApiCall = async (apiCall: () => Promise<any>, errorMessage: string) => {
     try {
-      const result = await apiCall();
-      return result;
+      return await apiCall();
     } catch (error: any) {
       console.error(`DataStatistics: ${errorMessage} failed:`, error);
       setApiError(`${errorMessage}: ${error.message || '网络错误'}`);
@@ -72,18 +68,14 @@ const DataStatistics: React.FC = () => {
     }
   };
 
-  // 加载数据
   const loadData = useCallback(async () => {
     setLoading(true);
     setApiError(null);
 
     const dateParams = getDateRange();
-
-    // 并行调用API
-    const [userData, subscriptionData, systemData] = await Promise.allSettled([
+    const [userData, subscriptionData] = await Promise.allSettled([
       safeApiCall(() => apiService.getUserStatistics(dateParams), '获取用户统计'),
       safeApiCall(() => apiService.getSubscriptionStatistics(dateParams), '获取订阅统计'),
-      safeApiCall(() => apiService.getSystemStatus(), '获取系统状态')
     ]);
 
     if (userData.status === 'fulfilled' && userData.value) {
@@ -92,98 +84,77 @@ const DataStatistics: React.FC = () => {
     if (subscriptionData.status === 'fulfilled' && subscriptionData.value) {
       setSubscriptionStats(subscriptionData.value);
     }
-    if (systemData.status === 'fulfilled' && systemData.value) {
-      setSystemStatus(systemData.value);
-    }
 
     setLoading(false);
   }, [getDateRange]);
 
-  // 组件挂载时加载数据
   useEffect(() => {
-    loadData();
+    void loadData();
   }, [loadData]);
 
-  // 处理时间范围变化
-  useEffect(() => {
-    if (dateRange) {
-      setTimeRange('custom');
-    } else {
-      loadData();
-    }
-  }, [dateRange, loadData]);
-
-  // 基于真实数据的活跃度展示（简化版）
+  // 真实趋势：每日新增注册 + 当日登录活跃 + 累计用户
   const activityData = React.useMemo(() => {
-    if (!userStats) return [];
+    if (!userStats?.trend) return [];
 
-    // 使用API返回的趋势数据
-    const trendData = userStats.trend || [];
-
-    return trendData.slice(-7).map((item: any, index: number) => {
-      const total = item.count;
-      const active = Math.floor(total * (0.5 + Math.random() * 0.3)); // 模拟活跃用户
-      const activeRate = ((active / total) * 100).toFixed(1);
+    return userStats.trend.map((item: any, index: number) => {
+      const newUsers = item.new_users ?? item.count ?? 0;
+      const activeUsers = item.active_users ?? null;
+      const totalUsers = item.total_users ?? null;
+      const activeRate =
+        totalUsers && activeUsers != null
+          ? `${((activeUsers / totalUsers) * 100).toFixed(1)}%`
+          : '-';
 
       return {
         key: String(index + 1),
         date: item.date,
-        activeUsers: active,
-        totalUsers: total,
-        activeRate: `${activeRate}%`,
-        pageViews: Math.floor(active * (10 + Math.random() * 5)),
-        avgSessionTime: `${10 + Math.floor(Math.random() * 10)}分${Math.floor(Math.random() * 60)}秒`
+        newUsers,
+        activeUsers: activeUsers ?? '-',
+        totalUsers: totalUsers ?? '-',
+        activeRate,
       };
     });
   }, [userStats]);
 
   const activityColumns = [
+    { title: '日期', dataIndex: 'date', key: 'date' },
     {
-      title: '日期',
-      dataIndex: 'date',
-      key: 'date',
-    },
-    {
-      title: '活跃用户',
-      dataIndex: 'activeUsers',
-      key: 'activeUsers',
+      title: '新增注册',
+      dataIndex: 'newUsers',
+      key: 'newUsers',
       render: (text: number) => (
-        <span style={{ color: '#1F5EFF', fontWeight: 500 }}>
-          {text.toLocaleString()}
-        </span>
+        <span style={{ color: '#1F5EFF', fontWeight: 500 }}>{Number(text).toLocaleString()}</span>
       ),
     },
     {
-      title: '总用户数',
+      title: '当日登录',
+      dataIndex: 'activeUsers',
+      key: 'activeUsers',
+    },
+    {
+      title: '累计用户',
       dataIndex: 'totalUsers',
       key: 'totalUsers',
     },
     {
-      title: '活跃率',
+      title: '当日活跃率',
       dataIndex: 'activeRate',
       key: 'activeRate',
-      render: (rate: string) => (
-        <span style={{ color: parseFloat(rate) > 60 ? '#52c41a' : '#faad14' }}>
-          {rate}
-        </span>
-      ),
-    },
-    {
-      title: '页面浏览量',
-      dataIndex: 'pageViews',
-      key: 'pageViews',
-    },
-    {
-      title: '平均会话时长',
-      dataIndex: 'avgSessionTime',
-      key: 'avgSessionTime',
+      render: (rate: string) => {
+        if (rate === '-') return rate;
+        return (
+          <span style={{ color: parseFloat(rate) > 10 ? '#52c41a' : '#8c8c8c' }}>{rate}</span>
+        );
+      },
     },
   ];
 
   const handleRefresh = () => {
-    loadData();
+    void loadData();
     message.success('数据已刷新');
   };
+
+  const periodRevenue = subscriptionStats?.revenue?.period ?? subscriptionStats?.revenue?.monthly ?? 0;
 
   return (
     <div>
@@ -191,17 +162,19 @@ const DataStatistics: React.FC = () => {
         <h1 className="page-title">数据统计</h1>
         <Space>
           <Select
-            value={timeRange}
+            value={dateRange ? 'custom' : timeRange}
             onChange={(value) => {
+              if (value === 'custom') return;
               setTimeRange(value);
               setDateRange(null);
             }}
             style={{ width: 120 }}
           >
-            <Option value="week">本周</Option>
-            <Option value="month">本月</Option>
-            <Option value="quarter">本季度</Option>
-            <Option value="year">本年</Option>
+            <Option value="week">近 7 天</Option>
+            <Option value="month">近 30 天</Option>
+            <Option value="quarter">近 90 天</Option>
+            <Option value="year">近 1 年</Option>
+            {dateRange && <Option value="custom">自定义</Option>}
           </Select>
           <RangePicker
             value={dateRange}
@@ -228,7 +201,10 @@ const DataStatistics: React.FC = () => {
         />
       )}
 
-      {/* 核心指标卡片 */}
+      <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>
+        区间：{getDateRange().start_date} ~ {getDateRange().end_date} · 活跃用户按近 30 天登录统计
+      </Text>
+
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={24} sm={12} md={6}>
           <Card>
@@ -239,35 +215,39 @@ const DataStatistics: React.FC = () => {
               valueStyle={{ color: '#1F5EFF' }}
             />
             <div style={{ marginTop: 8, fontSize: '12px', color: '#52c41a' }}>
-              <RiseOutlined /> 本期新增 {userStats?.new_users || 0} 人
+              <RiseOutlined /> 区间新增 {userStats?.new_users || 0} 人
             </div>
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="活跃用户"
+              title="活跃用户（30天）"
               value={userStats?.active_users || 0}
               prefix={<TeamOutlined />}
               valueStyle={{ color: '#52c41a' }}
             />
             <div style={{ marginTop: 8, fontSize: '12px', color: '#8c8c8c' }}>
-              活跃率 {userStats?.total_users ? ((userStats.active_users / userStats.total_users) * 100).toFixed(1) : 0}%
+              活跃率{' '}
+              {userStats?.total_users
+                ? ((userStats.active_users / userStats.total_users) * 100).toFixed(1)
+                : 0}
+              %
             </div>
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="月收入"
-              value={subscriptionStats?.revenue?.monthly || 0}
+              title="区间收入"
+              value={periodRevenue}
               prefix={<DollarOutlined />}
               suffix="元"
               valueStyle={{ color: '#faad14' }}
               precision={0}
             />
-            <div style={{ marginTop: 8, fontSize: '12px', color: '#52c41a' }}>
-              <RiseOutlined /> 增长率 {userStats?.growth_rate || 0}%
+            <div style={{ marginTop: 8, fontSize: '12px', color: '#8c8c8c' }}>
+              近 365 天实收 ¥{(subscriptionStats?.revenue?.annual || 0).toLocaleString()}
             </div>
           </Card>
         </Col>
@@ -293,13 +273,12 @@ const DataStatistics: React.FC = () => {
               valueStyle={{ color: '#1F5EFF' }}
             />
             <div style={{ marginTop: 8, fontSize: '12px', color: '#8c8c8c' }}>
-              企业员工继承
+              企业员工继承（不计入付费）
             </div>
           </Card>
         </Col>
       </Row>
 
-      {/* 详细统计指标 */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={24} lg={12}>
           <Card title="用户等级分布">
@@ -309,21 +288,33 @@ const DataStatistics: React.FC = () => {
                   <div key={tier} style={{ marginBottom: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                       <span>
-                        {tier === 'free' ? '免费用户' :
-                         tier === 'personal_advanced' ? '个人高级版' :
-                         tier === 'personal_flagship' ? '个人旗舰版' :
-                         tier === 'enterprise' ? '企业版' : tier}
+                        {tier === 'free' || tier === 'personal_free'
+                          ? '免费用户'
+                          : tier === 'personal_advanced'
+                            ? '个人高级版'
+                            : tier === 'personal_flagship'
+                              ? '个人旗舰版'
+                              : tier === 'personal_pro'
+                                ? '个人专业版'
+                                : tier === 'enterprise'
+                                  ? '企业版'
+                                  : tier}
                       </span>
                       <span style={{ fontWeight: 500 }}>{count} 人</span>
                     </div>
                     <Progress
-                      percent={userStats.total_users ? (count / userStats.total_users * 100) : 0}
+                      percent={userStats.total_users ? (count / userStats.total_users) * 100 : 0}
                       showInfo={false}
                       strokeColor={
-                        tier === 'free' ? '#d9d9d9' :
-                        tier === 'personal_advanced' ? '#1F5EFF' :
-                        tier === 'personal_flagship' ? '#1546c9' :
-                        tier === 'enterprise' ? '#52c41a' : '#faad14'
+                        tier === 'free' || tier === 'personal_free'
+                          ? '#d9d9d9'
+                          : tier === 'personal_advanced' || tier === 'personal_pro'
+                            ? '#1F5EFF'
+                            : tier === 'personal_flagship'
+                              ? '#1546c9'
+                              : tier?.startsWith('enterprise')
+                                ? '#52c41a'
+                                : '#faad14'
                       }
                     />
                   </div>
@@ -333,37 +324,58 @@ const DataStatistics: React.FC = () => {
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title="订阅类型分布">
-            {subscriptionStats?.by_type && (
+          <Card title="付费等级分布">
+            {subscriptionStats?.by_type && Object.keys(subscriptionStats.by_type).length > 0 ? (
               <div style={{ padding: '16px 0' }}>
-                {Object.entries(subscriptionStats.by_type as Record<string, number>).map(([type, count]) => (
-                  <div key={type} style={{ marginBottom: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span>
-                        {type === 'personal_advanced' ? '个人高级版' :
-                         type === 'personal_flagship' ? '个人旗舰版' :
-                         type === 'enterprise' ? '企业版' : type}
-                      </span>
-                      <span style={{ fontWeight: 500 }}>{count} 个</span>
+                {Object.entries(subscriptionStats.by_type as Record<string, number>).map(
+                  ([type, count]) => (
+                    <div key={type} style={{ marginBottom: 12 }}>
+                      <div
+                        style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}
+                      >
+                        <span>
+                          {type === 'personal_advanced'
+                            ? '个人高级版'
+                            : type === 'personal_flagship'
+                              ? '个人旗舰版'
+                              : type === 'personal_pro'
+                                ? '个人专业版'
+                                : type === 'enterprise'
+                                  ? '企业版'
+                                  : type}
+                        </span>
+                        <span style={{ fontWeight: 500 }}>{count} 个</span>
+                      </div>
+                      <Progress
+                        percent={
+                          subscriptionStats.total_subscriptions
+                            ? (count / subscriptionStats.total_subscriptions) * 100
+                            : subscriptionStats.active_subscriptions
+                              ? (count / subscriptionStats.active_subscriptions) * 100
+                              : 0
+                        }
+                        showInfo={false}
+                        strokeColor={
+                          type === 'personal_advanced' || type === 'personal_pro'
+                            ? '#1F5EFF'
+                            : type === 'personal_flagship'
+                              ? '#1546c9'
+                              : type?.startsWith('enterprise')
+                                ? '#52c41a'
+                                : '#faad14'
+                        }
+                      />
                     </div>
-                    <Progress
-                      percent={subscriptionStats.total_subscriptions ? (count / subscriptionStats.total_subscriptions * 100) : 0}
-                      showInfo={false}
-                      strokeColor={
-                        type === 'personal_advanced' ? '#1F5EFF' :
-                        type === 'personal_flagship' ? '#1546c9' :
-                        type === 'enterprise' ? '#52c41a' : '#faad14'
-                      }
-                    />
-                  </div>
-                ))}
+                  )
+                )}
               </div>
+            ) : (
+              <Text type="secondary">暂无付费等级数据</Text>
             )}
           </Card>
         </Col>
       </Row>
 
-      {/* 增长指标 */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={24} sm={12} md={6}>
           <Card>
@@ -372,12 +384,19 @@ const DataStatistics: React.FC = () => {
               value={userStats?.growth_rate || 0}
               precision={1}
               suffix="%"
-              prefix={userStats?.growth_rate > 0 ? <RiseOutlined /> : <FallOutlined />}
+              prefix={(userStats?.growth_rate || 0) >= 0 ? <RiseOutlined /> : <FallOutlined />}
               valueStyle={{
-                color: (userStats?.growth_rate || 0) > 20 ? '#52c41a' :
-                        (userStats?.growth_rate || 0) > 0 ? '#faad14' : '#ff4d4f'
+                color:
+                  (userStats?.growth_rate || 0) > 20
+                    ? '#52c41a'
+                    : (userStats?.growth_rate || 0) > 0
+                      ? '#faad14'
+                      : '#ff4d4f',
               }}
             />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              相对区间起点存量
+            </Text>
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
@@ -389,10 +408,17 @@ const DataStatistics: React.FC = () => {
               suffix="%"
               prefix={<FallOutlined />}
               valueStyle={{
-                color: (subscriptionStats?.churn_rate || 0) < 5 ? '#52c41a' :
-                        (subscriptionStats?.churn_rate || 0) < 10 ? '#faad14' : '#ff4d4f'
+                color:
+                  (subscriptionStats?.churn_rate || 0) < 5
+                    ? '#52c41a'
+                    : (subscriptionStats?.churn_rate || 0) < 10
+                      ? '#faad14'
+                      : '#ff4d4f',
               }}
             />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              区间取消 / 近似期初活跃
+            </Text>
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
@@ -408,21 +434,23 @@ const DataStatistics: React.FC = () => {
         <Col xs={24} sm={12} md={6}>
           <Card>
             <Statistic
-              title="取消订阅"
+              title="取消/过期"
               value={subscriptionStats?.cancelled_subscriptions || 0}
               prefix={<FallOutlined />}
-              valueStyle={{ color: (subscriptionStats?.cancelled_subscriptions || 0) > 0 ? '#ff4d4f' : '#52c41a' }}
+              valueStyle={{
+                color:
+                  (subscriptionStats?.cancelled_subscriptions || 0) > 0 ? '#ff4d4f' : '#52c41a',
+              }}
             />
           </Card>
         </Col>
       </Row>
 
-      {/* 收入详情 */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={24} lg={8}>
           <Card>
             <Statistic
-              title="年收入"
+              title="近 365 天收入"
               value={subscriptionStats?.revenue?.annual || 0}
               prefix="¥"
               valueStyle={{ color: '#1F5EFF' }}
@@ -433,7 +461,7 @@ const DataStatistics: React.FC = () => {
         <Col xs={24} lg={8}>
           <Card>
             <Statistic
-              title="用户平均收入"
+              title="用户平均收入（区间）"
               value={subscriptionStats?.average_revenue_per_user || 0}
               prefix="¥"
               valueStyle={{ color: '#1546c9' }}
@@ -444,26 +472,31 @@ const DataStatistics: React.FC = () => {
         <Col xs={24} lg={8}>
           <Card>
             <Statistic
-              title="非活跃用户"
+              title="久未登录用户"
               value={userStats?.inactive_users || 0}
               prefix={<EyeOutlined />}
               valueStyle={{ color: '#8c8c8c' }}
             />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              启用账号且近 30 天未登录
+              {userStats?.disabled_users != null ? ` · 已禁用 ${userStats.disabled_users}` : ''}
+            </Text>
           </Card>
         </Col>
       </Row>
 
-      {/* 用户活跃度表格 */}
-      <Card title="用户活跃度详情">
+      <Card title="用户增长与活跃（按日）" extra={<Text type="secondary">基于注册与登录时间，非页面浏览</Text>}>
         <Table
           columns={activityColumns}
           dataSource={activityData}
+          loading={loading}
           pagination={{
             pageSize: 10,
             showSizeChanger: true,
             showQuickJumper: true,
             showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
           }}
+          locale={{ emptyText: '暂无趋势数据' }}
         />
       </Card>
     </div>

@@ -100,6 +100,9 @@ class ApiService {
                 message.error('权限不足')
               }
               break
+            case 503:
+              message.error(response.data?.detail || '系统维护中，请稍后再试')
+              break
             case 404:
               // 不显示404错误消息,让组件自己处理
               console.error('请求的资源不存在:', error.config?.url)

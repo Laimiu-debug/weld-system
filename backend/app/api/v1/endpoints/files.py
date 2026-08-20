@@ -13,10 +13,9 @@ from fastapi.responses import FileResponse
 from app.api import deps
 from app.core.config import settings
 from app.core.rate_limit import enforce_rate_limit
+from app.services.system_config_service import get_max_upload_bytes
 
 router = APIRouter()
-
-_MAX_BYTES = getattr(settings, "MAX_FILE_SIZE", 10 * 1024 * 1024)
 
 
 def _allowed_suffix(filename: str) -> str:
@@ -48,8 +47,12 @@ def upload_file(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="没有选择文件")
     suffix = _allowed_suffix(file.filename)
     content = file.file.read()
-    if len(content) > _MAX_BYTES:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件过大")
+    max_bytes = get_max_upload_bytes()
+    if len(content) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"文件过大，最大允许 {max(1, max_bytes // (1024 * 1024))}MB",
+        )
     stored_name = f"{uuid.uuid4().hex}_{int(datetime.utcnow().timestamp())}{suffix}"
     dest = _storage_dir() / stored_name
     dest.write_bytes(content)

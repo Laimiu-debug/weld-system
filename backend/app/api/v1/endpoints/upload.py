@@ -14,12 +14,13 @@ from werkzeug.utils import secure_filename
 from app.api import deps
 from app.models.user import User
 from app.core.config import settings
+from app.services.system_config_service import get_max_upload_bytes
 
 router = APIRouter()
 
 # 允许的文件扩展名
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 兜底；实际以系统配置为准
 
 def allowed_file(filename: str) -> bool:
     """检查文件扩展名是否允许"""
@@ -62,12 +63,13 @@ async def upload_avatar(
             detail=f"不支持的文件格式，只支持: {', '.join(ALLOWED_EXTENSIONS)}"
         )
 
-    # 检查文件大小
+    # 检查文件大小（头像上限取系统配置与 5MB 较小值）
     file_content = await file.read()
-    if len(file_content) > MAX_FILE_SIZE:
+    avatar_limit = min(get_max_upload_bytes(), MAX_FILE_SIZE)
+    if len(file_content) > avatar_limit:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="文件大小不能超过5MB"
+            detail=f"文件大小不能超过{max(1, avatar_limit // (1024 * 1024))}MB"
         )
 
     # 创建上传目录

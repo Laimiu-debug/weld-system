@@ -57,6 +57,11 @@ class RegisterResponse(BaseModel):
 router = APIRouter()
 
 
+def _access_token_ttl_minutes() -> int:
+    from app.services.system_config_service import get_access_token_expire_minutes
+    return get_access_token_expire_minutes()
+
+
 def _record_security_event(
     db: Session,
     *,
@@ -147,7 +152,7 @@ def login_for_access_token(
     db.commit()
 
     # 创建访问令牌和刷新令牌
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = timedelta(minutes=_access_token_ttl_minutes())
     access_token = create_access_token(
         subject=user.id,
         expires_delta=access_token_expires
@@ -163,7 +168,7 @@ def login_for_access_token(
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
-        "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        "expires_in": _access_token_ttl_minutes() * 60,
     }
 
 
@@ -253,7 +258,7 @@ def login_with_json(  # Updated to support phone/email login
     )
 
     # 创建访问令牌和刷新令牌
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = timedelta(minutes=_access_token_ttl_minutes())
     access_token = create_access_token(
         subject=user.id,
         expires_delta=access_token_expires
@@ -269,7 +274,7 @@ def login_with_json(  # Updated to support phone/email login
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
-        "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        "expires_in": _access_token_ttl_minutes() * 60,
         "user": UserResponse.model_validate(user)
     }
 
@@ -309,7 +314,7 @@ def refresh_access_token(
         )
 
     # 创建新的访问令牌
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = timedelta(minutes=_access_token_ttl_minutes())
     access_token = create_access_token(
         subject=user.id,
         expires_delta=access_token_expires
@@ -319,7 +324,7 @@ def refresh_access_token(
         "access_token": access_token,
         "refresh_token": token_refresh.refresh_token,
         "token_type": "bearer",
-        "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        "expires_in": _access_token_ttl_minutes() * 60,
     }
 
 
@@ -338,6 +343,14 @@ def register_user(
     Returns:
         注册成功消息
     """
+    from app.services.system_config_service import is_registration_enabled
+
+    if not is_registration_enabled() and not user_in.invite_token:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="系统已关闭新用户注册",
+        )
+
     user = user_service.get_by_email(db, email=user_in.email)
     if user:
         raise HTTPException(
@@ -713,7 +726,7 @@ def login_with_verification_code(
     db.commit()
 
     # 创建访问令牌和刷新令牌
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = timedelta(minutes=_access_token_ttl_minutes())
     access_token = create_access_token(
         subject=user.id,
         expires_delta=access_token_expires
@@ -729,5 +742,5 @@ def login_with_verification_code(
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
-        "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        "expires_in": _access_token_ttl_minutes() * 60,
     }

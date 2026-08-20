@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Layout as AntLayout, Menu, Avatar, Dropdown, Badge, Button, Space } from 'antd';
+import { Layout as AntLayout, Menu, Avatar, Dropdown, Button, Space } from 'antd';
 import {
   DashboardOutlined,
   UserOutlined,
@@ -12,7 +12,6 @@ import {
   SettingOutlined,
   SafetyOutlined,
   LogoutOutlined,
-  BellOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   ShareAltOutlined,
@@ -20,6 +19,7 @@ import {
 } from '@ant-design/icons';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuthContext } from '@/contexts/AuthContext';
+import AdminNotificationCenter from '@/components/AdminNotificationCenter';
 
 const { Header, Sider, Content } = AntLayout;
 
@@ -192,14 +192,7 @@ const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
           />
 
           <Space size="middle">
-            <Badge count={5} size="small">
-              <Button
-                type="text"
-                icon={<BellOutlined />}
-                style={{ fontSize: '16px' }}
-                onClick={() => navigate('/notifications')}
-              />
-            </Badge>
+            <AdminNotificationCenter />
 
             <Dropdown
               menu={{ items: userMenuItems }}
