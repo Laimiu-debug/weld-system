@@ -20,6 +20,10 @@ export interface UserSystemPreferences {
   decimalPlaces: number
   currency: string
   measurementUnit: string
+  loginNotifications: boolean
+  sessionTimeout: boolean
+  autoLogout: boolean
+  autoLogoutMinutes: number
 }
 
 export const DEFAULT_SYSTEM_PREFERENCES: UserSystemPreferences = {
@@ -42,4 +46,8 @@ export const DEFAULT_SYSTEM_PREFERENCES: UserSystemPreferences = {
   decimalPlaces: 2,
   currency: 'CNY',
   measurementUnit: 'metric',
+  loginNotifications: true,
+  sessionTimeout: true,
+  autoLogout: false,
+  autoLogoutMinutes: 30,
 }

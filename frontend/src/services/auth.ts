@@ -262,10 +262,17 @@ class AuthService {
   async changePassword(data: ChangePasswordData): Promise<boolean> {
     try {
       const response = await apiService.post('/auth/change-password', data)
-      return response.success
-    } catch (error) {
+      return !!response.success
+    } catch (error: any) {
       console.error('Change password error:', error)
-      return false
+      const detail = error?.response?.data?.detail
+      if (detail && typeof detail === 'object' && detail.message) {
+        throw new Error(detail.message)
+      }
+      if (typeof detail === 'string') {
+        throw new Error(detail)
+      }
+      throw error
     }
   }
 

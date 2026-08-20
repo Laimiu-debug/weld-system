@@ -1,11 +1,10 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   Card,
   Typography,
   Form,
   Input,
   Button,
-  Divider,
   message,
   Row,
   Col,
@@ -13,147 +12,74 @@ import {
   Switch,
   Alert,
   List,
-  Modal,
-  QRCode,
   Tag,
   Statistic,
+  InputNumber,
+  Spin,
+  Divider,
+  Modal,
 } from 'antd'
 import {
   SafetyOutlined,
   LockOutlined,
-  KeyOutlined,
-  MobileOutlined,
   MailOutlined,
-  ExclamationCircleOutlined,
+  MobileOutlined,
   CheckCircleOutlined,
   WarningOutlined,
-  EyeInvisibleOutlined,
-  EyeOutlined,
-  QrcodeOutlined,
-  CopyOutlined,
 } from '@ant-design/icons'
+import dayjs from 'dayjs'
+import { authService } from '@/services/auth'
+import { securityService, SecurityOverview } from '@/services/security'
+import { usePreferencesStore } from '@/store/preferencesStore'
 import { useAuthStore } from '@/store/authStore'
 
-const { Title, Text, Paragraph } = Typography
+const { Title, Text } = Typography
 const { Password } = Input
 
-interface SecuritySettings {
-  // 密码设置
-  currentPassword: string
-  newPassword: string
-  confirmPassword: string
-
-  // 两步验证设置
-  twoFactorEnabled: boolean
-  twoFactorSecret: string
-  backupCodes: string[]
-
-  // 登录安全
-  loginNotifications: boolean
-  sessionTimeout: boolean
-  autoLogout: boolean
-  autoLogoutMinutes: number
-
-  // 应用安全
-  apiAccessEnabled: boolean
-  apiAccessToken: string
-  trustedDevices: Device[]
-}
-
-interface Device {
-  id: string
-  name: string
-  type: string
-  lastUsed: string
-  isCurrent: boolean
-}
-
-interface LoginLog {
-  id: string
-  time: string
-  ip: string
-  location: string
-  device: string
-  status: 'success' | 'failed'
-}
-
 const SecuritySettingsPage: React.FC = () => {
-  const { user } = useAuthStore()
   const [passwordForm] = Form.useForm()
-  const [twoFactorForm] = Form.useForm()
+  const [phoneForm] = Form.useForm()
   const [loading, setLoading] = useState(false)
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false)
-  const [showNewPassword, setShowNewPassword] = useState(false)
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [showQRCodeModal, setShowQRCodeModal] = useState(false)
-  const [showBackupCodesModal, setShowBackupCodesModal] = useState(false)
+  const [savingPrefs, setSavingPrefs] = useState(false)
+  const [loadingOverview, setLoadingOverview] = useState(true)
   const [passwordStrength, setPasswordStrength] = useState(0)
+  const [overview, setOverview] = useState<SecurityOverview | null>(null)
+  const [phoneModalOpen, setPhoneModalOpen] = useState(false)
+  const [sendingCode, setSendingCode] = useState(false)
+  const [bindingPhone, setBindingPhone] = useState(false)
+  const [countdown, setCountdown] = useState(0)
+  const setPreferences = usePreferencesStore((s) => s.setPreferences)
+  const refreshUserInfo = useAuthStore((s) => s.refreshUserInfo)
 
-  // 模拟数据
-  const [settings, setSettings] = useState<SecuritySettings>({
-    currentPassword: '',
-    newPassword: '',
-    confirmPassword: '',
-    twoFactorEnabled: false,
-    twoFactorSecret: 'JBSWY3DPEHPK3PXP',
-    backupCodes: [
-      '12345678', '87654321', '11223344', '44332211',
-      '55667788', '88776655', '99887766', '66778899',
-      '12121212', '34343434', '56565656', '78787878'
-    ],
-    loginNotifications: true,
-    sessionTimeout: true,
-    autoLogout: false,
-    autoLogoutMinutes: 30,
-    apiAccessEnabled: false,
-    apiAccessToken: '',
-    trustedDevices: [
-      {
-        id: '1',
-        name: 'Chrome - Windows',
-        type: 'desktop',
-        lastUsed: '2024-01-20 14:30:00',
-        isCurrent: true,
-      },
-      {
-        id: '2',
-        name: 'Safari - iPhone',
-        type: 'mobile',
-        lastUsed: '2024-01-19 09:15:00',
-        isCurrent: false,
-      },
-    ],
-  })
+  const loadOverview = async () => {
+    setLoadingOverview(true)
+    try {
+      const data = await securityService.getOverview()
+      setOverview(data)
+      setPreferences({
+        loginNotifications: data.loginNotifications,
+        sessionTimeout: data.sessionTimeout,
+        autoLogout: data.autoLogout,
+        autoLogoutMinutes: data.autoLogoutMinutes,
+      })
+    } catch (error) {
+      console.error(error)
+      message.error('加载安全设置失败')
+    } finally {
+      setLoadingOverview(false)
+    }
+  }
 
-  // 模拟登录日志
-  const [loginLogs] = useState<LoginLog[]>([
-    {
-      id: '1',
-      time: '2024-01-20 14:30:00',
-      ip: '192.168.1.100',
-      location: '北京市朝阳区',
-      device: 'Chrome - Windows',
-      status: 'success',
-    },
-    {
-      id: '2',
-      time: '2024-01-20 09:15:00',
-      ip: '192.168.1.100',
-      location: '北京市朝阳区',
-      device: 'Safari - iPhone',
-      status: 'success',
-    },
-    {
-      id: '3',
-      time: '2024-01-19 23:45:00',
-      ip: '10.0.0.1',
-      location: '上海市浦东新区',
-      device: 'Firefox - Windows',
-      status: 'failed',
-    },
-  ])
+  useEffect(() => {
+    void loadOverview()
+  }, [])
 
-  // 计算密码强度
+  useEffect(() => {
+    if (countdown <= 0) return
+    const timer = window.setTimeout(() => setCountdown((c) => c - 1), 1000)
+    return () => window.clearTimeout(timer)
+  }, [countdown])
+
   const calculatePasswordStrength = (password: string) => {
     let strength = 0
     if (password.length >= 8) strength += 25
@@ -164,517 +90,496 @@ const SecuritySettingsPage: React.FC = () => {
     return strength
   }
 
-  // 处理密码更改
-  const handlePasswordChange = async (values: any) => {
+  const handlePasswordChange = async (values: {
+    currentPassword: string
+    newPassword: string
+    confirmPassword: string
+  }) => {
     setLoading(true)
     try {
-      // 这里应该调用API更改密码
-      // const success = await authService.changePassword(values)
-
+      const success = await authService.changePassword({
+        current_password: values.currentPassword,
+        new_password: values.newPassword,
+        confirm_password: values.confirmPassword,
+      })
+      if (!success) {
+        message.error('密码修改失败，请确认当前密码是否正确')
+        return
+      }
       message.success('密码修改成功')
       passwordForm.resetFields()
       setPasswordStrength(0)
-    } catch (error) {
-      message.error('密码修改失败，请稍后重试')
+      await loadOverview()
+    } catch (error: any) {
+      message.error(error?.message || '密码修改失败，请稍后重试')
     } finally {
       setLoading(false)
     }
   }
 
-  // 处理两步验证切换
-  const handleTwoFactorToggle = async (enabled: boolean) => {
+  const updateSecurityPref = async (
+    patch: Partial<
+      Pick<
+        SecurityOverview,
+        'loginNotifications' | 'sessionTimeout' | 'autoLogout' | 'autoLogoutMinutes'
+      >
+    >
+  ) => {
+    if (!overview) return
+    const next = { ...overview, ...patch }
+    setOverview(next)
+    setPreferences(patch)
+    setSavingPrefs(true)
     try {
-      if (enabled) {
-        setShowQRCodeModal(true)
-      } else {
-        // 禁用两步验证需要验证当前密码
-        Modal.confirm({
-          title: '确认禁用两步验证',
-          content: '禁用两步验证会降低账户安全性，确定要继续吗？',
-          okText: '确定',
-          cancelText: '取消',
-          onOk: async () => {
-            // 调用API禁用两步验证
-            setSettings(prev => ({ ...prev, twoFactorEnabled: false }))
-            message.success('两步验证已禁用')
-          },
-        })
-      }
+      const saved = await securityService.updateSettings(patch)
+      setOverview(saved)
+      setPreferences({
+        loginNotifications: saved.loginNotifications,
+        sessionTimeout: saved.sessionTimeout,
+        autoLogout: saved.autoLogout,
+        autoLogoutMinutes: saved.autoLogoutMinutes,
+      })
+      message.success('安全偏好已保存')
     } catch (error) {
-      message.error('操作失败，请稍后重试')
+      message.error('保存失败，请稍后重试')
+      await loadOverview()
+    } finally {
+      setSavingPrefs(false)
     }
   }
 
-  // 启用两步验证
-  const handleEnableTwoFactor = async (values: any) => {
+  const handleResendVerification = async () => {
+    if (!overview?.email) return
     setLoading(true)
     try {
-      // 这里应该调用API验证两步验证码并启用
-      setSettings(prev => ({ ...prev, twoFactorEnabled: true }))
-      setShowQRCodeModal(false)
-      message.success('两步验证已启用')
-      twoFactorForm.resetFields()
-    } catch (error) {
-      message.error('验证码错误，请重试')
+      const ok = await authService.resendVerificationEmail(overview.email)
+      if (ok) {
+        message.success('验证邮件已发送，请查收邮箱')
+        await refreshUserInfo()
+      } else {
+        message.error('发送失败，请稍后重试')
+      }
     } finally {
       setLoading(false)
     }
   }
 
-  // 移除信任设备
-  const handleRemoveDevice = async (deviceId: string) => {
+  const openPhoneModal = () => {
+    phoneForm.resetFields()
+    setCountdown(0)
+    setPhoneModalOpen(true)
+  }
+
+  const handleSendPhoneCode = async () => {
     try {
-      // 调用API移除设备
-      setSettings(prev => ({
-        ...prev,
-        trustedDevices: prev.trustedDevices.filter(d => d.id !== deviceId)
-      }))
-      message.success('设备已移除')
-    } catch (error) {
-      message.error('移除失败，请稍后重试')
+      const phone = await phoneForm.validateFields(['phone']).then((v) => v.phone as string)
+      setSendingCode(true)
+      await securityService.sendPhoneBindCode({ phone })
+      message.success('验证码已发送')
+      setCountdown(60)
+    } catch (error: any) {
+      if (error?.errorFields) return
+      // 接口错误已由 api 拦截器提示
+    } finally {
+      setSendingCode(false)
     }
   }
 
-  // 生成新的API令牌
-  const handleGenerateApiToken = async () => {
+  const handleBindPhone = async () => {
     try {
-      // 调用API生成新令牌
-      const newToken = 'sk_' + Math.random().toString(36).substring(2, 15)
-      setSettings(prev => ({ ...prev, apiAccessToken: newToken }))
-      message.success('API令牌已生成')
-    } catch (error) {
-      message.error('生成失败，请稍后重试')
+      const values = await phoneForm.validateFields()
+      setBindingPhone(true)
+      await securityService.bindPhone({
+        phone: values.phone,
+        verification_code: values.verification_code,
+        current_password: values.current_password,
+      })
+      message.success(overview?.phone ? '手机号换绑成功' : '手机号绑定成功')
+      setPhoneModalOpen(false)
+      phoneForm.resetFields()
+      await Promise.all([loadOverview(), refreshUserInfo()])
+    } catch (error: any) {
+      if (error?.errorFields) return
+      // 接口错误已由 api 拦截器提示
+    } finally {
+      setBindingPhone(false)
     }
   }
 
-  // 复制到剪贴板
-  const handleCopyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
-    message.success('已复制到剪贴板')
-  }
-
-  const getSecurityScore = () => {
-    let score = 0
-    if (settings.twoFactorEnabled) score += 30
-    if (settings.loginNotifications) score += 20
-    if (settings.sessionTimeout) score += 20
-    if (settings.autoLogout) score += 15
-    if (settings.trustedDevices.length <= 2) score += 15
-    return score
-  }
+  const score = overview?.security_score ?? 0
+  const hasPhone = Boolean(overview?.phone)
 
   return (
     <div className="page-container">
       <div className="page-header">
         <Title level={2}>安全设置</Title>
-        <Text type="secondary">管理您的账户安全和隐私设置</Text>
+        <Text type="secondary">管理密码、登录安全与近期登录活动</Text>
       </div>
 
-      {/* 安全评分 */}
-      <Card className="mb-6">
-        <Row gutter={[24, 16]} align="middle">
-          <Col xs={24} md={8}>
-            <Statistic
-              title="安全评分"
-              value={getSecurityScore()}
-              suffix="/ 100"
-              valueStyle={{
-                color: getSecurityScore() >= 80 ? '#52c41a' :
-                       getSecurityScore() >= 60 ? '#fa8c16' : '#f5222d'
-              }}
-              prefix={<SafetyOutlined />}
-            />
-          </Col>
-          <Col xs={24} md={16}>
-            <Alert
-              message={getSecurityScore() >= 80 ? '账户安全状况良好' :
-                      getSecurityScore() >= 60 ? '账户安全性中等，建议加强' :
-                      '账户安全性较低，请立即加强安全设置'}
-              type={getSecurityScore() >= 80 ? 'success' :
-                    getSecurityScore() >= 60 ? 'warning' : 'error'}
-              showIcon
-            />
-          </Col>
-        </Row>
-      </Card>
-
-      <Row gutter={[24, 24]}>
-        {/* 密码设置 */}
-        <Col xs={24} lg={12}>
-          <Card
-            title={
-              <Space>
-                <LockOutlined />
-                <span>密码设置</span>
-              </Space>
-            }
-          >
-            <Form
-              form={passwordForm}
-              layout="vertical"
-              onFinish={handlePasswordChange}
-            >
-              <Form.Item
-                name="currentPassword"
-                label="当前密码"
-                rules={[{ required: true, message: '请输入当前密码' }]}
-              >
-                <Password
-                  placeholder="请输入当前密码"
-                  visibilityToggle={{
-                    visible: showCurrentPassword,
-                    onVisibleChange: setShowCurrentPassword,
-                  }}
-                  prefix={<LockOutlined />}
-                />
-              </Form.Item>
-
-              <Form.Item
-                name="newPassword"
-                label="新密码"
-                rules={[
-                  { required: true, message: '请输入新密码' },
-                  { min: 8, message: '密码至少8个字符' },
-                ]}
-              >
-                <Password
-                  placeholder="请输入新密码"
-                  visibilityToggle={{
-                    visible: showNewPassword,
-                    onVisibleChange: setShowNewPassword,
-                  }}
-                  prefix={<LockOutlined />}
-                  onChange={(e) => setPasswordStrength(calculatePasswordStrength(e.target.value))}
-                />
-              </Form.Item>
-
-              {passwordStrength > 0 && (
-                <div className="mb-4">
-                  <Text type="secondary">密码强度：</Text>
-                  <div
-                    className="mt-1"
-                    style={{
-                      width: '100%',
-                      height: '4px',
-                      backgroundColor: '#f0f0f0',
-                      borderRadius: '2px',
-                      overflow: 'hidden'
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: `${passwordStrength}%`,
-                        height: '100%',
-                        backgroundColor: passwordStrength >= 75 ? '#52c41a' :
-                                        passwordStrength >= 50 ? '#fa8c16' : '#f5222d',
-                        transition: 'width 0.3s ease'
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              <Form.Item
-                name="confirmPassword"
-                label="确认新密码"
-                dependencies={['newPassword']}
-                rules={[
-                  { required: true, message: '请确认新密码' },
-                  ({ getFieldValue }) => ({
-                    validator(_, value) {
-                      if (!value || getFieldValue('newPassword') === value) {
-                        return Promise.resolve()
-                      }
-                      return Promise.reject(new Error('两次输入的密码不一致'))
-                    },
-                  }),
-                ]}
-              >
-                <Password
-                  placeholder="请再次输入新密码"
-                  visibilityToggle={{
-                    visible: showConfirmPassword,
-                    onVisibleChange: setShowConfirmPassword,
-                  }}
-                  prefix={<LockOutlined />}
-                />
-              </Form.Item>
-
-              <Form.Item>
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  icon={<LockOutlined />}
-                  loading={loading}
-                  block
-                >
-                  修改密码
-                </Button>
-              </Form.Item>
-            </Form>
-          </Card>
-        </Col>
-
-        {/* 两步验证 */}
-        <Col xs={24} lg={12}>
-          <Card
-            title={
-              <Space>
-                <MobileOutlined />
-                <span>两步验证</span>
-              </Space>
-            }
-          >
-            <div className="mb-4">
-              <Row justify="space-between" align="middle">
-                <Col>
-                  <Text>启用两步验证可以为您的账户提供额外的安全保护。</Text>
-                </Col>
-                <Col>
-                  <Switch
-                    checked={settings.twoFactorEnabled}
-                    onChange={handleTwoFactorToggle}
-                  />
-                </Col>
-              </Row>
-            </div>
-
-            {settings.twoFactorEnabled && (
-              <Alert
-                message="两步验证已启用"
-                description="您的账户已启用两步验证保护"
-                type="success"
-                showIcon
-                icon={<CheckCircleOutlined />}
-                className="mb-4"
+      <Spin spinning={loadingOverview}>
+        <Card style={{ marginBottom: 24 }}>
+          <Row gutter={[24, 16]} align="middle">
+            <Col xs={24} md={8}>
+              <Statistic
+                title="安全评分"
+                value={score}
+                suffix="/ 100"
+                valueStyle={{
+                  color: score >= 80 ? '#52c41a' : score >= 60 ? '#fa8c16' : '#f5222d',
+                }}
+                prefix={<SafetyOutlined />}
               />
-            )}
+            </Col>
+            <Col xs={24} md={16}>
+              <Alert
+                message={
+                  score >= 80
+                    ? '账户安全状况良好'
+                    : score >= 60
+                      ? '账户安全性中等，建议开启更多保护'
+                      : '账户安全性较低，请尽快完善安全设置'
+                }
+                type={score >= 80 ? 'success' : score >= 60 ? 'warning' : 'error'}
+                showIcon
+              />
+            </Col>
+          </Row>
+        </Card>
 
-            {settings.twoFactorEnabled && (
-              <div className="text-center">
-                <Button
-                  icon={<QrcodeOutlined />}
-                  onClick={() => setShowBackupCodesModal(true)}
+        <Row gutter={[24, 24]}>
+          <Col xs={24} lg={12}>
+            <Card
+              title={
+                <Space>
+                  <LockOutlined />
+                  <span>修改密码</span>
+                </Space>
+              }
+            >
+              <Form form={passwordForm} layout="vertical" onFinish={handlePasswordChange}>
+                <Form.Item
+                  name="currentPassword"
+                  label="当前密码"
+                  rules={[{ required: true, message: '请输入当前密码' }]}
                 >
-                  查看备用恢复码
-                </Button>
-              </div>
-            )}
-          </Card>
-        </Col>
+                  <Password placeholder="请输入当前密码" prefix={<LockOutlined />} />
+                </Form.Item>
 
-        {/* 登录安全 */}
-        <Col xs={24} lg={12}>
-          <Card
-            title={
-              <Space>
-                <SafetyOutlined />
-                <span>登录安全</span>
-              </Space>
-            }
-          >
-            <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-              <Row justify="space-between" align="middle">
-                <Col>
-                  <div>
-                    <Text strong>登录通知</Text>
-                    <br />
-                    <Text type="secondary" style={{ fontSize: '12px' }}>
-                      当账户在新设备登录时发送邮件通知
-                    </Text>
-                  </div>
-                </Col>
-                <Col>
-                  <Switch
-                    checked={settings.loginNotifications}
-                    onChange={(checked) => setSettings(prev => ({ ...prev, loginNotifications: checked }))}
-                  />
-                </Col>
-              </Row>
-
-              <Row justify="space-between" align="middle">
-                <Col>
-                  <div>
-                    <Text strong>会话超时</Text>
-                    <br />
-                    <Text type="secondary" style={{ fontSize: '12px' }}>
-                      长时间不活动时自动登出
-                    </Text>
-                  </div>
-                </Col>
-                <Col>
-                  <Switch
-                    checked={settings.sessionTimeout}
-                    onChange={(checked) => setSettings(prev => ({ ...prev, sessionTimeout: checked }))}
-                  />
-                </Col>
-              </Row>
-
-              <Row justify="space-between" align="middle">
-                <Col>
-                  <div>
-                    <Text strong>自动登出</Text>
-                    <br />
-                    <Text type="secondary" style={{ fontSize: '12px' }}>
-                      设定自动登出时间（分钟）
-                    </Text>
-                  </div>
-                </Col>
-                <Col>
-                  <Switch
-                    checked={settings.autoLogout}
-                    onChange={(checked) => setSettings(prev => ({ ...prev, autoLogout: checked }))}
-                  />
-                </Col>
-              </Row>
-            </Space>
-          </Card>
-        </Col>
-
-        {/* 信任设备 */}
-        <Col xs={24} lg={12}>
-          <Card
-            title={
-              <Space>
-                <MobileOutlined />
-                <span>信任设备</span>
-              </Space>
-            }
-          >
-            <List
-              dataSource={settings.trustedDevices}
-              renderItem={(device) => (
-                <List.Item
-                  actions={[
-                    device.isCurrent && <Tag color="green">当前设备</Tag>,
-                    !device.isCurrent && (
-                      <Button
-                        size="small"
-                        danger
-                        onClick={() => handleRemoveDevice(device.id)}
-                      >
-                        移除
-                      </Button>
-                    ),
-                  ].filter(Boolean)}
+                <Form.Item
+                  name="newPassword"
+                  label="新密码"
+                  rules={[
+                    { required: true, message: '请输入新密码' },
+                    { min: 8, message: '密码至少8个字符' },
+                  ]}
                 >
-                  <List.Item.Meta
-                    title={device.name}
-                    description={
-                      <Space direction="vertical" size="small">
-                        <Text type="secondary" style={{ fontSize: '12px' }}>
-                          最后使用：{device.lastUsed}
-                        </Text>
-                        <Text type="secondary" style={{ fontSize: '12px' }}>
-                          类型：{device.type === 'desktop' ? '桌面设备' : '移动设备'}
-                        </Text>
-                      </Space>
+                  <Password
+                    placeholder="请输入新密码"
+                    prefix={<LockOutlined />}
+                    onChange={(e) =>
+                      setPasswordStrength(calculatePasswordStrength(e.target.value))
                     }
                   />
-                </List.Item>
-              )}
-            />
-          </Card>
-        </Col>
-      </Row>
+                </Form.Item>
 
-      {/* 两步验证二维码模态框 */}
-      <Modal
-        title="启用两步验证"
-        open={showQRCodeModal}
-        onCancel={() => setShowQRCodeModal(false)}
-        footer={null}
-        width={480}
-      >
-        <div className="text-center mb-4">
-          <Paragraph>
-            请使用认证器应用（如 Google Authenticator、Microsoft Authenticator）扫描下方二维码
-          </Paragraph>
-          <div className="flex justify-center mb-4">
-            <QRCode value={`otpauth://totp/Hanxu:${user?.email}?secret=${settings.twoFactorSecret}&issuer=Hanxu`} />
-          </div>
-          <Space direction="vertical" size="small" className="mb-4">
-            <Text strong>或手动输入密钥：</Text>
-            <Space>
-              <Text code>{settings.twoFactorSecret}</Text>
-              <Button
-                size="small"
-                icon={<CopyOutlined />}
-                onClick={() => handleCopyToClipboard(settings.twoFactorSecret)}
-              />
-            </Space>
-          </Space>
-        </div>
+                {passwordStrength > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <Text type="secondary">密码强度</Text>
+                    <div
+                      style={{
+                        marginTop: 6,
+                        width: '100%',
+                        height: 4,
+                        backgroundColor: '#f0f0f0',
+                        borderRadius: 2,
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${passwordStrength}%`,
+                          height: '100%',
+                          backgroundColor:
+                            passwordStrength >= 75
+                              ? '#52c41a'
+                              : passwordStrength >= 50
+                                ? '#fa8c16'
+                                : '#f5222d',
+                          transition: 'width 0.3s ease',
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
 
-        <Form
-          form={twoFactorForm}
-          layout="vertical"
-          onFinish={handleEnableTwoFactor}
-        >
-          <Form.Item
-            name="verificationCode"
-            label="验证码"
-            rules={[{ required: true, message: '请输入验证码' }]}
-          >
-            <Input
-              placeholder="请输入6位验证码"
-              maxLength={6}
-              style={{ textAlign: 'center' }}
-            />
-          </Form.Item>
+                <Form.Item
+                  name="confirmPassword"
+                  label="确认新密码"
+                  dependencies={['newPassword']}
+                  rules={[
+                    { required: true, message: '请确认新密码' },
+                    ({ getFieldValue }) => ({
+                      validator(_, value) {
+                        if (!value || getFieldValue('newPassword') === value) {
+                          return Promise.resolve()
+                        }
+                        return Promise.reject(new Error('两次输入的密码不一致'))
+                      },
+                    }),
+                  ]}
+                >
+                  <Password placeholder="请再次输入新密码" prefix={<LockOutlined />} />
+                </Form.Item>
 
-          <Form.Item>
-            <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-              <Button onClick={() => setShowQRCodeModal(false)}>
-                取消
-              </Button>
-              <Button
-                type="primary"
-                htmlType="submit"
-                loading={loading}
-              >
-                启用两步验证
-              </Button>
-            </Space>
-          </Form.Item>
-        </Form>
-      </Modal>
+                <Button type="primary" htmlType="submit" loading={loading} block>
+                  修改密码
+                </Button>
+              </Form>
+            </Card>
+          </Col>
 
-      {/* 备用恢复码模态框 */}
-      <Modal
-        title="备用恢复码"
-        open={showBackupCodesModal}
-        onCancel={() => setShowBackupCodesModal(false)}
-        footer={[
-          <Button key="close" onClick={() => setShowBackupCodesModal(false)}>
-            关闭
-          </Button>,
-          <Button
-            key="copy"
-            type="primary"
-            icon={<CopyOutlined />}
-            onClick={() => handleCopyToClipboard(settings.backupCodes.join('\n'))}
-          >
-            复制所有代码
-          </Button>,
-        ]}
-        width={640}
-      >
-        <Alert
-          message="请妥善保存这些恢复码"
-          description="当您无法使用认证器应用时，可以使用这些代码来登录您的账户。每个代码只能使用一次。"
-          type="warning"
-          showIcon
-          className="mb-4"
-        />
+          <Col xs={24} lg={12}>
+            <Card
+              title={
+                <Space>
+                  <SafetyOutlined />
+                  <span>账户与登录安全</span>
+                </Space>
+              }
+            >
+              <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                <div>
+                  <Text type="secondary">登录邮箱</Text>
+                  <div>
+                    <MailOutlined style={{ marginRight: 8 }} />
+                    {overview?.email || '-'}
+                    {overview?.is_verified ? (
+                      <Tag color="success" style={{ marginLeft: 8 }}>
+                        已验证
+                      </Tag>
+                    ) : (
+                      <Tag color="warning" style={{ marginLeft: 8 }}>
+                        未验证
+                      </Tag>
+                    )}
+                  </div>
+                  {!overview?.is_verified && overview?.email && (
+                    <Button
+                      type="link"
+                      size="small"
+                      style={{ paddingLeft: 0, marginTop: 4 }}
+                      onClick={handleResendVerification}
+                      loading={loading}
+                    >
+                      重新发送验证邮件
+                    </Button>
+                  )}
+                </div>
 
-        <Row gutter={[16, 16]}>
-          {settings.backupCodes.map((code, index) => (
-            <Col xs={12} sm={8} md={6} key={index}>
-              <Input value={code} readOnly style={{ textAlign: 'center' }} />
-            </Col>
-          ))}
+                <div>
+                  <Text type="secondary">绑定手机</Text>
+                  <div>
+                    <MobileOutlined style={{ marginRight: 8 }} />
+                    {overview?.phone || '未绑定'}
+                    {hasPhone ? (
+                      <Tag color="success" style={{ marginLeft: 8 }}>
+                        已绑定
+                      </Tag>
+                    ) : (
+                      <Tag color="warning" style={{ marginLeft: 8 }}>
+                        未绑定
+                      </Tag>
+                    )}
+                  </div>
+                  <Button
+                    type="link"
+                    size="small"
+                    style={{ paddingLeft: 0, marginTop: 4 }}
+                    onClick={openPhoneModal}
+                  >
+                    {hasPhone ? '换绑手机号' : '绑定手机号'}
+                  </Button>
+                </div>
+
+                <Divider style={{ margin: '8px 0' }} />
+
+                <div>
+                  <Text type="secondary">最近登录</Text>
+                  <div>
+                    {overview?.last_login_at
+                      ? dayjs(overview.last_login_at).format('YYYY-MM-DD HH:mm:ss')
+                      : '暂无记录'}
+                  </div>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    IP：{overview?.last_login_ip || '-'}
+                  </Text>
+                </div>
+
+                <Row justify="space-between" align="middle">
+                  <Col>
+                    <Text strong>登录通知</Text>
+                    <br />
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      新设备登录时发送邮件提醒（需邮箱已验证）
+                    </Text>
+                  </Col>
+                  <Col>
+                    <Switch
+                      checked={!!overview?.loginNotifications}
+                      loading={savingPrefs}
+                      onChange={(checked) =>
+                        void updateSecurityPref({ loginNotifications: checked })
+                      }
+                    />
+                  </Col>
+                </Row>
+
+                <Row justify="space-between" align="middle">
+                  <Col>
+                    <Text strong>会话超时自动退出</Text>
+                    <br />
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      长时间无操作后自动登出
+                    </Text>
+                  </Col>
+                  <Col>
+                    <Switch
+                      checked={!!overview?.sessionTimeout || !!overview?.autoLogout}
+                      loading={savingPrefs}
+                      onChange={(checked) =>
+                        void updateSecurityPref({
+                          sessionTimeout: checked,
+                          autoLogout: checked,
+                        })
+                      }
+                    />
+                  </Col>
+                </Row>
+
+                {(overview?.sessionTimeout || overview?.autoLogout) && (
+                  <Form.Item label="无操作自动退出时间（分钟）" style={{ marginBottom: 0 }}>
+                    <InputNumber
+                      min={5}
+                      max={240}
+                      value={overview?.autoLogoutMinutes || 30}
+                      onChange={(value) => {
+                        if (typeof value === 'number') {
+                          void updateSecurityPref({ autoLogoutMinutes: value })
+                        }
+                      }}
+                    />
+                  </Form.Item>
+                )}
+              </Space>
+            </Card>
+          </Col>
         </Row>
+
+        <Card
+          style={{ marginTop: 24 }}
+          title={
+            <Space>
+              <WarningOutlined />
+              <span>近期登录活动</span>
+            </Space>
+          }
+        >
+          <List
+            locale={{ emptyText: '暂无登录记录' }}
+            dataSource={overview?.recent_logins || []}
+            renderItem={(item) => (
+              <List.Item>
+                <List.Item.Meta
+                  title={
+                    <Space>
+                      <Text>
+                        {item.time
+                          ? dayjs(item.time).format('YYYY-MM-DD HH:mm:ss')
+                          : '-'}
+                      </Text>
+                      {item.status === 'failed' ? (
+                        <Tag color="error">失败</Tag>
+                      ) : item.message === 'password_changed' ? (
+                        <Tag color="processing">改密</Tag>
+                      ) : (
+                        <Tag color="success" icon={<CheckCircleOutlined />}>
+                          成功
+                        </Tag>
+                      )}
+                    </Space>
+                  }
+                  description={
+                    <Text type="secondary">
+                      {item.device || '未知设备'} · IP {item.ip || '-'}
+                    </Text>
+                  }
+                />
+              </List.Item>
+            )}
+          />
+        </Card>
+      </Spin>
+
+      <Modal
+        title={hasPhone ? '换绑手机号' : '绑定手机号'}
+        open={phoneModalOpen}
+        onCancel={() => setPhoneModalOpen(false)}
+        onOk={() => void handleBindPhone()}
+        confirmLoading={bindingPhone}
+        okText={hasPhone ? '确认换绑' : '确认绑定'}
+        destroyOnClose
+      >
+        <Form form={phoneForm} layout="vertical" style={{ marginTop: 8 }}>
+          {hasPhone && (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message={`当前绑定：${overview?.phone}`}
+              description="换绑需验证登录密码，并为新号码完成短信验证。"
+            />
+          )}
+          <Form.Item
+            name="phone"
+            label="手机号"
+            rules={[
+              { required: true, message: '请输入手机号' },
+              { pattern: /^1[3-9]\d{9}$/, message: '请输入有效的中国大陆手机号' },
+            ]}
+          >
+            <Input prefix={<MobileOutlined />} placeholder="请输入要绑定的手机号" maxLength={11} />
+          </Form.Item>
+          <Form.Item label="短信验证码" required>
+            <Space.Compact style={{ width: '100%' }}>
+              <Form.Item
+                name="verification_code"
+                noStyle
+                rules={[
+                  { required: true, message: '请输入验证码' },
+                  { pattern: /^\d{6}$/, message: '验证码为6位数字' },
+                ]}
+              >
+                <Input placeholder="请输入6位验证码" maxLength={6} style={{ width: '100%' }} />
+              </Form.Item>
+              <Button
+                onClick={() => void handleSendPhoneCode()}
+                loading={sendingCode}
+                disabled={countdown > 0}
+              >
+                {countdown > 0 ? `${countdown}s` : '获取验证码'}
+              </Button>
+            </Space.Compact>
+          </Form.Item>
+          {hasPhone && (
+            <Form.Item
+              name="current_password"
+              label="当前登录密码"
+              rules={[{ required: true, message: '换绑请输入当前登录密码' }]}
+            >
+              <Password prefix={<LockOutlined />} placeholder="请输入当前登录密码" />
+            </Form.Item>
+          )}
+        </Form>
       </Modal>
     </div>
   )

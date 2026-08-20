@@ -269,11 +269,9 @@ const ProfileInfo: React.FC = () => {
                   <Form.Item
                     name="phone"
                     label="电话"
-                    rules={[
-                      { pattern: /^1[3-9]\d{9}$/, message: '请输入有效的手机号码' },
-                    ]}
+                    extra="手机号请在「安全设置」中通过短信验证绑定或换绑"
                   >
-                    <Input prefix={<PhoneOutlined />} placeholder="请输入电话" />
+                    <Input prefix={<PhoneOutlined />} placeholder="未绑定" disabled />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={12}>

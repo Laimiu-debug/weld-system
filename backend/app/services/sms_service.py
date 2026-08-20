@@ -48,7 +48,8 @@ class SMSService:
         purpose_text = {
             "login": "登录",
             "register": "注册",
-            "reset_password": "重置密码"
+            "reset_password": "重置密码",
+            "bind_phone": "绑定手机",
         }.get(purpose, "验证")
 
         template_params = {
@@ -56,11 +57,20 @@ class SMSService:
             "minutes": str(expires_minutes)
         }
 
-        return self.send_sms(
+        sent = self.send_sms(
             phone=phone,
             template_code=self._get_template_code(purpose),
             template_params=template_params
         )
+        if not sent and settings.DEVELOPMENT:
+            logger.warning(
+                "[DEVELOPMENT] SMS mock ok: phone=%s purpose=%s code=%s",
+                phone,
+                purpose,
+                code,
+            )
+            return True
+        return sent
 
     def send_sms(
         self,
@@ -253,7 +263,9 @@ class SMSService:
         template_mapping = {
             "login": getattr(settings, 'SMS_TEMPLATE_LOGIN', 'SMS_LOGIN'),
             "register": getattr(settings, 'SMS_TEMPLATE_REGISTER', 'SMS_REGISTER'),
-            "reset_password": getattr(settings, 'SMS_TEMPLATE_RESET_PASSWORD', 'SMS_RESET_PASSWORD')
+            "reset_password": getattr(settings, 'SMS_TEMPLATE_RESET_PASSWORD', 'SMS_RESET_PASSWORD'),
+            "bind_phone": getattr(settings, 'SMS_TEMPLATE_BIND_PHONE', None)
+                or getattr(settings, 'SMS_TEMPLATE_LOGIN', 'SMS_LOGIN'),
         }
         return template_mapping.get(purpose, 'SMS_LOGIN')
 

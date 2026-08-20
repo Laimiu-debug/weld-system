@@ -2,7 +2,7 @@
 Authentication endpoints for the welding system backend.
 """
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Optional, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -22,6 +22,8 @@ from app.core.security import (
     verify_email_verification_token,
     verify_token,
 )
+from app.models.user import User
+from app.models.system_log import SystemLog
 from app.schemas.token import Token, TokenWithUser, TokenRefresh
 from app.schemas.user import (
     UserCreate,
@@ -53,6 +55,32 @@ class RegisterResponse(BaseModel):
     full_name: str
 
 router = APIRouter()
+
+
+def _record_security_event(
+    db: Session,
+    *,
+    user_id: Optional[int],
+    message: str,
+    request: Request,
+    details: Optional[Dict] = None,
+) -> None:
+    try:
+        ua = request.headers.get("user-agent")
+        db.add(
+            SystemLog(
+                log_level="info" if message != "login_failed" else "warning",
+                log_type="security",
+                message=message,
+                user_id=user_id,
+                ip_address=client_ip(request),
+                user_agent=ua,
+                details={**(details or {}), "device": (ua or "")[:160]},
+            )
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
 
 
 @router.post("/login", response_model=Token)
@@ -180,6 +208,13 @@ def login_with_json(  # Updated to support phone/email login
 
     # 验证密码
     if not verify_password(login_data.password, user.hashed_password):
+        _record_security_event(
+            db,
+            user_id=user.id,
+            message="login_failed",
+            request=request,
+            details={"reason": "bad_password"},
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="账号或密码错误"
@@ -210,6 +245,12 @@ def login_with_json(  # Updated to support phone/email login
     user.last_login_at = local_time
     user.last_login_ip = login_ip
     db.commit()
+    _record_security_event(
+        db,
+        user_id=user.id,
+        message="login_success",
+        request=request,
+    )
 
     # 创建访问令牌和刷新令牌
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -348,7 +389,8 @@ def logout_user(
 @router.post("/change-password")
 def change_password(
     payload: ChangePasswordRequest,
-    current_user: dict = Depends(deps.get_current_user),
+    request: Request,
+    current_user: User = Depends(deps.get_current_user),
     db: Session = Depends(deps.get_db)
 ) -> Any:
     """修改密码. 密码必须放在请求体中，不能出现在 query string."""
@@ -358,7 +400,7 @@ def change_password(
             detail={"code": "PASSWORD_MISMATCH", "message": "两次输入的新密码不一致"},
         )
 
-    user = user_service.get(db, id=current_user["id"])
+    user = user_service.get(db, id=current_user.id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -371,8 +413,22 @@ def change_password(
             detail={"code": "BAD_PASSWORD", "message": "当前密码错误"},
         )
 
+    if len(payload.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "WEAK_PASSWORD", "message": "新密码至少需要8个字符"},
+        )
+
     user.hashed_password = get_password_hash(payload.new_password)
+    db.add(user)
     db.commit()
+    _record_security_event(
+        db,
+        user_id=user.id,
+        message="password_changed",
+        request=request,
+    )
+
     return {"message": "密码修改成功"}
 
 

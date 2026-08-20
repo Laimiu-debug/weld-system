@@ -4,6 +4,7 @@ import zhCN from 'antd/locale/zh_CN'
 import enUS from 'antd/locale/en_US'
 import { usePreferencesStore, resolveTheme } from '@/store/preferencesStore'
 import { useAuthStore } from '@/store/authStore'
+import AutoLogoutWatcher from '@/components/AutoLogoutWatcher'
 
 interface PreferencesProviderProps {
   children: React.ReactNode
@@ -51,7 +52,10 @@ const PreferencesProvider: React.FC<PreferencesProviderProps> = ({ children }) =
 
   return (
     <ConfigProvider {...antdConfig}>
-      <AntApp>{children}</AntApp>
+      <AntApp>
+        <AutoLogoutWatcher />
+        {children}
+      </AntApp>
     </ConfigProvider>
   )
 }

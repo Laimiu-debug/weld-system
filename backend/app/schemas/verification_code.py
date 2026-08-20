@@ -11,7 +11,7 @@ class VerificationCodeBase(BaseModel):
     """Base verification code schema."""
     account: str = Field(..., description="邮箱或手机号")
     account_type: str = Field(..., description="账号类型：email 或 phone")
-    purpose: str = Field(..., description="验证码用途：login, register, reset_password")
+    purpose: str = Field(..., description="验证码用途：login, register, reset_password, bind_phone")
 
     @field_validator('account_type')
     @classmethod
@@ -23,8 +23,8 @@ class VerificationCodeBase(BaseModel):
     @field_validator('purpose')
     @classmethod
     def validate_purpose(cls, v):
-        if v not in ['login', 'register', 'reset_password']:
-            raise ValueError('purpose 必须是 login, register 或 reset_password')
+        if v not in ['login', 'register', 'reset_password', 'bind_phone']:
+            raise ValueError('purpose 必须是 login, register, reset_password 或 bind_phone')
         return v
 
 
