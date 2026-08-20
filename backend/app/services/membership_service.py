@@ -88,7 +88,46 @@ class MembershipService:
                 "storage": 20000,
             }
         }
+        # 兼容 personal_free / free 命名
+        if tier == "personal_free":
+            tier = "free"
         return limits.get(tier, limits["free"])
+
+    def get_actual_usage_counts(self, user_id: int) -> Dict[str, int]:
+        """按实际文档数量统计配额使用量，避免计数器漂移。"""
+        from sqlalchemy import func
+
+        from app.models.ppqr import PPQR
+        from app.models.pqr import PQR
+        from app.models.wps import WPS
+
+        user = self.db.query(User).filter(User.id == user_id).first()
+        wps_count = (
+            self.db.query(func.count(WPS.id))
+            .filter(WPS.user_id == user_id, WPS.is_active == True)
+            .scalar()
+            or 0
+        )
+        pqr_count = (
+            self.db.query(func.count(PQR.id))
+            .filter(PQR.user_id == user_id, PQR.is_active == True)
+            .scalar()
+            or 0
+        )
+        ppqr_count = (
+            self.db.query(func.count(PPQR.id))
+            .filter(PPQR.user_id == user_id, PPQR.is_active == True)
+            .scalar()
+            or 0
+        )
+        storage_used = (user.storage_quota_used or 0) if user else 0
+
+        return {
+            "wps": int(wps_count),
+            "pqr": int(pqr_count),
+            "ppqr": int(ppqr_count),
+            "storage": int(storage_used),
+        }
 
     def get_membership_features(self, tier: str) -> List[str]:
         """根据会员等级获取功能列表（动态生成）"""
@@ -317,12 +356,16 @@ class MembershipService:
             "is_company_owner": is_company_owner,
             "company_name": company_name,
             "features": features,
-            "quotas": {
-                "wps": {"used": user.wps_quota_used or 0, "limit": limits["wps"]},
-                "pqr": {"used": user.pqr_quota_used or 0, "limit": limits["pqr"]},
-                "ppqr": {"used": user.ppqr_quota_used or 0, "limit": limits["ppqr"]},
-                "storage": {"used": user.storage_quota_used or 0, "limit": limits["storage"]},
-            }
+            "quotas": self._build_quota_payload(user.id, limits),
+        }
+
+    def _build_quota_payload(self, user_id: int, limits: Dict[str, int]) -> Dict[str, Dict[str, int]]:
+        usage = self.get_actual_usage_counts(user_id)
+        return {
+            "wps": {"used": usage["wps"], "limit": limits.get("wps", 0)},
+            "pqr": {"used": usage["pqr"], "limit": limits.get("pqr", 0)},
+            "ppqr": {"used": usage["ppqr"], "limit": limits.get("ppqr", 0)},
+            "storage": {"used": usage["storage"], "limit": limits.get("storage", 0)},
         }
 
     def upgrade_membership(self, user_id: int, new_tier: str, admin_id: Optional[int] = None, reason: str = "") -> bool:

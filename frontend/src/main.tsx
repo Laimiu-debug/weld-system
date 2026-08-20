@@ -27,6 +27,13 @@ const queryClient = new QueryClient({
 // Ant Design 配置，避免 findDOMNode 警告
 const antdConfig = {
   locale: zhCN,
+  theme: {
+    token: {
+      colorPrimary: '#1F5EFF',
+      colorLink: '#1F5EFF',
+      borderRadius: 6,
+    },
+  },
   // 配置避免使用 findDOMNode
   getPopupContainer: () => document.body,
   // 配置虚拟滚动

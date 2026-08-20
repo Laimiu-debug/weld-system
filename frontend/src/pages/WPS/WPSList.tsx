@@ -870,8 +870,8 @@ const WPSList: React.FC = () => {
 
   return (
     <div className="wps-list-container">
-      <div className="page-header" style={{ justifyContent: 'center' }}>
-        <div className="page-title" style={{ textAlign: 'center' }}>
+      <div className="page-header">
+        <div className="page-title">
           <Title level={2}>WPS管理</Title>
           <Text type="secondary">
             焊接工艺规程 (Welding Procedure Specification) 管理
@@ -882,17 +882,17 @@ const WPSList: React.FC = () => {
       {/* 统计卡片 */}
       {wpsData?.data?.items && (
         <Row gutter={[16, 16]} className="stats-cards">
-          <Col xs={12} sm={8} md={6}>
+          <Col xs={12} sm={12} md={6}>
             <Card className="stat-card">
               <Statistic
                 title="总计"
                 value={getWPSStats(wpsData.data.items).total}
                 prefix={<FileTextOutlined />}
-                valueStyle={{ color: '#1890ff' }}
+                valueStyle={{ color: '#1F5EFF' }}
               />
             </Card>
           </Col>
-          <Col xs={12} sm={8} md={6}>
+          <Col xs={12} sm={12} md={6}>
             <Card className="stat-card">
               <Statistic
                 title="已批准"
@@ -902,7 +902,7 @@ const WPSList: React.FC = () => {
               />
             </Card>
           </Col>
-          <Col xs={12} sm={8} md={6}>
+          <Col xs={12} sm={12} md={6}>
             <Card className="stat-card">
               <Statistic
                 title="审核中"
@@ -912,7 +912,7 @@ const WPSList: React.FC = () => {
               />
             </Card>
           </Col>
-          <Col xs={12} sm={8} md={6}>
+          <Col xs={12} sm={12} md={6}>
             <Card className="stat-card">
               <Statistic
                 title="高优先级"
@@ -950,17 +950,18 @@ const WPSList: React.FC = () => {
 
       <Card className="wps-list-card">
         {/* 搜索和筛选区域 */}
-        <Row gutter={[16, 16]} className="search-filters" style={{ marginBottom: 24 }}>
-          <Col xs={24} sm={12} md={8}>
+        <div className="doc-list-toolbar">
+          <div className="toolbar-search">
             <Search
               placeholder="搜索WPS编号或标题"
               allowClear
               enterButton={<SearchOutlined />}
               size="large"
               onSearch={handleSearch}
+              style={{ width: '100%' }}
             />
-          </Col>
-          <Col xs={24} sm={12} md={4}>
+          </div>
+          <div className="toolbar-filter">
             <Select
               placeholder="筛选状态"
               allowClear
@@ -975,36 +976,34 @@ const WPSList: React.FC = () => {
               <Option value="archived">已归档</Option>
               <Option value="obsolete">已过时</Option>
             </Select>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
+          </div>
+          <div className="toolbar-filter" style={{ flexBasis: 220, maxWidth: 260 }}>
             <RangePicker
               placeholder={['开始日期', '结束日期']}
               size="large"
               style={{ width: '100%' }}
               onChange={handleDateRangeChange}
             />
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Space>
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                size="large"
-                onClick={() => navigate('/wps/create')}
-                disabled={!canCreateMore('wps', wpsData?.data?.total || 0)}
-              >
-                创建WPS
-              </Button>
-              <Button
-                icon={<ReloadOutlined />}
-                size="large"
-                onClick={() => refetch()}
-              >
-                刷新
-              </Button>
-            </Space>
-          </Col>
-        </Row>
+          </div>
+          <div className="toolbar-actions">
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              size="large"
+              onClick={() => navigate('/wps/create')}
+              disabled={!canCreateMore('wps', wpsData?.data?.total || 0)}
+            >
+              创建WPS
+            </Button>
+            <Button
+              icon={<ReloadOutlined />}
+              size="large"
+              onClick={() => refetch()}
+            >
+              刷新
+            </Button>
+          </div>
+        </div>
 
         {/* 卡片列表区域 */}
         <Spin spinning={isLoading}>

@@ -24,7 +24,21 @@ const queryClient = new QueryClient({
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <ConfigProvider locale={zhCN}>
+      <ConfigProvider
+        locale={zhCN}
+        theme={{
+          token: {
+            colorPrimary: '#1F5EFF',
+            colorLink: '#1F5EFF',
+            borderRadius: 6,
+          },
+          components: {
+            Menu: {
+              darkItemSelectedBg: '#1F5EFF',
+            },
+          },
+        }}
+      >
         <BrowserRouter>
           <App />
         </BrowserRouter>

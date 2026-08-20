@@ -148,7 +148,7 @@ const DataStatistics: React.FC = () => {
       dataIndex: 'activeUsers',
       key: 'activeUsers',
       render: (text: number) => (
-        <span style={{ color: '#1890ff', fontWeight: 500 }}>
+        <span style={{ color: '#1F5EFF', fontWeight: 500 }}>
           {text.toLocaleString()}
         </span>
       ),
@@ -236,7 +236,7 @@ const DataStatistics: React.FC = () => {
               title="总用户数"
               value={userStats?.total_users || 0}
               prefix={<UserOutlined />}
-              valueStyle={{ color: '#1890ff' }}
+              valueStyle={{ color: '#1F5EFF' }}
             />
             <div style={{ marginTop: 8, fontSize: '12px', color: '#52c41a' }}>
               <RiseOutlined /> 本期新增 {userStats?.new_users || 0} 人
@@ -277,7 +277,7 @@ const DataStatistics: React.FC = () => {
               title="付费订阅"
               value={subscriptionStats?.active_subscriptions || 0}
               prefix={<BarChartOutlined />}
-              valueStyle={{ color: '#722ed1' }}
+              valueStyle={{ color: '#1546c9' }}
             />
             <div style={{ marginTop: 8, fontSize: '12px', color: '#8c8c8c' }}>
               转化率 {subscriptionStats?.conversion_rate || 0}%
@@ -290,7 +290,7 @@ const DataStatistics: React.FC = () => {
               title="继承会员"
               value={subscriptionStats?.inherited_members_count || 0}
               prefix={<TeamOutlined />}
-              valueStyle={{ color: '#1890ff' }}
+              valueStyle={{ color: '#1F5EFF' }}
             />
             <div style={{ marginTop: 8, fontSize: '12px', color: '#8c8c8c' }}>
               企业员工继承
@@ -321,8 +321,8 @@ const DataStatistics: React.FC = () => {
                       showInfo={false}
                       strokeColor={
                         tier === 'free' ? '#d9d9d9' :
-                        tier === 'personal_advanced' ? '#1890ff' :
-                        tier === 'personal_flagship' ? '#722ed1' :
+                        tier === 'personal_advanced' ? '#1F5EFF' :
+                        tier === 'personal_flagship' ? '#1546c9' :
                         tier === 'enterprise' ? '#52c41a' : '#faad14'
                       }
                     />
@@ -350,8 +350,8 @@ const DataStatistics: React.FC = () => {
                       percent={subscriptionStats.total_subscriptions ? (count / subscriptionStats.total_subscriptions * 100) : 0}
                       showInfo={false}
                       strokeColor={
-                        type === 'personal_advanced' ? '#1890ff' :
-                        type === 'personal_flagship' ? '#722ed1' :
+                        type === 'personal_advanced' ? '#1F5EFF' :
+                        type === 'personal_flagship' ? '#1546c9' :
                         type === 'enterprise' ? '#52c41a' : '#faad14'
                       }
                     />
@@ -425,7 +425,7 @@ const DataStatistics: React.FC = () => {
               title="年收入"
               value={subscriptionStats?.revenue?.annual || 0}
               prefix="¥"
-              valueStyle={{ color: '#1890ff' }}
+              valueStyle={{ color: '#1F5EFF' }}
               precision={0}
             />
           </Card>
@@ -436,7 +436,7 @@ const DataStatistics: React.FC = () => {
               title="用户平均收入"
               value={subscriptionStats?.average_revenue_per_user || 0}
               prefix="¥"
-              valueStyle={{ color: '#722ed1' }}
+              valueStyle={{ color: '#1546c9' }}
               precision={0}
             />
           </Card>

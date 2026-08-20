@@ -96,12 +96,7 @@ def get_user_membership_info(
             "subscription_end_date": None,
             "auto_renewal": current_user.auto_renewal if hasattr(current_user, 'auto_renewal') else False,
             "features": features,
-            "quotas": {
-                "wps": {"used": current_user.wps_quota_used or 0, "limit": limits.get("wps", 10)},
-                "pqr": {"used": current_user.pqr_quota_used or 0, "limit": limits.get("pqr", 10)},
-                "ppqr": {"used": current_user.ppqr_quota_used or 0, "limit": limits.get("ppqr", 0)},
-                "storage": {"used": current_user.storage_quota_used or 0, "limit": limits.get("storage", 100)},
-            }
+            "quotas": membership_service._build_quota_payload(current_user.id, limits),
         }
 
     return membership_info
@@ -112,14 +107,9 @@ def get_user_usage_stats(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user)
 ) -> Any:
-    """获取当前用户的使用统计."""
-    usage_stats = {
-        "wps": current_user.wps_quota_used or 0,
-        "pqr": current_user.pqr_quota_used or 0,
-        "ppqr": current_user.ppqr_quota_used or 0,
-        "storage": current_user.storage_quota_used or 0
-    }
-    return usage_stats
+    """获取当前用户的使用统计（按实际文档数）。"""
+    membership_service = MembershipService(db)
+    return membership_service.get_actual_usage_counts(current_user.id)
 
 
 @router.get("/{user_id}", response_model=UserResponse)

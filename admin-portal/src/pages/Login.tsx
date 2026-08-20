@@ -3,7 +3,7 @@ import { Form, Input, Button, Card, Alert, Typography } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useAuthContext } from '@/contexts/AuthContext';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
 interface LoginForm {
   username: string;
@@ -33,28 +33,13 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: '20px',
-      }}
-    >
-      <Card
-        style={{
-          width: '100%',
-          maxWidth: 400,
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
-        }}
-      >
+    <div className="admin-login-page">
+      <Card className="admin-login-card">
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <Title level={2} style={{ color: '#1890ff', marginBottom: 8 }}>
+          <Title level={2} style={{ color: '#1F5EFF', marginBottom: 8, letterSpacing: '0.06em' }}>
             焊序
           </Title>
-          <Title level={4} type="secondary" style={{ marginBottom: 0 }}>
+          <Title level={4} type="secondary" style={{ marginBottom: 0, fontWeight: 500 }}>
             管理员门户
           </Title>
         </div>
@@ -81,7 +66,7 @@ const Login: React.FC = () => {
           >
             <Input
               prefix={<UserOutlined />}
-              placeholder="用户名"
+              placeholder="用户名 / 邮箱"
               autoComplete="username"
             />
           </Form.Item>
@@ -109,9 +94,10 @@ const Login: React.FC = () => {
           </Form.Item>
         </Form>
 
-        <div style={{ textAlign: 'center', color: '#8c8c8c', fontSize: '12px' }}>
-          <p>请使用管理员账号登录</p>
-          <p>如遇问题请联系系统管理员</p>
+        <div style={{ textAlign: 'center' }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            请使用管理员账号登录 · 如遇问题请联系系统管理员
+          </Text>
         </div>
       </Card>
     </div>

@@ -641,17 +641,17 @@ const PQRList: React.FC = () => {
 
       {/* 统计卡片 */}
       <Row gutter={[16, 16]} className="stats-cards" style={{ marginBottom: 16 }}>
-        <Col xs={12} sm={8} md={6}>
+        <Col xs={12} sm={12} md={6}>
           <Card className="stat-card">
             <Statistic
               title="总计"
               value={stats.total}
               prefix={<ExperimentOutlined />}
-              valueStyle={{ color: '#1890ff' }}
+              valueStyle={{ color: '#1F5EFF' }}
             />
           </Card>
         </Col>
-        <Col xs={12} sm={8} md={6}>
+        <Col xs={12} sm={12} md={6}>
           <Card className="stat-card">
             <Statistic
               title="合格"
@@ -661,7 +661,7 @@ const PQRList: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col xs={12} sm={8} md={6}>
+        <Col xs={12} sm={12} md={6}>
           <Card className="stat-card">
             <Statistic
               title="待处理"
@@ -671,13 +671,13 @@ const PQRList: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col xs={12} sm={8} md={6}>
+        <Col xs={12} sm={12} md={6}>
           <Card className="stat-card">
             <Statistic
               title="已批准"
               value={stats.approved}
               prefix={<ExperimentOutlined />}
-              valueStyle={{ color: '#722ed1' }}
+              valueStyle={{ color: '#1546c9' }}
             />
           </Card>
         </Col>
@@ -705,17 +705,18 @@ const PQRList: React.FC = () => {
 
       <Card>
         {/* 搜索和筛选区域 */}
-        <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-          <Col xs={24} sm={12} md={8}>
+        <div className="doc-list-toolbar">
+          <div className="toolbar-search">
             <Search
               placeholder="搜索PQR编号或标题"
               allowClear
               enterButton={<SearchOutlined />}
               size="large"
               onSearch={handleSearch}
+              style={{ width: '100%' }}
             />
-          </Col>
-          <Col xs={24} sm={12} md={4}>
+          </div>
+          <div className="toolbar-filter">
             <Select
               placeholder="筛选状态"
               allowClear
@@ -729,8 +730,8 @@ const PQRList: React.FC = () => {
               <Option value="rejected">已拒绝</Option>
               <Option value="archived">已归档</Option>
             </Select>
-          </Col>
-          <Col xs={24} sm={12} md={4}>
+          </div>
+          <div className="toolbar-filter">
             <Select
               placeholder="合格判定"
               allowClear
@@ -742,28 +743,26 @@ const PQRList: React.FC = () => {
               <Option value="failed">不合格</Option>
               <Option value="pending">待定</Option>
             </Select>
-          </Col>
-          <Col xs={24} sm={12} md={8}>
-            <Space>
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                size="large"
-                onClick={() => navigate('/pqr/create')}
-                disabled={!canCreateMore('pqr', stats.total)}
-              >
-                创建PQR
-              </Button>
-              <Button
-                icon={<ReloadOutlined />}
-                size="large"
-                onClick={() => refetch()}
-              >
-                刷新
-              </Button>
-            </Space>
-          </Col>
-        </Row>
+          </div>
+          <div className="toolbar-actions">
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              size="large"
+              onClick={() => navigate('/pqr/create')}
+              disabled={!canCreateMore('pqr', stats.total)}
+            >
+              创建PQR
+            </Button>
+            <Button
+              icon={<ReloadOutlined />}
+              size="large"
+              onClick={() => refetch()}
+            >
+              刷新
+            </Button>
+          </div>
+        </div>
 
         {/* 卡片列表区域 */}
         <Spin spinning={isLoading}>

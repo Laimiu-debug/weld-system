@@ -95,7 +95,7 @@ const AnnouncementManagement: React.FC = () => {
   const getTypeIcon = (type: string) => {
     switch (type) {
       case 'info':
-        return <InfoCircleOutlined style={{ color: '#1890ff' }} />;
+        return <InfoCircleOutlined style={{ color: '#1F5EFF' }} />;
       case 'warning':
         return <WarningOutlined style={{ color: '#faad14' }} />;
       case 'error':
@@ -103,9 +103,9 @@ const AnnouncementManagement: React.FC = () => {
       case 'success':
         return <CheckCircleOutlined style={{ color: '#52c41a' }} />;
       case 'maintenance':
-        return <ToolOutlined style={{ color: '#722ed1' }} />;
+        return <ToolOutlined style={{ color: '#1546c9' }} />;
       default:
-        return <InfoCircleOutlined style={{ color: '#1890ff' }} />;
+        return <InfoCircleOutlined style={{ color: '#1F5EFF' }} />;
     }
   };
 
@@ -116,7 +116,7 @@ const AnnouncementManagement: React.FC = () => {
       warning: { color: 'orange', text: '警告' },
       error: { color: 'red', text: '错误' },
       success: { color: 'green', text: '成功' },
-      maintenance: { color: 'purple', text: '维护' },
+      maintenance: { color: 'blue', text: '维护' },
     };
     const { color, text } = config[type] || config.info;
     return <Tag color={color}>{text}</Tag>;
@@ -139,7 +139,7 @@ const AnnouncementManagement: React.FC = () => {
     const config: Record<string, { color: string; text: string }> = {
       all: { color: 'blue', text: '所有用户' },
       user: { color: 'green', text: '个人用户' },
-      enterprise: { color: 'purple', text: '企业用户' },
+      enterprise: { color: 'geekblue', text: '企业用户' },
     };
     const { color, text } = config[audience] || config.all;
     return <Tag color={color}>{text}</Tag>;
@@ -625,7 +625,7 @@ const AnnouncementManagement: React.FC = () => {
               <Select style={{ width: 150 }}>
                 <Select.Option value="info">
                   <Space>
-                    <InfoCircleOutlined style={{ color: '#1890ff' }} />
+                    <InfoCircleOutlined style={{ color: '#1F5EFF' }} />
                     信息
                   </Space>
                 </Select.Option>
@@ -649,7 +649,7 @@ const AnnouncementManagement: React.FC = () => {
                 </Select.Option>
                 <Select.Option value="maintenance">
                   <Space>
-                    <ToolOutlined style={{ color: '#722ed1' }} />
+                    <ToolOutlined style={{ color: '#1546c9' }} />
                     维护
                   </Space>
                 </Select.Option>

@@ -8,11 +8,11 @@
 
 /* 全局样式 */
 :root {
-  --primary-color: #1890ff;
+  --primary-color: #1f5eff;
   --success-color: #52c41a;
   --warning-color: #faad14;
   --error-color: #f5222d;
-  --info-color: #1890ff;
+  --info-color: #1f5eff;
   --text-color: rgba(0, 0, 0, 0.85);
   --text-color-secondary: rgba(0, 0, 0, 0.45);
   --border-color: #d9d9d9;
@@ -98,11 +98,12 @@ body {
 .ant-btn-primary {
   background-color: var(--primary-color);
   border-color: var(--primary-color);
+  box-shadow: none;
 }
 
 .ant-btn-primary:hover {
-  background-color: #40a9ff;
-  border-color: #40a9ff;
+  background-color: #1546c9;
+  border-color: #1546c9;
 }
 
 /* 表单样式 */
@@ -131,14 +132,42 @@ body {
   font-weight: 500;
 }
 
-/* 统计卡片样式 */
+/* 统计卡片样式（列表页统一） */
 .stat-card {
+  height: 100%;
   text-align: center;
-  padding: 24px;
-  background: linear-gradient(135deg, #1890ff 0%, #096dd9 100%);
-  color: #fff;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.15);
+  border-radius: 12px !important;
+  border: 1px solid #e8eef8 !important;
+  background: #fff !important;
+  box-shadow: 0 2px 8px rgba(20, 40, 80, 0.04) !important;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.stat-card .ant-card-body {
+  padding: 20px 16px !important;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stat-card .ant-statistic {
+  width: 100%;
+}
+
+.stat-card .ant-statistic-title {
+  color: #5a6577 !important;
+  white-space: nowrap;
+  margin-bottom: 8px !important;
+}
+
+.stat-card .ant-statistic-content {
+  justify-content: center;
+}
+
+.stat-card:hover {
+  box-shadow: 0 6px 16px rgba(20, 40, 80, 0.08) !important;
+  transform: translateY(-1px);
 }
 
 .stat-card .stat-value {
@@ -1062,49 +1091,157 @@ body {
   }
 }
 
-/* WPS列表页面样式 */
-.wps-list-container {
+/* WPS / PQR 列表页面样式 */
+.wps-list-container,
+.pqr-list-container {
   padding: 24px;
   min-height: calc(100vh - 64px);
 }
 
-.wps-list-container .page-header {
+.wps-list-container .page-header,
+.pqr-list-container .page-header {
   display: flex;
-  justify-content: center;
-  align-items: center;
-  margin-bottom: 24px;
+  justify-content: flex-start;
+  align-items: flex-start;
+  margin-bottom: 20px;
+  padding: 0;
+  background: none;
+  border-radius: 0;
+  color: inherit;
+  text-align: left;
 }
 
-.page-title h2 {
-  margin-bottom: 8px !important;
+.wps-list-container .page-title,
+.pqr-list-container .page-title {
+  text-align: left;
+}
+
+.wps-list-container .page-title h2,
+.pqr-list-container .page-title h2 {
+  margin-bottom: 4px !important;
+  color: #14181f !important;
 }
 
 .stats-cards {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-wrap: wrap;
 }
 
-.stat-card {
+.stats-cards > .ant-col {
+  display: flex;
+}
+
+.stats-cards > .ant-col > .ant-card {
+  width: 100%;
+  margin-bottom: 0 !important;
+}
+
+.wps-table-card,
+.wps-list-card,
+.pqr-list-container > .ant-card {
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   border: 1px solid #f0f0f0;
-  transition: all 0.3s ease;
 }
 
-.stat-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-  transform: translateY(-2px);
-}
-
-.wps-table-card {
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1px solid #f0f0f0;
-}
-
-.search-filters {
-  padding: 16px 0;
+.search-filters,
+.doc-list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 0 0 16px;
   border-bottom: 1px solid #f0f0f0;
   margin-bottom: 16px;
+}
+
+.doc-list-toolbar .toolbar-search {
+  flex: 1 1 240px;
+  min-width: 200px;
+  max-width: 320px;
+}
+
+.doc-list-toolbar .toolbar-filter {
+  flex: 0 1 148px;
+  min-width: 132px;
+}
+
+.doc-list-toolbar .toolbar-actions {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.doc-list-toolbar .ant-input-search,
+.doc-list-toolbar .ant-select,
+.doc-list-toolbar .ant-picker {
+  width: 100%;
+}
+
+.doc-list-toolbar .ant-input-search .ant-input-affix-wrapper,
+.doc-list-toolbar .ant-input-search > .ant-input,
+.doc-list-toolbar .ant-select-selector,
+.doc-list-toolbar .ant-picker,
+.doc-list-toolbar .ant-btn {
+  height: 40px !important;
+}
+
+.doc-list-toolbar .ant-select-selector,
+.doc-list-toolbar .ant-picker {
+  display: flex !important;
+  align-items: center;
+}
+
+/* 搜索按钮：描边，避免实心蓝块 */
+.doc-list-toolbar .ant-input-search-button.ant-btn-primary,
+.doc-list-toolbar .ant-input-search-button {
+  background: #fff !important;
+  border: 1px solid #d9d9d9 !important;
+  color: #5a6577 !important;
+  box-shadow: none !important;
+}
+
+.doc-list-toolbar .ant-input-search-button:hover {
+  color: #1f5eff !important;
+  border-color: #1f5eff !important;
+  background: #f7f9fc !important;
+}
+
+/* 工具栏主操作：描边品牌色，而不是大块实心蓝 */
+.doc-list-toolbar .toolbar-actions .ant-btn-primary {
+  background: #fff !important;
+  color: #1f5eff !important;
+  border: 1px solid #1f5eff !important;
+  box-shadow: none !important;
+  font-weight: 500;
+}
+
+.doc-list-toolbar .toolbar-actions .ant-btn-primary:hover {
+  background: #eef3ff !important;
+  color: #1546c9 !important;
+  border-color: #1546c9 !important;
+}
+
+.doc-list-toolbar .toolbar-actions .ant-btn-default {
+  color: #5a6577;
+}
+
+/* 空状态唯一实心 CTA：略柔和 */
+.wps-list-container .ant-empty .ant-btn-primary,
+.pqr-list-container .ant-empty .ant-btn-primary {
+  background: #1f5eff;
+  border-color: #1f5eff;
+  box-shadow: 0 1px 2px rgba(31, 94, 255, 0.18);
+  font-weight: 500;
+}
+
+.wps-list-container .ant-empty .ant-btn-primary:hover,
+.pqr-list-container .ant-empty .ant-btn-primary:hover {
+  background: #1546c9;
+  border-color: #1546c9;
 }
 
 /* 表格样式优化 */
@@ -1125,13 +1262,13 @@ body {
 }
 
 .wps-table-card .ant-table-tbody > tr:hover > td {
-  background: #f8f9ff;
+  background: #f7f9fc;
 }
 
 /* 批量操作区域 */
 .batch-actions {
   padding: 12px 16px;
-  background: #f6f8ff;
+  background: #f7f9fc;
   border-radius: 8px;
   margin-bottom: 16px;
   border: 1px solid #d6e4ff;
@@ -1139,11 +1276,13 @@ body {
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .wps-list-container {
+  .wps-list-container,
+  .pqr-list-container {
     padding: 16px;
   }
 
-  .wps-list-container .page-header {
+  .wps-list-container .page-header,
+  .pqr-list-container .page-header {
     flex-direction: column;
     gap: 16px;
     align-items: stretch;
@@ -1153,8 +1292,21 @@ body {
     margin-bottom: 16px;
   }
 
-  .search-filters {
-    padding: 12px 0;
+  .doc-list-toolbar .toolbar-search,
+  .doc-list-toolbar .toolbar-filter {
+    flex: 1 1 calc(50% - 10px);
+    max-width: none;
+    min-width: 140px;
+  }
+
+  .doc-list-toolbar .toolbar-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .doc-list-toolbar .toolbar-actions .ant-btn {
+    flex: 0 0 auto;
   }
 
   .wps-table-card .ant-table {
@@ -1163,18 +1315,13 @@ body {
 }
 
 @media (max-width: 576px) {
-  .wps-list-container {
+  .wps-list-container,
+  .pqr-list-container {
     padding: 12px;
   }
 
   .page-title h2 {
     font-size: 18px !important;
-  }
-
-  .search-filters .ant-btn {
-    height: 32px;
-    padding: 4px 8px;
-    font-size: 12px;
   }
 }
 

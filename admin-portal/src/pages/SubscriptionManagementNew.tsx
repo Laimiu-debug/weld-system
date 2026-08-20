@@ -120,7 +120,7 @@ const SubscriptionManagementNew: React.FC = () => {
       free: 'default',
       personal_pro: 'blue',
       personal_advanced: 'green',
-      personal_flagship: 'purple',
+      personal_flagship: 'geekblue',
       enterprise: 'gold',
       enterprise_pro: 'red',
       enterprise_pro_max: 'magenta',
@@ -202,7 +202,7 @@ const SubscriptionManagementNew: React.FC = () => {
       dataIndex: 'price',
       key: 'price',
       render: (price: number) => (
-        <span style={{ fontWeight: 500, color: '#1890ff' }}>
+        <span style={{ fontWeight: 500, color: '#1F5EFF' }}>
           ¥{price.toFixed(2)}
         </span>
       ),

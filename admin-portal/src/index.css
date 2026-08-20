@@ -108,3 +108,31 @@ code {
 .status-error {
   color: #ff4d4f;
 }
+
+.admin-login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 10%, rgba(31, 94, 255, 0.12), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 85% 90%, rgba(21, 70, 201, 0.08), transparent 50%),
+    linear-gradient(160deg, #f4f6fa 0%, #e8eef8 100%);
+  padding: 24px;
+}
+
+.admin-login-card {
+  width: 100%;
+  max-width: 420px;
+  border: 1px solid rgba(31, 94, 255, 0.12);
+  box-shadow: 0 12px 40px rgba(20, 40, 80, 0.08);
+}
+
+.admin-overview-card {
+  border: 1px solid rgba(31, 94, 255, 0.14);
+  background: linear-gradient(135deg, #f7f9fc 0%, #eef3fb 100%);
+}
+
+.admin-overview-card .ant-statistic-title {
+  color: #5a6577;
+}

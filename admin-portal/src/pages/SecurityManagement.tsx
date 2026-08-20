@@ -189,7 +189,7 @@ const SecurityManagement: React.FC = () => {
       key: 'event',
       render: (event: string) => (
         <span style={{
-          color: event.includes('失败') || event.includes('错误') ? '#ff4d4f' : '#1890ff',
+          color: event.includes('失败') || event.includes('错误') ? '#ff4d4f' : '#1F5EFF',
           fontWeight: 500
         }}>
           {event}

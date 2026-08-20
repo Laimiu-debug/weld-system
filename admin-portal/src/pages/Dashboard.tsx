@@ -129,7 +129,7 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const pieColors = ['#1890ff', '#52c41a', '#faad14', '#ff4d4f', '#722ed1'];
+  const pieColors = ['#1F5EFF', '#52c41a', '#faad14', '#ff4d4f', '#3b82f6'];
 
   const logColumns = [
     {
@@ -202,30 +202,30 @@ const Dashboard: React.FC = () => {
       {userStats && subscriptionStats && (
         <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
           <Col xs={24}>
-            <Card title="业务概览" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }}>
+            <Card title="业务概览" className="admin-overview-card">
               <Row gutter={[16, 16]}>
                 <Col xs={24} sm={12} md={6} lg={4}>
                   <Statistic
                     title="总用户数"
                     value={userStats.total_users}
-                    prefix={<UserOutlined style={{ color: 'white' }} />}
-                    valueStyle={{ color: 'white' }}
+                    prefix={<UserOutlined style={{ color: '#1F5EFF' }} />}
+                    valueStyle={{ color: '#14181f' }}
                   />
                 </Col>
                 <Col xs={24} sm={12} md={6} lg={4}>
                   <Statistic
                     title="付费用户"
                     value={subscriptionStats.active_subscriptions}
-                    prefix={<DollarOutlined style={{ color: 'white' }} />}
-                    valueStyle={{ color: 'white' }}
+                    prefix={<DollarOutlined style={{ color: '#1F5EFF' }} />}
+                    valueStyle={{ color: '#14181f' }}
                   />
                 </Col>
                 <Col xs={24} sm={12} md={6} lg={4}>
                   <Statistic
                     title="继承会员"
                     value={subscriptionStats.inherited_members_count || 0}
-                    prefix={<TeamOutlined style={{ color: 'white' }} />}
-                    valueStyle={{ color: 'white' }}
+                    prefix={<TeamOutlined style={{ color: '#1F5EFF' }} />}
+                    valueStyle={{ color: '#14181f' }}
                   />
                 </Col>
                 <Col xs={24} sm={12} md={6} lg={4}>
@@ -234,7 +234,7 @@ const Dashboard: React.FC = () => {
                     value={subscriptionStats.revenue.monthly}
                     precision={0}
                     prefix="¥"
-                    valueStyle={{ color: 'white' }}
+                    valueStyle={{ color: '#14181f' }}
                   />
                 </Col>
                 <Col xs={24} sm={12} md={6} lg={4}>
@@ -243,8 +243,8 @@ const Dashboard: React.FC = () => {
                     value={subscriptionStats.conversion_rate}
                     precision={1}
                     suffix="%"
-                    prefix={<TrophyOutlined style={{ color: 'white' }} />}
-                    valueStyle={{ color: 'white' }}
+                    prefix={<TrophyOutlined style={{ color: '#1F5EFF' }} />}
+                    valueStyle={{ color: '#14181f' }}
                   />
                 </Col>
               </Row>
@@ -318,7 +318,7 @@ const Dashboard: React.FC = () => {
               title="总用户数"
               value={userStats?.total_users || 0}
               prefix={<UserOutlined />}
-              valueStyle={{ color: '#1890ff' }}
+              valueStyle={{ color: '#1F5EFF' }}
             />
           </Card>
         </Col>
@@ -339,7 +339,7 @@ const Dashboard: React.FC = () => {
               title="付费订阅"
               value={subscriptionStats?.active_subscriptions || 0}
               prefix={<DollarOutlined />}
-              valueStyle={{ color: '#722ed1' }}
+              valueStyle={{ color: '#1546c9' }}
             />
           </Card>
         </Col>
@@ -380,7 +380,7 @@ const Dashboard: React.FC = () => {
               value={subscriptionStats?.revenue?.annual || 0}
               precision={0}
               prefix="¥"
-              valueStyle={{ color: '#1890ff' }}
+              valueStyle={{ color: '#1F5EFF' }}
             />
           </Card>
         </Col>
@@ -391,7 +391,7 @@ const Dashboard: React.FC = () => {
               value={subscriptionStats?.average_revenue_per_user || 0}
               precision={0}
               prefix="¥"
-              valueStyle={{ color: '#722ed1' }}
+              valueStyle={{ color: '#1546c9' }}
             />
           </Card>
         </Col>
@@ -468,9 +468,9 @@ const Dashboard: React.FC = () => {
                   <Line
                     type="monotone"
                     dataKey="count"
-                    stroke="#1890ff"
+                    stroke="#1F5EFF"
                     strokeWidth={2}
-                    dot={{ fill: '#1890ff' }}
+                    dot={{ fill: '#1F5EFF' }}
                   />
                 </LineChart>
               </ResponsiveContainer>

@@ -227,7 +227,7 @@ const PaymentManagement: React.FC = () => {
       key: 'transaction_id',
       width: 180,
       render: (text: string) => (
-        <span style={{ fontFamily: 'monospace', fontSize: 12, color: text ? '#1890ff' : '#999' }}>
+        <span style={{ fontFamily: 'monospace', fontSize: 12, color: text ? '#1F5EFF' : '#999' }}>
           {text || '未提供'}
         </span>
       )
@@ -494,7 +494,7 @@ const PaymentManagement: React.FC = () => {
               </span>
             </Descriptions.Item>
             <Descriptions.Item label="用户交易号" span={2}>
-              <span style={{ fontFamily: 'monospace', fontSize: 12, color: selectedPayment.transaction_id ? '#1890ff' : '#999' }}>
+              <span style={{ fontFamily: 'monospace', fontSize: 12, color: selectedPayment.transaction_id ? '#1F5EFF' : '#999' }}>
                 {selectedPayment.transaction_id || '未提供'}
               </span>
             </Descriptions.Item>

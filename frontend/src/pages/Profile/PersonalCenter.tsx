@@ -27,12 +27,12 @@ import {
   TrophyOutlined,
   CheckCircleOutlined,
   StarOutlined,
-  FireOutlined,
-  ThunderboltOutlined,
   TeamOutlined,
   FileTextOutlined,
   BarChartOutlined,
-    DeleteOutlined,
+  ExperimentOutlined,
+  DeleteOutlined,
+  DatabaseOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
@@ -41,6 +41,7 @@ import { workspaceService, type Workspace } from '@/services/workspace'
 import enterpriseService from '@/services/enterprise'
 import { triggerWorkspaceSwitch } from '@/contexts/MembershipContext'
 import { useMembership } from '@/contexts/MembershipContext'
+import { membershipService, type UserMembershipInfo } from '@/services/membership'
 
 const { Title, Text } = Typography
 
@@ -50,15 +51,38 @@ const PersonalCenter: React.FC = () => {
   const { user, updateProfile, refreshUserInfo } = useAuthStore()
   const { membershipInfo } = useMembership()
   const [loading, setLoading] = useState(false)
+  const [usageLoading, setUsageLoading] = useState(true)
   const [editModalVisible, setEditModalVisible] = useState(false)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null)
+  const [membershipDetail, setMembershipDetail] = useState<UserMembershipInfo | null>(null)
   const [form] = Form.useForm()
 
   // 加载工作区数据
   useEffect(() => {
     loadWorkspaces()
   }, [])
+
+  // 加载真实配额使用统计
+  useEffect(() => {
+    const loadUsageStats = async () => {
+      if (!user) {
+        setUsageLoading(false)
+        return
+      }
+      try {
+        setUsageLoading(true)
+        const info = await membershipService.getUserMembershipInfo()
+        setMembershipDetail(info)
+      } catch (error) {
+        console.error('加载使用统计失败:', error)
+        setMembershipDetail(null)
+      } finally {
+        setUsageLoading(false)
+      }
+    }
+    loadUsageStats()
+  }, [user?.id])
 
   const loadWorkspaces = async () => {
     try {
@@ -412,18 +436,31 @@ const PersonalCenter: React.FC = () => {
 
   // 使用 membership context 来获取基于当前工作区的会员信息
 
-  // 获取使用统计
+  // 从后端会员配额计算使用统计（不再使用占位假数据）
   const getUsageStats = () => {
-    const stats = {
-      wps: { used: 12, limit: 30, percentage: 40 },
-      pqr: { used: 8, limit: 30, percentage: 27 },
-      storage: { used: 125, limit: 1024, percentage: 12 },
-      api: { used: 850, limit: 10000, percentage: 8.5 },
+    const quotas =
+      membershipDetail?.quotas ||
+      (membershipInfo?.quotas as UserMembershipInfo['quotas'] | undefined)
+
+    const toItem = (key: 'wps' | 'pqr' | 'ppqr' | 'storage') => {
+      const used = Number(quotas?.[key]?.used ?? 0)
+      const limit = Number(quotas?.[key]?.limit ?? 0)
+      const percentage =
+        limit > 0 ? Math.min(100, Math.round((used / limit) * 1000) / 10) : 0
+      return { used, limit, percentage }
     }
-    return stats
+
+    return {
+      wps: toItem('wps'),
+      pqr: toItem('pqr'),
+      ppqr: toItem('ppqr'),
+      storage: toItem('storage'),
+    }
   }
 
   const usageStats = getUsageStats()
+
+  const formatLimit = (limit: number) => (limit > 0 ? String(limit) : '未开通')
 
   // 渲染个人信息部分
   const renderProfileInfo = () => (
@@ -506,69 +543,79 @@ const PersonalCenter: React.FC = () => {
       {/* 使用统计 */}
       <div className="space-y-3">
         <Title level={5}>使用统计</Title>
-        <Row gutter={[16, 8]}>
-          <Col span={12}>
-            <Statistic
-              title="WPS文档"
-              value={usageStats.wps.used}
-              suffix={`/ ${usageStats.wps.limit}`}
-              prefix={<FileTextOutlined />}
-              valueStyle={{ color: '#1890ff', fontSize: '16px' }}
-            />
-            <Progress
-              percent={usageStats.wps.percentage}
-              size="small"
-              className="mt-1"
-            />
-          </Col>
-          <Col span={12}>
-            <Statistic
-              title="PQR记录"
-              value={usageStats.pqr.used}
-              suffix={`/ ${usageStats.pqr.limit}`}
-              prefix={<BarChartOutlined />}
-              valueStyle={{ color: '#52c41a', fontSize: '16px' }}
-            />
-            <Progress
-              percent={usageStats.pqr.percentage}
-              size="small"
-              className="mt-1"
-              strokeColor="#52c41a"
-            />
-          </Col>
-        </Row>
-        <Row gutter={[16, 8]} className="mt-2">
-          <Col span={12}>
-            <Statistic
-              title="存储空间"
-              value={usageStats.storage.used}
-              suffix="MB"
-              prefix={<FireOutlined />}
-              valueStyle={{ color: '#fa8c16', fontSize: '16px' }}
-            />
-            <Progress
-              percent={usageStats.storage.percentage}
-              size="small"
-              className="mt-1"
-              strokeColor="#fa8c16"
-            />
-          </Col>
-          <Col span={12}>
-            <Statistic
-              title="API调用"
-              value={usageStats.api.used}
-              suffix={`/ ${usageStats.api.limit}`}
-              prefix={<ThunderboltOutlined />}
-              valueStyle={{ color: '#722ed1', fontSize: '16px' }}
-            />
-            <Progress
-              percent={usageStats.api.percentage}
-              size="small"
-              className="mt-1"
-              strokeColor="#722ed1"
-            />
-          </Col>
-        </Row>
+        {usageLoading ? (
+          <Text type="secondary">加载中...</Text>
+        ) : (
+          <>
+            <Row gutter={[16, 8]}>
+              <Col span={12}>
+                <Statistic
+                  title="WPS文档"
+                  value={usageStats.wps.used}
+                  suffix={`/ ${formatLimit(usageStats.wps.limit)}`}
+                  prefix={<FileTextOutlined />}
+                  valueStyle={{ color: '#1890ff', fontSize: '16px' }}
+                />
+                <Progress
+                  percent={usageStats.wps.percentage}
+                  size="small"
+                  className="mt-1"
+                  status={usageStats.wps.percentage >= 90 ? 'exception' : 'normal'}
+                />
+              </Col>
+              <Col span={12}>
+                <Statistic
+                  title="PQR记录"
+                  value={usageStats.pqr.used}
+                  suffix={`/ ${formatLimit(usageStats.pqr.limit)}`}
+                  prefix={<BarChartOutlined />}
+                  valueStyle={{ color: '#52c41a', fontSize: '16px' }}
+                />
+                <Progress
+                  percent={usageStats.pqr.percentage}
+                  size="small"
+                  className="mt-1"
+                  strokeColor="#52c41a"
+                  status={usageStats.pqr.percentage >= 90 ? 'exception' : 'normal'}
+                />
+              </Col>
+            </Row>
+            <Row gutter={[16, 8]} className="mt-2">
+              <Col span={12}>
+                <Statistic
+                  title="存储空间"
+                  value={usageStats.storage.used}
+                  suffix={`/ ${formatLimit(usageStats.storage.limit)} MB`}
+                  prefix={<DatabaseOutlined />}
+                  valueStyle={{ color: '#fa8c16', fontSize: '16px' }}
+                />
+                <Progress
+                  percent={usageStats.storage.percentage}
+                  size="small"
+                  className="mt-1"
+                  strokeColor="#fa8c16"
+                  status={usageStats.storage.percentage >= 90 ? 'exception' : 'normal'}
+                />
+              </Col>
+              <Col span={12}>
+                <Statistic
+                  title="pPQR记录"
+                  value={usageStats.ppqr.used}
+                  suffix={`/ ${formatLimit(usageStats.ppqr.limit)}`}
+                  prefix={<ExperimentOutlined />}
+                  valueStyle={{ color: '#722ed1', fontSize: '16px' }}
+                />
+                <Progress
+                  percent={usageStats.ppqr.percentage}
+                  size="small"
+                  className="mt-1"
+                  strokeColor="#722ed1"
+                  status={usageStats.ppqr.percentage >= 90 ? 'exception' : 'normal'}
+                />
+              </Col>
+            </Row>
+          </>
+        )}
       </div>
 
       <Divider />

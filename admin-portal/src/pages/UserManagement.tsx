@@ -200,7 +200,7 @@ const UserManagement: React.FC = () => {
       personal_free: 'default',
       personal_pro: 'blue',
       personal_advanced: 'green',
-      personal_flagship: 'purple',
+      personal_flagship: 'geekblue',
       enterprise: 'orange',
       enterprise_pro: 'magenta',
       enterprise_pro_max: 'red',

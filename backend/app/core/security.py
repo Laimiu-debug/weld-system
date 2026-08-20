@@ -6,13 +6,20 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Union
 
+import bcrypt
 from jose import jwt
-from passlib.context import CryptContext
 
 from app.core.config import settings
 
-# 密码加密上下文
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# bcrypt 限制明文不超过 72 字节
+_BCRYPT_MAX_BYTES = 72
+
+
+def _password_bytes(password: str) -> bytes:
+    raw = password.encode("utf-8")
+    if len(raw) > _BCRYPT_MAX_BYTES:
+        raise ValueError("密码过长，请控制在 72 字节以内")
+    return raw
 
 
 def create_access_token(
@@ -114,7 +121,13 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Returns:
         密码是否匹配
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return bcrypt.checkpw(
+            _password_bytes(plain_password),
+            hashed_password.encode("utf-8"),
+        )
+    except (ValueError, TypeError):
+        return False
 
 
 def get_password_hash(password: str) -> str:
@@ -127,7 +140,7 @@ def get_password_hash(password: str) -> str:
     Returns:
         哈希后的密码
     """
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(_password_bytes(password), bcrypt.gensalt()).decode("utf-8")
 
 
 def generate_password_reset_token(email: str) -> str:

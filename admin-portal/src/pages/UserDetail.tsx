@@ -199,7 +199,7 @@ const UserDetail: React.FC = () => {
       free: 'default',
       personal_pro: 'blue',
       personal_advanced: 'green',
-      personal_flagship: 'purple',
+      personal_flagship: 'geekblue',
       enterprise: 'gold',
     };
     return colors[tier] || 'default';

@@ -94,7 +94,7 @@ const SubscriptionManagement: React.FC = () => {
     const colors: Record<string, string> = {
       personal_pro: 'blue',
       personal_advanced: 'green',
-      personal_flagship: 'purple',
+      personal_flagship: 'geekblue',
       enterprise: 'gold',
     };
     return colors[plan] || 'default';

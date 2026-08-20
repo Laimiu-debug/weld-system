@@ -135,19 +135,19 @@ const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
       >
         <div
           style={{
-            height: 64,
+            height: 48,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: 'rgba(255, 255, 255, 0.1)',
             margin: '16px',
             borderRadius: '6px',
-            color: '#fff',
-            fontSize: collapsed ? '14px' : '16px',
-            fontWeight: 'bold',
+            color: '#1F5EFF',
+            fontSize: collapsed ? '14px' : '18px',
+            fontWeight: 700,
+            letterSpacing: '0.08em',
           }}
         >
-          {collapsed ? '焊接' : '焊接管理系统'}
+          {collapsed ? '焊序' : '焊序 · 管理端'}
         </div>
 
         <Menu

@@ -200,7 +200,7 @@ const PricingManagement: React.FC = () => {
   const getPlanTypeTag = (planId: string) => {
     if (planId.includes('free')) return <Tag color="default">免费版</Tag>;
     if (planId.includes('personal')) return <Tag color="blue">个人版</Tag>;
-    if (planId.includes('enterprise')) return <Tag color="purple">企业版</Tag>;
+    if (planId.includes('enterprise')) return <Tag color="geekblue">企业版</Tag>;
     return <Tag>{planId}</Tag>;
   };
 
@@ -227,7 +227,7 @@ const PricingManagement: React.FC = () => {
       key: 'monthly_price',
       width: 120,
       render: (price: number) => (
-        <span style={{ color: '#1890ff', fontWeight: 500 }}>
+        <span style={{ color: '#1F5EFF', fontWeight: 500 }}>
           ¥{price.toFixed(2)}
         </span>
       ),
