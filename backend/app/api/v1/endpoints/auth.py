@@ -104,11 +104,7 @@ def login_for_access_token(
         )
 
     # 更新最后登录时间和IP
-    client_ip = request.client.host
-    if 'x-forwarded-for' in request.headers:
-        client_ip = request.headers['x-forwarded-for']
-    elif 'x-real-ip' in request.headers:
-        client_ip = request.headers['x-real-ip']
+    login_ip = client_ip(request)
 
     # 使用本地时间而不是UTC时间
     from datetime import datetime
@@ -119,7 +115,7 @@ def login_for_access_token(
     local_time = datetime.now(china_tz)
 
     user.last_login_at = local_time
-    user.last_login_ip = client_ip
+    user.last_login_ip = login_ip
     db.commit()
 
     # 创建访问令牌和刷新令牌
@@ -204,11 +200,7 @@ def login_with_json(  # Updated to support phone/email login
         )
 
     # 更新最后登录时间和IP
-    client_ip = request.client.host
-    if 'x-forwarded-for' in request.headers:
-        client_ip = request.headers['x-forwarded-for']
-    elif 'x-real-ip' in request.headers:
-        client_ip = request.headers['x-real-ip']
+    login_ip = client_ip(request)
 
     # 使用本地时间而不是UTC时间
     import pytz
@@ -216,7 +208,7 @@ def login_with_json(  # Updated to support phone/email login
     local_time = datetime.now(china_tz)
 
     user.last_login_at = local_time
-    user.last_login_ip = client_ip
+    user.last_login_ip = login_ip
     db.commit()
 
     # 创建访问令牌和刷新令牌
@@ -653,11 +645,7 @@ def login_with_verification_code(
         )
 
     # 更新最后登录时间和IP
-    client_ip = request.client.host
-    if 'x-forwarded-for' in request.headers:
-        client_ip = request.headers['x-forwarded-for']
-    elif 'x-real-ip' in request.headers:
-        client_ip = request.headers['x-real-ip']
+    login_ip = client_ip(request)
 
     # 使用本地时间而不是UTC时间
     import pytz
@@ -665,7 +653,7 @@ def login_with_verification_code(
     local_time = datetime.now(china_tz)
 
     user.last_login_at = local_time
-    user.last_login_ip = client_ip
+    user.last_login_ip = login_ip
     db.commit()
 
     # 创建访问令牌和刷新令牌

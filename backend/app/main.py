@@ -71,6 +71,18 @@ async def startup_event():
         logger.warning(
             "Skipping implicit create_all(); run `alembic upgrade head` for schema changes"
         )
+        try:
+            from sqlalchemy import text
+            from app.core.database import SessionLocal
+
+            db = SessionLocal()
+            try:
+                db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences TEXT"))
+                db.commit()
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.warning("Failed to ensure users.preferences column: %s", exc)
     else:
         assert_ready_or_raise()
     logger.info("Hanxu Backend started")

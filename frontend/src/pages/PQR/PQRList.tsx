@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Card,
   Button,
@@ -42,6 +42,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import { useAuthStore } from '@/store/authStore'
+import { usePreferencesStore } from '@/store/preferencesStore'
 import pqrService, { PQRSummary } from '@/services/pqr'
 import { ApprovalButton } from '@/components/Approval/ApprovalButton'
 import { sanitizeDocumentHtml } from '@/utils/sanitizeHtml'
@@ -54,14 +55,19 @@ const PQRList: React.FC = () => {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { checkPermission, canCreateMore, user } = useAuthStore()
+  const defaultPageSize = usePreferencesStore((s) => s.preferences.pageSize) || 20
   const [searchText, setSearchText] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [qualificationFilter, setQualificationFilter] = useState<string>('')
   const [pagination, setPagination] = useState({
     current: 1,
-    pageSize: 20,
+    pageSize: defaultPageSize,
     total: 0,
   })
+
+  useEffect(() => {
+    setPagination((prev) => ({ ...prev, pageSize: defaultPageSize, current: 1 }))
+  }, [defaultPageSize])
 
   // 使用真实API获取PQR列表
   const {

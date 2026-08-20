@@ -4,7 +4,7 @@ User model for the welding system backend.
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, relationship
 
 from app.core.database import Base
@@ -52,6 +52,7 @@ class User(Base):
 
     # 个人资料字段
     avatar_url = Column(String, nullable=True)                  # 头像URL
+    preferences = Column(Text, nullable=True)                   # 个人系统偏好（JSON字符串）
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

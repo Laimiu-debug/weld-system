@@ -52,6 +52,7 @@ import {
   CloudOutlined,
 } from '@ant-design/icons'
 import { useAuthStore } from '@/store/authStore'
+import { usePreferencesStore } from '@/store/preferencesStore'
 import { workspaceService, Workspace } from '@/services/workspace'
 import WorkspaceSwitcher from '@/components/WorkspaceSwitcher'
 import NotificationCenter from '@/components/NotificationCenter'
@@ -65,7 +66,8 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = () => {
-  const [collapsed, setCollapsed] = useState(false)
+  const sidebarCollapsedPref = usePreferencesStore((s) => s.preferences.sidebarCollapsed)
+  const [collapsed, setCollapsed] = useState(sidebarCollapsedPref)
   const [mobileDrawerVisible, setMobileDrawerVisible] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [searchValue, setSearchValue] = useState('')
@@ -78,6 +80,10 @@ const Layout: React.FC<LayoutProps> = () => {
   } = theme.useToken()
 
   const { user, logout, checkPermission, hasAnyPermission, refreshUserInfo } = useAuthStore()
+
+  useEffect(() => {
+    setCollapsed(sidebarCollapsedPref)
+  }, [sidebarCollapsedPref])
 
   // 判断是否为游客模式
   const isGuestMode = !user

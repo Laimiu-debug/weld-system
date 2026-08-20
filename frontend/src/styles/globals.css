@@ -1,6 +1,25 @@
 /* 导入响应式样式 */
 @import '../components/Responsive/Responsive.css';
 
+body.compact-mode .ant-card {
+  margin-bottom: 16px;
+}
+
+body.compact-mode .page-container {
+  padding: 16px;
+}
+
+body.compact-mode .admin-content,
+body.compact-mode .wps-list-container,
+body.compact-mode .pqr-list-container {
+  padding: 16px;
+}
+
+html[data-theme='dark'] body {
+  background-color: #141414;
+  color: rgba(255, 255, 255, 0.85);
+}
+
 /* Tailwind CSS基础指令 */
 @tailwind base;
 @tailwind components;

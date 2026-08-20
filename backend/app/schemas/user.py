@@ -1,10 +1,10 @@
 """
 User schemas for the welding system backend.
 """
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, ConfigDict, field_serializer
+from pydantic import BaseModel, EmailStr, ConfigDict, field_serializer, Field
 
 
 class UserBase(BaseModel):
@@ -94,3 +94,28 @@ class EmailTokenRequest(BaseModel):
 
 class ResendVerificationRequest(BaseModel):
     email: EmailStr
+
+
+class UserPreferences(BaseModel):
+    """Personal system preferences for the user portal."""
+    language: str = "zh-CN"
+    timezone: str = "Asia/Shanghai"
+    dateFormat: str = "YYYY-MM-DD"
+    timeFormat: str = "HH:mm:ss"
+    theme: str = "light"
+    primaryColor: str = "#1F5EFF"
+    compactMode: bool = False
+    sidebarCollapsed: bool = False
+    workDays: List[str] = Field(
+        default_factory=lambda: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    )
+    workStartTime: str = "09:00"
+    workEndTime: str = "18:00"
+    autoSave: bool = True
+    autoSaveInterval: int = 30
+    notificationSound: bool = True
+    desktopNotifications: bool = True
+    pageSize: int = 20
+    decimalPlaces: int = 2
+    currency: str = "CNY"
+    measurementUnit: str = "metric"

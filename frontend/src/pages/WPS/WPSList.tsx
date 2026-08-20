@@ -45,6 +45,7 @@ import { useQuery } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import { WPSRecord, WPSStatus, PaginatedResponse } from '@/types'
 import { useAuthStore } from '@/store/authStore'
+import { usePreferencesStore } from '@/store/preferencesStore'
 import wpsService, { WPSSummary } from '@/services/wps'
 import { approvalApi } from '@/services/approval'
 import ApprovalButton from '@/components/Approval/ApprovalButton'
@@ -58,14 +59,19 @@ const { Option } = Select
 const WPSList: React.FC = () => {
   const navigate = useNavigate()
   const { checkPermission, canCreateMore, user } = useAuthStore()
+  const defaultPageSize = usePreferencesStore((s) => s.preferences.pageSize) || 20
   const [searchText, setSearchText] = useState('')
   const [statusFilter, setStatusFilter] = useState<WPSStatus | ''>('')
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null)
   const [pagination, setPagination] = useState({
     current: 1,
-    pageSize: 20,
+    pageSize: defaultPageSize,
     total: 0,
   })
+
+  useEffect(() => {
+    setPagination((prev) => ({ ...prev, pageSize: defaultPageSize, current: 1 }))
+  }, [defaultPageSize])
   const [previewRecord, setPreviewRecord] = useState<WPSRecord | null>(null)
   const [previewModalVisible, setPreviewModalVisible] = useState(false)
   const [statusModalVisible, setStatusModalVisible] = useState(false)

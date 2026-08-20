@@ -1,18 +1,45 @@
 """
 User management endpoints for the welding system backend.
 """
-from typing import Any, List, Dict
+import json
+from typing import Any, List
 
 from fastapi import APIRouter, Depends, HTTPException, status, Path
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api import deps
-from app.schemas.user import UserCreate, UserResponse, UserUpdate
+from app.schemas.user import UserCreate, UserResponse, UserUpdate, UserPreferences
 from app.services.user_service import user_service
 from app.services.membership_service import MembershipService
 from app.models.user import User
 
 router = APIRouter()
+
+_DEFAULT_PREFERENCES = UserPreferences().model_dump()
+
+
+def _ensure_preferences_column(db: Session) -> None:
+    """Idempotently add preferences column for environments without migrated schema."""
+    try:
+        db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences TEXT"))
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+def _parse_preferences(raw: Any) -> dict:
+    if not raw:
+        return dict(_DEFAULT_PREFERENCES)
+    if isinstance(raw, dict):
+        return {**_DEFAULT_PREFERENCES, **raw}
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            return {**_DEFAULT_PREFERENCES, **data}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        pass
+    return dict(_DEFAULT_PREFERENCES)
 
 
 @router.get("/", response_model=List[UserResponse])
@@ -44,7 +71,6 @@ def read_user_me(
     db: Session = Depends(deps.get_db)
 ) -> Any:
     """获取当前用户信息."""
-    # 从数据库重新查询最新的用户信息
     updated_user = user_service.get(db, id=current_user.id)
     if not updated_user:
         raise HTTPException(
@@ -69,6 +95,39 @@ def update_user_me(
         )
     user = user_service.update(db, db_obj=user, obj_in=user_in)
     return user
+
+
+@router.get("/me/preferences", response_model=UserPreferences)
+def get_my_preferences(
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """获取当前用户的系统偏好设置."""
+    _ensure_preferences_column(db)
+    user = user_service.get(db, id=current_user.id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+    return UserPreferences(**_parse_preferences(getattr(user, "preferences", None)))
+
+
+@router.put("/me/preferences", response_model=UserPreferences)
+def update_my_preferences(
+    preferences: UserPreferences,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user),
+) -> Any:
+    """更新当前用户的系统偏好设置."""
+    _ensure_preferences_column(db)
+    user = user_service.get(db, id=current_user.id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
+
+    payload = preferences.model_dump()
+    user.preferences = json.dumps(payload, ensure_ascii=False)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return UserPreferences(**_parse_preferences(user.preferences))
 
 
 @router.get("/me-membership")
