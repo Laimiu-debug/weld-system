@@ -27,6 +27,44 @@ jobs:
         env:
           DEVELOPMENT: "true"
 
+  backend-schema:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: weld_db
+          POSTGRES_USER: weld_user
+          POSTGRES_PASSWORD: ci-db-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U weld_user -d weld_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DEVELOPMENT: "true"
+      DEBUG: "false"
+      DATABASE_URL: postgresql://weld_user:ci-db-password@localhost:5432/weld_db
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install backend
+        run: pip install -e ".[dev]"
+      - name: Bootstrap empty database
+        run: python -m app.scripts.bootstrap_schema
+      - name: Exercise recent migrations
+        run: |
+          alembic downgrade add_company_invitations
+          alembic upgrade head
+          alembic current | grep "add_quality_location_fields (head)"
+
   frontend-build:
     runs-on: ubuntu-latest
     defaults:
@@ -43,6 +81,8 @@ jobs:
         run: npm ci
       - name: Type check
         run: npm run type-check
+      - name: Lint
+        run: npm run lint
       - name: Build
         run: npm run build
       - name: Dependency audit
@@ -64,7 +104,27 @@ jobs:
         run: npm ci
       - name: Type check
         run: npm run type-check
+      - name: Lint
+        run: npm run lint
       - name: Build
         run: npm run build
       - name: Dependency audit
         run: npm audit --audit-level=moderate
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -t weldsystem-backend-ci ./backend
+      - name: Build frontend image
+        run: >-
+          docker build
+          --build-arg VITE_API_BASE_URL=http://localhost:8000/api/v1
+          -t weldsystem-frontend-ci ./frontend
+      - name: Build admin image
+        run: >-
+          docker build
+          -f ./admin-portal/Dockerfile.prod
+          --build-arg VITE_API_BASE_URL=http://localhost:8000/api/v1
+          -t weldsystem-admin-ci ./admin-portal

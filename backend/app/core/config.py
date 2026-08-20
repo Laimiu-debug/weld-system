@@ -255,11 +255,13 @@ class Settings(BaseSettings):
         from urllib.parse import quote
 
         if not self.DATABASE_URL:
+            encoded_user = quote(self.DATABASE_USER, safe="")
+            encoded_password = quote(self.DATABASE_PASSWORD, safe="")
             object.__setattr__(
                 self,
                 "DATABASE_URL",
                 (
-                    f"postgresql://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}"
+                    f"postgresql://{encoded_user}:{encoded_password}"
                     f"@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_NAME}"
                 ),
             )
@@ -307,6 +309,23 @@ class Settings(BaseSettings):
             raise ValueError(
                 "Production REDIS_URL must not use a leaked default"
             )
+
+        provider = self.PAYMENT_PROVIDER.strip().lower()
+        if provider == "mock":
+            raise ValueError("Production PAYMENT_PROVIDER must not be mock")
+        if provider not in {"xunhu", "pingpp"}:
+            raise ValueError("Production PAYMENT_PROVIDER is unsupported")
+        if provider == "xunhu" and (not self.XUNHU_APPID or not self.XUNHU_APPSECRET):
+            raise ValueError("Production Xunhu payment credentials must be configured")
+        if provider == "pingpp" and (not self.PAYMENT_APP_ID or not self.PAYMENT_API_KEY):
+            raise ValueError("Production Ping++ payment credentials must be configured")
+
+        for name, url in (
+            ("PAYMENT_NOTIFY_URL", self.PAYMENT_NOTIFY_URL),
+            ("PAYMENT_RETURN_URL", self.PAYMENT_RETURN_URL),
+        ):
+            if not url or not url.lower().startswith("https://"):
+                raise ValueError(f"Production {name} must use HTTPS")
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:

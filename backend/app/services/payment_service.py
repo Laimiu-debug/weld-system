@@ -650,15 +650,6 @@ class PaymentService:
         if upgrade_price < 0.01:
             upgrade_price = 0.01
 
-        print(f"[DEBUG] 升级补差价计算:")
-        print(f"  当前套餐: {current_tier}, 价格: {current_plan_price}, 周期: {current_billing_cycle}")
-        print(f"  新套餐: {new_plan_id}, 价格: {new_plan_price}, 周期: {billing_cycle}")
-        print(f"  剩余天数: {remaining_days}")
-        print(f"  当前日均价: {current_daily_price:.2f}")
-        print(f"  新套餐日均价: {new_daily_price:.2f}")
-        print(f"  剩余价值: {remaining_value:.2f}")
-        print(f"  实际支付: {upgrade_price:.2f}")
-
         return round(upgrade_price, 2)
 
 

@@ -18,6 +18,14 @@ SENSITIVE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+TECHNICAL_ERROR_PATTERN = re.compile(
+    r"(sqlalchemy|psycopg|asyncpg|traceback|integrityerror|operationalerror|"
+    r"programmingerror|duplicate key|foreign key|relation .+ does not exist|"
+    r"column .+ does not exist|connection (?:refused|reset)|\[sql:|"
+    r"file \".+\", line \d+)",
+    re.IGNORECASE,
+)
+
 
 def error_body(code: str, message: str, **extra: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {"code": code, "message": message}
@@ -56,11 +64,29 @@ def client_error_detail(exc: BaseException) -> str:
     return "服务器内部错误"
 
 
+def public_http_detail(status_code: int, detail: Any) -> Any:
+    """Hide server internals accidentally placed in HTTPException.detail."""
+    if status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
+        return {"code": "INTERNAL_ERROR", "message": "服务器内部错误"}
+    if isinstance(detail, str) and TECHNICAL_ERROR_PATTERN.search(detail):
+        return {"code": "REQUEST_FAILED", "message": "请求处理失败"}
+    return detail
+
+
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    del request
+    if exc.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
+        logger.error(
+            "HTTP error status=%s path=%s request_id=%s",
+            exc.status_code,
+            request.url.path,
+            get_request_id(),
+        )
     return JSONResponse(
         status_code=exc.status_code,
-        content={"detail": exc.detail, "request_id": get_request_id()},
+        content={
+            "detail": public_http_detail(exc.status_code, exc.detail),
+            "request_id": get_request_id(),
+        },
     )
 
 

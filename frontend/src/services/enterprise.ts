@@ -450,13 +450,6 @@ class EnterpriseService {
 
   // ==================== 角色管理API ====================
 
-  // 初始化角色表和默认角色
-  async initRoles() {
-    console.log('🔍 调用初始化角色API')
-    const response = await api.post(`${this.baseUrl}/roles/init`)
-    return response
-  }
-
   // 获取角色列表
   async getRoles(params?: {
     page?: number

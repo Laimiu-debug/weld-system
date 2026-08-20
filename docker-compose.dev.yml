@@ -12,6 +12,22 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
 
+  celery-worker:
+    profiles: ["operations"]
+    environment:
+      DEVELOPMENT: "true"
+      DEBUG: "true"
+
+  celery-beat:
+    profiles: ["operations"]
+    environment:
+      DEVELOPMENT: "true"
+      DEBUG: "true"
+
+  # 本地默认不运行周期任务和备份，避免产生测试通知与备份文件。
+  backup:
+    profiles: ["operations"]
+
   frontend:
     build:
       args:

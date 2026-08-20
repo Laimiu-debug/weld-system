@@ -125,7 +125,6 @@ async def get_current_admin_user(
     Raises:
         HTTPException: 如果用户不是管理员
     """
-    print(f"[DEBUG] get_current_admin_user called for user: {current_user.email}")
     if not current_user.is_superuser:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

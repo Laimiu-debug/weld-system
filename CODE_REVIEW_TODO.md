@@ -1,13 +1,13 @@
 # 焊序：Debug 与优化 TODO
 
-更新时间：2026-08-19
+更新时间：2026-08-20
 
 ## 当前验证结果
 
 - [x] 完成项目结构、入口、配置、路由、依赖和部署文件的首轮检查。
 - [x] `python -m compileall -q app` 通过，未发现 Python 语法错误。
 - [x] `backend/tests` 下 `pytest` 现可收集并运行。根目录旧 `test_*.py` 仍未迁移，不在默认 `testpaths` 内。
-- [x] GitHub Actions 已加入 `backend-unit`（compileall + pytest）、`frontend-build` 与 `admin-build`（`npm ci` + type-check + Vite build）。生产依赖 `npm audit` 是阻断式门禁。
+- [x] GitHub Actions 已加入后端单测、迁移回退/升级、双前端 lint/type-check/build/audit 与三套 Docker 镜像构建门禁。
 - [x] 生产依赖审计已使用 npm 官方 registry 执行：用户端与管理端均为 0 个已知漏洞；Vite 8 已落地。
 - [x] Docker Compose 配置、容器健康状态与本地 HTTP 冒烟已验证；完整业务流程联调仍待补充。
 
@@ -51,11 +51,13 @@
 
 - [x] 统一数据库迁移流程（基线）。
   - 补齐 `alembic.ini` / `env.py`，串联已有 revision；启动不再 `create_all`。
+  - 已下线企业角色运行时建表接口；开发启动也不再执行 `ALTER TABLE`。
   - 空库请先运行 `python -m app.scripts.bootstrap_schema` 再 `alembic upgrade head`。历史 `backend/migrations` 脚本未并入。
 
 - [x] 修复全局异常处理与敏感信息泄漏。
   - 只保留一套处理器；日志脱敏 Authorization 等敏感头；响应不再返回 traceback / 原始 `str(e)`。
-  - 个别业务端点仍可能把 `str(e)` 放进 detail，需后续按模块清扫。
+  - 全局处理器会屏蔽 5xx 与常见数据库/堆栈技术细节；高敏调试打印已继续清扫。
+  - 个别业务端点仍保留 `str(e)` 或 `print`，需后续按模块逐步改为结构化日志。
 
 - [x] 让启动和健康检查真实反映依赖状态。
   - `GET /health`：liveness；`GET /ready` 与 `GET /api/v1/health`：readiness（Postgres + Redis，失败 503）。
@@ -89,8 +91,8 @@
   - 生产 `npm audit --omit=dev` 当前为 0 个已知漏洞（npm 官方 registry）。
 
 - [x] 建立 CI 质量门禁（后端单元测试 + 前端/管理端构建）。
-  - `.github/workflows/ci.yml`：安装最小依赖、compileall、`pytest tests/unit`。
-  - `frontend-build` / `admin-build`：Node 20、`npm ci`、type-check、`vite build` 与阻断式 `npm audit`。
+  - `.github/workflows/ci.yml`：compileall、单测、空库初始化、Alembic 回退/升级和 Docker 镜像构建。
+  - `frontend-build` / `admin-build`：Node 20、`npm ci`、lint、type-check、`vite build` 与阻断式 `npm audit`。
   - 两端 type-check 与 Hooks 调用规则 lint 全绿；Compose 配置、容器健康状态与 HTTP 冒烟已验证。
   - `react-hooks/exhaustive-deps` 历史警告仍需按页面审查，避免机械补依赖导致重复请求或渲染循环。
 
@@ -128,6 +130,11 @@
   - 请求中间件写入 `X-Request-ID` / `X-Process-Time`，日志带 request_id；生产 JSON 日志。
   - `/ready` 增加数据库连接池快照。
   - 尚未采集 Celery/导出/支付的独立指标与告警。
+
+- [x] 补齐周期任务与自动备份运行入口。
+  - Compose 增加 Celery worker/beat，通知任务按小时与每天 08:00 调度，并具备自动重试。
+  - Compose 增加 PostgreSQL 与上传文件每日备份、原子落盘及默认 14 天保留策略；本地开发默认不启动 operations profile。
+  - 仍建议将备份同步到异地对象存储，并定期执行恢复演练。
 
 - [x] 修正文档与环境声明。
   - README 改为实际支持的 Python 3.11、Node 20、PostgreSQL 15、Redis 7、Compose v2。

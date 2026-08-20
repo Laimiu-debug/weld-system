@@ -210,7 +210,6 @@ def create_ppqr(
     """
     try:
         # 打印接收到的数据用于调试
-        print(f"[DEBUG] 接收到的pPQR数据: {ppqr_data}")
 
         # 获取工作区上下文
         workspace_context = get_workspace_context(db, current_user, workspace_id)
@@ -258,7 +257,6 @@ def create_ppqr(
             "updated_at": ppqr.updated_at.isoformat() if ppqr.updated_at else None
         }
 
-        print(f"[DEBUG] 返回的pPQR数据: {response_data}")
 
         return response_data
 
@@ -417,7 +415,6 @@ def update_ppqr(
     更新pPQR（带工作区上下文）
     """
     try:
-        print(f"[DEBUG] 更新pPQR {ppqr_id}，数据: {ppqr_data}")
 
         # 获取工作区上下文
         workspace_context = get_workspace_context(db, current_user, workspace_id)
@@ -455,7 +452,6 @@ def update_ppqr(
             "updated_at": ppqr.updated_at.isoformat() if ppqr.updated_at else None
         }
 
-        print(f"[DEBUG] pPQR更新成功: {response_data}")
 
         return response_data
 
@@ -627,7 +623,6 @@ def duplicate_ppqr(
             "updated_at": new_ppqr.updated_at.isoformat() if new_ppqr.updated_at else None
         }
 
-        print(f"[DEBUG] pPQR复制成功: {response_data}")
 
         return response_data
 

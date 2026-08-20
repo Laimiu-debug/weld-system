@@ -7,10 +7,17 @@ from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.services.notification_service import NotificationService
+from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
 
+@celery_app.task(
+    name="notifications.daily",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_kwargs={"max_retries": 3},
+)
 def run_daily_notification_tasks():
     """
     每日通知任务
@@ -66,16 +73,19 @@ def run_daily_notification_tasks():
             "warranty_count": warranty_count,
         }
         
-    except Exception as e:
-        logger.error(f"[定时任务] 每日通知任务失败: {str(e)}", exc_info=True)
-        return {
-            "success": False,
-            "error": str(e)
-        }
+    except Exception:
+        logger.exception("[定时任务] 每日通知任务失败")
+        raise
     finally:
         db.close()
 
 
+@celery_app.task(
+    name="notifications.hourly",
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_kwargs={"max_retries": 3},
+)
 def run_hourly_notification_tasks():
     """
     每小时通知任务
@@ -98,12 +108,9 @@ def run_hourly_notification_tasks():
             "expiring_count": expiring_count,
         }
         
-    except Exception as e:
-        logger.error(f"[定时任务] 每小时通知任务失败: {str(e)}", exc_info=True)
-        return {
-            "success": False,
-            "error": str(e)
-        }
+    except Exception:
+        logger.exception("[定时任务] 每小时通知任务失败")
+        raise
     finally:
         db.close()
 

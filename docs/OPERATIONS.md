@@ -22,7 +22,7 @@ python -m compileall -q app
 python -m pytest tests/unit -q --tb=short
 ```
 
-根目录遗留的 `test_*.py` 不在默认 `testpaths` 内。前端 `npm run build` 走 Vite；`npm run build:check` 含 `tsc`，历史上可能失败，CI 不强制。
+根目录遗留的 `test_*.py` 不在默认 `testpaths` 内。CI 会执行双前端的 lint、type-check、Vite 构建、依赖审计，以及后端迁移回退/升级和 Docker 镜像构建。
 
 ## 数据库迁移
 
@@ -37,12 +37,43 @@ alembic downgrade -1    # 仅在明确需要回滚时
 
 ## 备份与恢复
 
+生产 Compose 默认启动 `backup` 服务：每天生成 PostgreSQL custom-format
+备份和上传目录压缩包，保存到 `postgres_backups` volume，默认保留 14 天。
+可通过 `BACKUP_INTERVAL_SECONDS` 和 `BACKUP_RETENTION_DAYS` 调整。该 volume
+仍位于本机，正式环境应同步到异地对象存储。
+
+查看备份：
+
+```bash
+docker compose exec backup ls -lh /backups
+```
+
+恢复前必须先停写并把目标备份复制到受控临时目录；恢复步骤应先在隔离环境演练。
+
+手工备份与恢复：
+
 ```bash
 docker compose exec postgres pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backup-$(date +%Y%m%d).sql
 docker compose exec -T postgres psql -U "$POSTGRES_USER" "$POSTGRES_DB" < backup-YYYYMMDD.sql
 ```
 
 备份文件不要提交到 Git。上传目录在 `backend/storage/uploads`（Compose volume `backend_uploads`）。
+
+## 周期任务
+
+生产 Compose 默认启动 `celery-worker` 与 `celery-beat`。每日通知任务在
+Asia/Shanghai 08:00 执行，小时任务在每个整点执行。开发 Compose 默认不启动
+周期任务；需要联调时执行：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml --profile operations up -d celery-worker celery-beat
+```
+
+检查任务进程：
+
+```bash
+docker compose logs --tail=100 celery-worker celery-beat
+```
 
 ## 密钥轮换
 
@@ -51,6 +82,8 @@ docker compose exec -T postgres psql -U "$POSTGRES_USER" "$POSTGRES_DB" < backup
 - 根目录 `.env`：`POSTGRES_PASSWORD`、`REDIS_PASSWORD`
 - `backend/.env.production`：`SECRET_KEY`、`DATABASE_URL`、`REDIS_URL`
 - 管理员密码（初始化脚本里的历史口令视为已泄露）
+
+生产环境还必须把 `PAYMENT_PROVIDER` 配置为 `xunhu` 或 `pingpp`，填写对应凭据，且 `PAYMENT_NOTIFY_URL` / `PAYMENT_RETURN_URL` 必须使用 HTTPS；`mock` 仅允许开发测试。
 
 轮换 JWT secret 会使现有登录失效，需要用户重新登录。
 

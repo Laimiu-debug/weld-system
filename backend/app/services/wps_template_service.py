@@ -49,9 +49,6 @@ class WPSTemplateService:
         Returns:
             (templates, total_count)
         """
-        # 添加调试日志
-        print(f"🔍 [DEBUG] 获取模板列表 - 用户ID: {current_user.id}, 工作区类型: {workspace_context.workspace_type}, 企业ID: {workspace_context.company_id}")
-
         try:
             # 验证工作区上下文
             workspace_context.validate()
@@ -110,20 +107,12 @@ class WPSTemplateService:
         # 获取总数
         total = query.count()
 
-        # 添加调试日志
-        print(f"🔍 [DEBUG] 查询到的模板总数: {total}")
-
         # 排序和分页
         templates = query.order_by(
             WPSTemplate.template_source.desc(),  # 系统模板优先
             WPSTemplate.usage_count.desc(),      # 使用次数多的优先
             WPSTemplate.created_at.desc()
         ).offset(skip).limit(limit).all()
-
-        # 添加调试日志
-        print(f"🔍 [DEBUG] 返回的模板数量: {len(templates)}")
-        for t in templates:
-            print(f"  - {t.name} (ID: {t.id}, 工作区: {t.workspace_type}, 来源: {t.template_source})")
 
         return templates, total
     

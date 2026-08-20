@@ -48,25 +48,17 @@ def get_workspace_context(
     Returns:
         WorkspaceContext object
     """
-    print(f"[工作区上下文] 用户ID: {current_user.id}, 邮箱: {current_user.email}")
-    print(f"[工作区上下文] X-Workspace-ID header: {x_workspace_id}")
-    print(f"[工作区上下文] 用户会员类型: {current_user.membership_type}")
-
     workspace_service = WorkspaceService(db)
 
     # If workspace_id is provided in header, use it
     if x_workspace_id:
-        print(f"[工作区上下文] 使用header中的工作区ID: {x_workspace_id}")
         try:
             context = workspace_service.create_workspace_context(current_user, x_workspace_id)
-            print(f"[工作区上下文] 创建成功: type={context.workspace_type}, company_id={context.company_id}")
             return context
-        except Exception as e:
-            print(f"[工作区上下文] 创建失败: {str(e)}")
+        except Exception:
             raise
 
     # Otherwise, determine default workspace based on user's membership type
-    print(f"[工作区上下文] 未提供工作区ID,使用默认逻辑")
     if current_user.membership_type == "enterprise":
         # For enterprise users, find their company
         employee = db.query(CompanyEmployee).filter(
@@ -75,18 +67,13 @@ def get_workspace_context(
         ).first()
 
         if employee:
-            print(f"[工作区上下文] 找到企业员工记录: company_id={employee.company_id}")
             return WorkspaceContext(
                 user_id=current_user.id,
                 workspace_type=WorkspaceType.ENTERPRISE,
                 company_id=employee.company_id,
                 factory_id=employee.factory_id
             )
-        else:
-            print(f"[工作区上下文] 未找到企业员工记录")
-
     # Default to personal workspace
-    print(f"[工作区上下文] 使用个人工作区")
     return WorkspaceContext(
         user_id=current_user.id,
         workspace_type=WorkspaceType.PERSONAL

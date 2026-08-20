@@ -15,6 +15,11 @@ def _production_kwargs(**overrides):
         "REDIS_PASSWORD": "unique-redis-pass-not-leaked",
         "DATABASE_URL": "postgresql://weld_user:unique-db-pass-not-leaked@postgres:5432/weld_db",
         "REDIS_URL": "redis://:unique-redis-pass-not-leaked@redis:6379/0",
+        "PAYMENT_PROVIDER": "xunhu",
+        "XUNHU_APPID": "production-app-id",
+        "XUNHU_APPSECRET": "production-app-secret",
+        "PAYMENT_NOTIFY_URL": "https://api.example.com/api/v1/payments/callback",
+        "PAYMENT_RETURN_URL": "https://example.com/membership/payment-result",
     }
     values.update(overrides)
     return values
@@ -52,6 +57,35 @@ class TestProductionSecrets:
         settings = Settings(_env_file=None, **_production_kwargs())
         assert settings.DEVELOPMENT is False
         assert len(settings.SECRET_KEY) >= 32
+
+    def test_production_rejects_mock_payment_provider(self):
+        with pytest.raises(ValidationError):
+            Settings(_env_file=None, **_production_kwargs(PAYMENT_PROVIDER="mock"))
+
+    def test_production_rejects_insecure_payment_urls(self):
+        with pytest.raises(ValidationError):
+            Settings(
+                _env_file=None,
+                **_production_kwargs(PAYMENT_NOTIFY_URL="http://api.example.com/callback"),
+            )
+
+    def test_production_requires_provider_credentials(self):
+        with pytest.raises(ValidationError):
+            Settings(_env_file=None, **_production_kwargs(XUNHU_APPSECRET=None))
+
+    def test_assembled_database_url_encodes_credentials(self):
+        settings = Settings(
+            _env_file=None,
+            DEVELOPMENT=True,
+            DATABASE_USER="weld user",
+            DATABASE_PASSWORD="p@ss:/word",
+            DATABASE_HOST="postgres",
+            DATABASE_NAME="weld_db",
+        )
+
+        assert settings.DATABASE_URL == (
+            "postgresql://weld%20user:p%40ss%3A%2Fword@postgres:5432/weld_db"
+        )
 
 
 class TestVerifyToken:
