@@ -17,7 +17,6 @@ from app.core.config import settings
 from app.services.payment_gateway import get_payment_gateway
 from app.services.membership_tier_service import MembershipTierService
 from app.services.notification_service import NotificationService
-from app.services.email_service import EmailService
 from app.api import deps
 
 
@@ -439,28 +438,18 @@ class PaymentService:
 
     def _notify_user(self, user_id: int, title: str, content: str, announcement_type: str = "info") -> None:
         try:
-            NotificationService(self.db).create_system_announcement(
+            user = self.db.query(User).filter(User.id == user_id).first()
+            if not user:
+                return
+            NotificationService(self.db).deliver_user_notification(
+                user,
                 title=title,
                 content=content,
+                category="membership",
                 announcement_type=announcement_type,
                 priority="normal",
-                target_audience="user",
-                expire_at=datetime.utcnow() + timedelta(days=14),
-                created_by=user_id,
-                is_auto_generated=True,
+                expire_days=14,
             )
-        except Exception:
-            pass
-
-        try:
-            user = self.db.query(User).filter(User.id == user_id).first()
-            if user and user.email:
-                EmailService().send_email(
-                    to_email=user.email,
-                    subject=f"【焊序】{title}",
-                    html_content=f"<p>{content}</p>",
-                    text_content=content,
-                )
         except Exception:
             pass
 

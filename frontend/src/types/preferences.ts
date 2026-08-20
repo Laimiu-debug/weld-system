@@ -1,4 +1,5 @@
 export type ThemeMode = 'light' | 'dark' | 'auto'
+export type EmailDigestFrequency = 'immediate' | 'daily' | 'weekly' | 'never'
 
 export interface UserSystemPreferences {
   language: string
@@ -24,6 +25,23 @@ export interface UserSystemPreferences {
   sessionTimeout: boolean
   autoLogout: boolean
   autoLogoutMinutes: number
+  emailNotifications: boolean
+  pushNotifications: boolean
+  smsNotifications: boolean
+  quietHoursEnabled: boolean
+  quietHoursStart: string
+  quietHoursEnd: string
+  systemUpdates: boolean
+  securityAlerts: boolean
+  maintenance: boolean
+  wpsUpdates: boolean
+  pqrApprovals: boolean
+  qualityAlerts: boolean
+  equipmentMaintenance: boolean
+  materialAlerts: boolean
+  welderCertifications: boolean
+  productionDeadlines: boolean
+  emailDigestFrequency: EmailDigestFrequency
 }
 
 export const DEFAULT_SYSTEM_PREFERENCES: UserSystemPreferences = {
@@ -50,4 +68,21 @@ export const DEFAULT_SYSTEM_PREFERENCES: UserSystemPreferences = {
   sessionTimeout: true,
   autoLogout: false,
   autoLogoutMinutes: 30,
+  emailNotifications: true,
+  pushNotifications: true,
+  smsNotifications: false,
+  quietHoursEnabled: false,
+  quietHoursStart: '22:00',
+  quietHoursEnd: '08:00',
+  systemUpdates: true,
+  securityAlerts: true,
+  maintenance: true,
+  wpsUpdates: true,
+  pqrApprovals: true,
+  qualityAlerts: true,
+  equipmentMaintenance: true,
+  materialAlerts: true,
+  welderCertifications: true,
+  productionDeadlines: true,
+  emailDigestFrequency: 'immediate',
 }

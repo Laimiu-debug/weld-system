@@ -16,6 +16,14 @@ from app.models.subscription import Subscription
 from app.models.system_announcement import SystemAnnouncement
 from app.core.database import get_db
 from app.core.config import settings
+from app.services.notification_prefs import (
+    parse_user_prefs,
+    should_create_in_app,
+    should_send_email,
+    should_send_sms,
+    map_quota_category,
+    map_document_category,
+)
 
 try:
     from fastapi import Depends
@@ -28,6 +36,71 @@ class NotificationService:
 
     def __init__(self, db: Session):
         self.db = db
+
+    def deliver_user_notification(
+        self,
+        user: User,
+        *,
+        title: str,
+        content: str,
+        category: str,
+        announcement_type: str = "info",
+        priority: str = "normal",
+        expire_days: int = 14,
+        commit: bool = True,
+    ) -> Optional[SystemAnnouncement]:
+        """
+        Create an in-app announcement for one user and optionally email/SMS,
+        respecting the user's notification preferences.
+        """
+        prefs = parse_user_prefs(user)
+        if not should_create_in_app(prefs, category):
+            return None
+
+        announcement = SystemAnnouncement(
+            title=title,
+            content=content,
+            announcement_type=announcement_type,
+            priority=priority,
+            target_audience="user",
+            is_auto_generated=True,
+            is_published=True,
+            publish_at=datetime.utcnow(),
+            expire_at=datetime.utcnow() + timedelta(days=expire_days),
+            created_by=user.id,
+        )
+        self.db.add(announcement)
+
+        if should_send_email(prefs, category, priority=priority) and user.email:
+            try:
+                from app.services.email_service import email_service
+
+                email_service.send_email(
+                    to_email=user.email,
+                    subject=f"【焊序】{title}",
+                    html_content=f"<p>{content}</p>",
+                    text_content=content,
+                )
+            except Exception as exc:
+                print(f"发送通知邮件失败: {exc}")
+
+        if should_send_sms(prefs, category, priority=priority) and getattr(user, "phone", None):
+            try:
+                from app.services.sms_service import sms_service
+
+                # 复用短信通道发送简短提醒（开发环境会 mock）
+                sms_service.send_sms(
+                    phone=user.phone,
+                    template_code=getattr(settings, "SMS_TEMPLATE_LOGIN", "SMS_LOGIN"),
+                    template_params={"code": title[:20], "minutes": "0"},
+                )
+            except Exception as exc:
+                print(f"发送通知短信失败: {exc}")
+
+        if commit:
+            self.db.commit()
+            self.db.refresh(announcement)
+        return announcement
 
     def check_expiring_subscriptions(self, days_ahead: int = 7) -> List[Dict[str, Any]]:
         """检查即将到期的订阅"""
@@ -64,29 +137,27 @@ class NotificationService:
         sent_count = 0
         for subscription_info in expiring_subscriptions:
             try:
-                # 创建系统公告
-                announcement = SystemAnnouncement(
+                user = self.db.query(User).filter(User.id == subscription_info["user_id"]).first()
+                if not user:
+                    continue
+                created = self.deliver_user_notification(
+                    user,
                     title="订阅即将到期提醒",
-                    content=f"您的订阅将在 {subscription_info['days_until_expiry']} 天后到期，请及时续费以免影响使用。",
+                    content=(
+                        f"您的订阅将在 {subscription_info['days_until_expiry']} 天后到期，"
+                        "请及时续费以免影响使用。"
+                    ),
+                    category="membership",
                     announcement_type="warning",
                     priority="normal",
-                    target_audience="user",
-                    is_auto_generated=True,
-                    is_published=True,
-                    publish_at=datetime.utcnow(),
-                    expire_at=subscription_info['end_date'],
-                    created_by=subscription_info['user_id']
+                    expire_days=max(subscription_info["days_until_expiry"], 1),
+                    commit=False,
                 )
-
-                self.db.add(announcement)
-                
-                # 这里可以添加邮件通知逻辑
-                # email_service.send_expiration_reminder(subscription_info)
-                
-                sent_count += 1
+                if created:
+                    sent_count += 1
             except Exception as e:
                 print(f"发送到期提醒失败: {str(e)}")
-        
+
         self.db.commit()
         return sent_count
 
@@ -150,26 +221,18 @@ class NotificationService:
                         # 切换到次高等级
                         announcement_content = f"您的高等级订阅已过期，已自动切换到您的其他有效订阅（{result['new_tier']}）。"
 
-                    # 创建系统公告
-                    announcement = SystemAnnouncement(
+                    created = self.deliver_user_notification(
+                        user,
                         title="会员等级变更通知",
                         content=announcement_content,
+                        category="membership",
                         announcement_type="info",
                         priority="normal",
-                        target_audience="user",
-                        is_auto_generated=True,
-                        is_published=True,
-                        publish_at=datetime.utcnow(),
-                        expire_at=datetime.utcnow() + timedelta(days=30),
-                        created_by=user_id
+                        expire_days=30,
+                        commit=False,
                     )
-
-                    self.db.add(announcement)
-
-                    # 这里可以添加邮件通知逻辑
-                    # email_service.send_tier_change_notice(user, result)
-
-                    processed_count += 1
+                    if created:
+                        processed_count += 1
             except Exception as e:
                 print(f"处理过期订阅失败 (用户 {user_id}): {str(e)}")
         
@@ -341,15 +404,14 @@ class NotificationService:
 
 升级会员，获得更多配额！"""
 
-        self.create_system_announcement(
+        self.deliver_user_notification(
+            user,
             title=title,
             content=content,
+            category=map_quota_category(quota_type),
             announcement_type=announcement_type,
             priority=priority,
-            target_audience="user" if user.membership_type.startswith("personal") else "enterprise",
-            expire_at=datetime.utcnow() + timedelta(days=7),
-            created_by=user.id,
-            is_auto_generated=True
+            expire_days=7,
         )
 
     def notify_unusual_login(self, user: User, ip: str, location: str = "未知"):
@@ -366,15 +428,14 @@ class NotificationService:
 如果这是您本人的操作，请忽略此消息。
 如果不是您本人操作，请立即修改密码并联系客服。"""
 
-        self.create_system_announcement(
+        self.deliver_user_notification(
+            user,
             title=title,
             content=content,
+            category="security_alerts",
             announcement_type="warning",
             priority="urgent",
-            target_audience="all",
-            expire_at=datetime.utcnow() + timedelta(days=3),
-            created_by=user.id,
-            is_auto_generated=True
+            expire_days=3,
         )
 
     def notify_password_changed(self, user: User):
@@ -386,15 +447,14 @@ class NotificationService:
 
 如果这不是您本人的操作，请立即联系客服。"""
 
-        self.create_system_announcement(
+        self.deliver_user_notification(
+            user,
             title=title,
             content=content,
+            category="security_alerts",
             announcement_type="info",
             priority="high",
-            target_audience="all",
-            expire_at=datetime.utcnow() + timedelta(days=7),
-            created_by=user.id,
-            is_auto_generated=True
+            expire_days=7,
         )
 
     def check_and_notify_quota_usage(self, thresholds: List[int] = [80, 90, 100]):
@@ -461,29 +521,24 @@ class NotificationService:
     ) -> int:
         """通知审批人有新的审批请求"""
         sent_count = 0
+        category = map_document_category(document_type)
 
         for approver_id in approver_ids:
             try:
-                announcement = SystemAnnouncement(
+                user = self.db.query(User).filter(User.id == approver_id).first()
+                if not user:
+                    continue
+                created = self.deliver_user_notification(
+                    user,
                     title="新的审批请求",
                     content=f"您有一个新的{document_type}审批请求：{document_title}",
+                    category=category,
                     announcement_type="info",
                     priority="normal",
-                    target_audience="user",
-                    is_auto_generated=True,
-                    is_published=True,
-                    publish_at=datetime.utcnow(),
-                    created_by=approver_id,
-                    metadata={
-                        "type": "approval_request",
-                        "instance_id": instance_id,
-                        "document_type": document_type,
-                        "submitter_id": submitter_id
-                    }
+                    commit=False,
                 )
-
-                self.db.add(announcement)
-                sent_count += 1
+                if created:
+                    sent_count += 1
             except Exception as e:
                 print(f"发送审批通知失败: {str(e)}")
 
@@ -507,26 +562,17 @@ class NotificationService:
         }.get(result, "已处理")
 
         try:
-            announcement = SystemAnnouncement(
+            user = self.db.query(User).filter(User.id == submitter_id).first()
+            if not user:
+                return
+            self.deliver_user_notification(
+                user,
                 title=f"审批{result_text}",
                 content=f"您提交的{document_type}「{document_title}」{result_text}。{comment}",
+                category=map_document_category(document_type),
                 announcement_type="success" if result == "approved" else "warning",
                 priority="normal",
-                target_audience="user",
-                is_auto_generated=True,
-                is_published=True,
-                publish_at=datetime.utcnow(),
-                created_by=submitter_id,
-                metadata={
-                    "type": "approval_result",
-                    "instance_id": instance_id,
-                    "document_type": document_type,
-                    "result": result
-                }
             )
-
-            self.db.add(announcement)
-            self.db.commit()
         except Exception as e:
             print(f"发送审批结果通知失败: {str(e)}")
 
@@ -540,36 +586,43 @@ class NotificationService:
     ) -> int:
         """提醒审批人处理待审批文档"""
         sent_count = 0
+        category = map_document_category(document_type)
 
         for approver_id in approver_ids:
             try:
-                announcement = SystemAnnouncement(
+                user = self.db.query(User).filter(User.id == approver_id).first()
+                if not user:
+                    continue
+                created = self.deliver_user_notification(
+                    user,
                     title="审批提醒",
-                    content=f"您有一个{document_type}审批请求「{document_title}」已等待{days_pending}天，请及时处理。",
+                    content=(
+                        f"您有一个{document_type}审批请求「{document_title}」"
+                        f"已等待{days_pending}天，请及时处理。"
+                    ),
+                    category=category,
                     announcement_type="warning",
                     priority="high",
-                    target_audience="user",
-                    is_auto_generated=True,
-                    is_published=True,
-                    publish_at=datetime.utcnow(),
-                    created_by=approver_id,
-                    metadata={
-                        "type": "approval_reminder",
-                        "instance_id": instance_id,
-                        "document_type": document_type,
-                        "days_pending": days_pending
-                    }
+                    commit=False,
                 )
-
-                self.db.add(announcement)
-                sent_count += 1
+                if created:
+                    sent_count += 1
             except Exception as e:
                 print(f"发送审批提醒失败: {str(e)}")
 
         self.db.commit()
         return sent_count
 
-    def _notify_user_once_today(self, user_id: int, title: str, content: str) -> bool:
+    def _notify_user_once_today(
+        self,
+        user_id: int,
+        title: str,
+        content: str,
+        *,
+        category: str = "system_updates",
+        announcement_type: str = "warning",
+        priority: str = "high",
+    ) -> bool:
         today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         existing = (
             self.db.query(SystemAnnouncement)
@@ -583,16 +636,19 @@ class NotificationService:
         )
         if existing:
             return False
-        self.create_system_announcement(
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return False
+        created = self.deliver_user_notification(
+            user,
             title=title,
             content=content,
-            announcement_type="warning",
-            priority="high",
-            target_audience="user",
-            created_by=user_id,
-            is_auto_generated=True,
+            category=category,
+            announcement_type=announcement_type,
+            priority=priority,
+            commit=False,
         )
-        return True
+        return created is not None
 
     def notify_expiring_welder_certs(self, days_ahead: int = 30) -> int:
         from datetime import date
@@ -622,7 +678,12 @@ class NotificationService:
                 f"焊工 {welder.full_name}（{welder.welder_code}）的证书 "
                 f"{cert.certification_number} 将于 {cert.expiry_date} 到期，剩余 {days_left} 天。"
             )
-            if self._notify_user_once_today(welder.user_id, title, content):
+            if self._notify_user_once_today(
+                welder.user_id,
+                title,
+                content,
+                category="welder_certifications",
+            ):
                 sent += 1
         self.db.commit()
         return sent
@@ -652,8 +713,14 @@ class NotificationService:
                 f"设备 {equipment.equipment_name}（{equipment.equipment_code}）保修将于 "
                 f"{equipment.warranty_expiry_date} 到期，剩余 {days_left} 天。"
             )
-            if self._notify_user_once_today(equipment.user_id, title, content):
+            if self._notify_user_once_today(
+                equipment.user_id,
+                title,
+                content,
+                category="equipment_maintenance",
+            ):
                 sent += 1
+        self.db.commit()
         return sent
 
 

@@ -124,6 +124,24 @@ class UserPreferences(BaseModel):
     sessionTimeout: bool = True
     autoLogout: bool = False
     autoLogoutMinutes: int = 30
+    # 通知偏好
+    emailNotifications: bool = True
+    pushNotifications: bool = True
+    smsNotifications: bool = False
+    quietHoursEnabled: bool = False
+    quietHoursStart: str = "22:00"
+    quietHoursEnd: str = "08:00"
+    systemUpdates: bool = True
+    securityAlerts: bool = True
+    maintenance: bool = True
+    wpsUpdates: bool = True
+    pqrApprovals: bool = True
+    qualityAlerts: bool = True
+    equipmentMaintenance: bool = True
+    materialAlerts: bool = True
+    welderCertifications: bool = True
+    productionDeadlines: bool = True
+    emailDigestFrequency: str = "immediate"
 
 
 class SecuritySettingsUpdate(BaseModel):

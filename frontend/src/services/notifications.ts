@@ -68,11 +68,19 @@ export const deleteNotification = async (notificationId: number): Promise<void> 
   await api.delete(`/notifications/${notificationId}`)
 }
 
+/**
+ * 清空全部通知
+ */
+export const clearAllNotifications = async (): Promise<void> => {
+  await api.delete('/notifications/clear-all')
+}
+
 export default {
   getNotifications,
   getUnreadCount,
   markAsRead,
   markAllAsRead,
   deleteNotification,
+  clearAllNotifications,
 }
 

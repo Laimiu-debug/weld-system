@@ -12,6 +12,11 @@ from app.api import deps
 from app.core.database import get_db
 from app.models.system_announcement import SystemAnnouncement
 from app.models.user_notification import UserNotificationReadStatus
+from app.services.notification_prefs import (
+    announce_type_category,
+    parse_user_prefs,
+    should_create_in_app,
+)
 
 router = APIRouter()
 
@@ -70,11 +75,18 @@ def get_notifications(
                 deleted_ids.add(status.announcement_id)
 
     # 构建通知列表
+    prefs = parse_user_prefs(current_user)
     notifications = []
     for announcement in all_announcements:
         # 跳过已删除的通知
         if announcement.id in deleted_ids:
             continue
+
+        # 广播类公告按类型映射到偏好分类；用户专属自动通知在创建时已过滤
+        if not announcement.is_auto_generated or announcement.created_by != user_id:
+            category = announce_type_category(announcement.announcement_type)
+            if not should_create_in_app(prefs, category):
+                continue
 
         read_status = read_status_map.get(announcement.id)
         is_read = read_status.is_read if read_status else False
@@ -292,6 +304,64 @@ def mark_all_notifications_as_read(
         "success": True,
         "data": None,
         "message": "全部标记已读成功"
+    }
+
+
+@router.delete("/clear-all")
+def clear_all_notifications(
+    current_user = Depends(deps.get_current_user),
+    db: Session = Depends(get_db)
+) -> Any:
+    """清空当前用户可见的全部通知（软删除）"""
+    user_id = current_user.id
+    user_created_at = current_user.created_at
+
+    all_announcements = db.query(SystemAnnouncement).filter(
+        and_(
+            SystemAnnouncement.is_published == True,
+            SystemAnnouncement.publish_at <= datetime.utcnow(),
+            SystemAnnouncement.publish_at >= user_created_at,
+            or_(
+                SystemAnnouncement.expire_at.is_(None),
+                SystemAnnouncement.expire_at > datetime.utcnow()
+            ),
+            or_(
+                SystemAnnouncement.target_audience == "all",
+                SystemAnnouncement.target_audience == "user",
+                SystemAnnouncement.created_by == user_id
+            )
+        )
+    ).all()
+
+    cleared = 0
+    for announcement in all_announcements:
+        read_status = db.query(UserNotificationReadStatus).filter(
+            and_(
+                UserNotificationReadStatus.user_id == user_id,
+                UserNotificationReadStatus.announcement_id == announcement.id
+            )
+        ).first()
+        if read_status:
+            if not read_status.is_deleted:
+                read_status.is_deleted = True
+                read_status.deleted_at = datetime.utcnow()
+                cleared += 1
+        else:
+            db.add(
+                UserNotificationReadStatus(
+                    user_id=user_id,
+                    announcement_id=announcement.id,
+                    is_deleted=True,
+                    deleted_at=datetime.utcnow(),
+                )
+            )
+            cleared += 1
+
+    db.commit()
+    return {
+        "success": True,
+        "data": {"cleared": cleared},
+        "message": "已清空全部通知",
     }
 
 
