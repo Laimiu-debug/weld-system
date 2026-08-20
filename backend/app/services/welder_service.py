@@ -5,18 +5,54 @@ Welder Service for the welding system backend.
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from fastapi import HTTPException, status
 import logging
 
-from app.models.welder import Welder, WelderCertification
+from app.models.welder import Welder, WelderCertification, WelderCertifiedProject
 from app.models.user import User
 from app.models.company import Company, CompanyEmployee, CompanyRole
 from app.schemas.welder import WelderCreate, WelderUpdate
 from app.core.data_access import DataAccessMiddleware, WorkspaceContext
 from app.services.quota_service import QuotaService
+import json
 
 logger = logging.getLogger(__name__)
+
+
+def _project_to_dict(project: WelderCertifiedProject) -> Dict[str, Any]:
+    return {
+        "id": project.id,
+        "certification_id": project.certification_id,
+        "welder_id": project.welder_id,
+        "project_code": project.project_code,
+        "project_name": project.project_name,
+        "issue_date": project.issue_date.isoformat() if project.issue_date else None,
+        "expiry_date": project.expiry_date.isoformat() if project.expiry_date else None,
+        "renewal_date": project.renewal_date.isoformat() if project.renewal_date else None,
+        "renewal_count": project.renewal_count or 0,
+        "next_renewal_date": project.next_renewal_date.isoformat() if project.next_renewal_date else None,
+        "renewal_result": project.renewal_result,
+        "renewal_notes": project.renewal_notes,
+        "status": project.status,
+        "is_active": project.is_active,
+        "notes": project.notes,
+        "created_by": project.created_by,
+        "updated_by": project.updated_by,
+        "created_at": project.created_at.isoformat() if project.created_at else None,
+        "updated_at": project.updated_at.isoformat() if project.updated_at else None,
+    }
+
+
+def _compute_project_status(expiry: Optional[date]) -> str:
+    if not expiry:
+        return "valid"
+    today = date.today()
+    if expiry < today:
+        return "expired"
+    if expiry <= today + timedelta(days=30):
+        return "expiring_soon"
+    return "valid"
 
 
 class WelderService:
@@ -182,10 +218,99 @@ class WelderService:
                 logger.info(f"[服务层] 应用状态筛选: {welder_status}")
                 query = query.filter(Welder.status == welder_status)
 
-            # 证书状态筛选
+            # 证书状态筛选（优先按持证项目子表风险，兼容证书级 expiry）
             if certification_status:
                 logger.info(f"[服务层] 应用证书状态筛选: {certification_status}")
-                query = query.filter(Welder.certification_status == certification_status)
+                today = date.today()
+                soon = today + timedelta(days=30)
+
+                project_q = self.db.query(WelderCertifiedProject.welder_id).filter(
+                    WelderCertifiedProject.is_active == True,  # noqa: E712
+                )
+                legacy_q = self.db.query(WelderCertification.welder_id).filter(
+                    WelderCertification.is_active == True,  # noqa: E712
+                )
+                # 无项目记录的旧证书才走 legacy expiry
+                has_project = self.db.query(WelderCertifiedProject.certification_id).filter(
+                    WelderCertifiedProject.is_active == True,  # noqa: E712
+                )
+
+                if certification_status == "expiring_soon":
+                    project_q = project_q.filter(
+                        WelderCertifiedProject.expiry_date.isnot(None),
+                        WelderCertifiedProject.expiry_date >= today,
+                        WelderCertifiedProject.expiry_date <= soon,
+                    )
+                    legacy_q = legacy_q.filter(
+                        ~WelderCertification.id.in_(has_project),
+                        WelderCertification.expiry_date.isnot(None),
+                        WelderCertification.expiry_date >= today,
+                        WelderCertification.expiry_date <= soon,
+                    )
+                    query = query.filter(
+                        or_(
+                            Welder.id.in_(project_q.distinct()),
+                            Welder.id.in_(legacy_q.distinct()),
+                        )
+                    )
+                    certification_status = None
+                elif certification_status == "expired":
+                    project_q = project_q.filter(
+                        WelderCertifiedProject.expiry_date.isnot(None),
+                        WelderCertifiedProject.expiry_date < today,
+                    )
+                    legacy_q = legacy_q.filter(
+                        ~WelderCertification.id.in_(has_project),
+                        WelderCertification.expiry_date.isnot(None),
+                        WelderCertification.expiry_date < today,
+                    )
+                    query = query.filter(
+                        or_(
+                            Welder.id.in_(project_q.distinct()),
+                            Welder.id.in_(legacy_q.distinct()),
+                        )
+                    )
+                    certification_status = None
+                elif certification_status == "valid":
+                    risky_ids = (
+                        self.db.query(WelderCertifiedProject.welder_id)
+                        .filter(
+                            WelderCertifiedProject.is_active == True,  # noqa: E712
+                            WelderCertifiedProject.expiry_date.isnot(None),
+                            WelderCertifiedProject.expiry_date <= soon,
+                        )
+                        .distinct()
+                    )
+                    legacy_risky = (
+                        self.db.query(WelderCertification.welder_id)
+                        .filter(
+                            WelderCertification.is_active == True,  # noqa: E712
+                            ~WelderCertification.id.in_(has_project),
+                            WelderCertification.expiry_date.isnot(None),
+                            WelderCertification.expiry_date <= soon,
+                        )
+                        .distinct()
+                    )
+                    has_any = (
+                        self.db.query(WelderCertification.welder_id)
+                        .filter(WelderCertification.is_active == True)  # noqa: E712
+                        .distinct()
+                    )
+                    query = query.filter(
+                        Welder.id.in_(has_any),
+                        ~Welder.id.in_(risky_ids),
+                        ~Welder.id.in_(legacy_risky),
+                    )
+                    certification_status = None
+                elif certification_status == "none":
+                    has_cert = self.db.query(WelderCertification.welder_id).filter(
+                        WelderCertification.is_active == True,  # noqa: E712
+                    )
+                    query = query.filter(~Welder.id.in_(has_cert.distinct()))
+                    certification_status = None
+
+                if certification_status:
+                    query = query.filter(Welder.certification_status == certification_status)
 
             # 获取总数
             logger.info(f"[服务层] 获取总数...")
@@ -597,7 +722,8 @@ class WelderService:
                     "notes": cert.notes,
 
                     "created_at": cert.created_at.isoformat() if cert.created_at else None,
-                    "updated_at": cert.updated_at.isoformat() if cert.updated_at else None
+                    "updated_at": cert.updated_at.isoformat() if cert.updated_at else None,
+                    "projects": self._ensure_and_list_projects(cert, current_user),
                 }
                 cert_list.append(cert_dict)
 
@@ -747,6 +873,30 @@ class WelderService:
                 welder.updated_at = datetime.utcnow()
                 self.db.commit()
 
+            # Phase2：同步创建首个持证项目（若有项目名或到期日）
+            projects = []
+            if certification_data.get("project_name") or certification_data.get("expiry_date"):
+                project = self._create_project_row(
+                    certification=certification,
+                    data={
+                        "project_name": certification_data.get("project_name")
+                        or certification.certification_type
+                        or "持证项目",
+                        "project_code": certification_data.get("project_code"),
+                        "issue_date": certification_data.get("issue_date"),
+                        "expiry_date": certification_data.get("expiry_date"),
+                        "renewal_date": certification_data.get("renewal_date"),
+                        "renewal_count": certification_data.get("renewal_count", 0),
+                        "next_renewal_date": certification_data.get("next_renewal_date"),
+                        "renewal_result": certification_data.get("renewal_result"),
+                        "renewal_notes": certification_data.get("renewal_notes"),
+                        "status": certification_data.get("status", "valid"),
+                        "notes": certification_data.get("notes"),
+                    },
+                    current_user=current_user,
+                )
+                projects = [_project_to_dict(project)]
+
             # 返回完整的证书信息
             return {
                 "id": certification.id,
@@ -798,7 +948,8 @@ class WelderService:
                 "updated_by": certification.updated_by,
                 "created_at": certification.created_at.isoformat() if certification.created_at else None,
                 "updated_at": certification.updated_at.isoformat() if certification.updated_at else None,
-                "is_active": certification.is_active
+                "is_active": certification.is_active,
+                "projects": projects,
             }
 
         except HTTPException:
@@ -948,6 +1099,26 @@ class WelderService:
                 certification.status = certification_data["status"]
             if "is_primary" in certification_data:
                 certification.is_primary = certification_data["is_primary"]
+                if certification_data["is_primary"]:
+                    # 取消同焊工其他证的主要标记，并回写列表摘要字段
+                    self.db.query(WelderCertification).filter(
+                        WelderCertification.welder_id == welder_id,
+                        WelderCertification.id != certification_id,
+                        WelderCertification.is_active == True,  # noqa: E712
+                    ).update({"is_primary": False}, synchronize_session=False)
+                    welder.primary_certification_number = certification.certification_number
+                    welder.primary_certification_level = certification.certification_level
+                    welder.primary_certification_date = certification.issue_date
+                    welder.primary_expiry_date = certification.expiry_date
+                    welder.primary_issuing_authority = certification.issuing_authority
+                    if certification.expiry_date:
+                        days_left = (certification.expiry_date - date.today()).days
+                        if days_left < 0:
+                            welder.certification_status = "expired"
+                        elif days_left <= 30:
+                            welder.certification_status = "expiring_soon"
+                        else:
+                            welder.certification_status = "valid"
             if "certificate_file_url" in certification_data:
                 certification.certificate_file_url = certification_data["certificate_file_url"]
             if "attachments" in certification_data:
@@ -1042,6 +1213,17 @@ class WelderService:
             certification.is_active = False
             certification.updated_by = current_user.id
             certification.updated_at = datetime.utcnow()
+            self.db.query(WelderCertifiedProject).filter(
+                WelderCertifiedProject.certification_id == certification_id,
+                WelderCertifiedProject.is_active == True,  # noqa: E712
+            ).update(
+                {
+                    "is_active": False,
+                    "updated_by": current_user.id,
+                    "updated_at": datetime.utcnow(),
+                },
+                synchronize_session=False,
+            )
 
             self.db.commit()
 
@@ -1055,6 +1237,278 @@ class WelderService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"删除证书失败: {str(e)}"
             )
+
+    # ==================== 持证项目（Phase 2） ====================
+
+    def _parse_date_value(self, date_str: Any) -> Optional[date]:
+        if not date_str:
+            return None
+        if isinstance(date_str, date) and not isinstance(date_str, datetime):
+            return date_str
+        if isinstance(date_str, datetime):
+            return date_str.date()
+        try:
+            return datetime.fromisoformat(str(date_str).replace("Z", "+00:00")).date()
+        except (ValueError, AttributeError):
+            try:
+                return datetime.strptime(str(date_str), "%Y-%m-%d").date()
+            except ValueError:
+                return None
+
+    def _create_project_row(
+        self,
+        certification: WelderCertification,
+        data: Dict[str, Any],
+        current_user: User,
+    ) -> WelderCertifiedProject:
+        expiry = self._parse_date_value(data.get("expiry_date"))
+        project = WelderCertifiedProject(
+            certification_id=certification.id,
+            welder_id=certification.welder_id,
+            project_code=data.get("project_code"),
+            project_name=data.get("project_name") or "持证项目",
+            issue_date=self._parse_date_value(data.get("issue_date")),
+            expiry_date=expiry,
+            renewal_date=self._parse_date_value(data.get("renewal_date")),
+            renewal_count=data.get("renewal_count") or 0,
+            next_renewal_date=self._parse_date_value(data.get("next_renewal_date")),
+            renewal_result=data.get("renewal_result"),
+            renewal_notes=data.get("renewal_notes"),
+            status=data.get("status") or _compute_project_status(expiry),
+            notes=data.get("notes"),
+            created_by=current_user.id,
+        )
+        self.db.add(project)
+        self.db.commit()
+        self.db.refresh(project)
+        self._sync_cert_expiry_from_projects(certification.id)
+        return project
+
+    def _ensure_and_list_projects(
+        self,
+        cert: WelderCertification,
+        current_user: User,
+    ) -> List[Dict[str, Any]]:
+        """列出项目；若为空则从证书旧字段 / qualified_items 迁移."""
+        projects = (
+            self.db.query(WelderCertifiedProject)
+            .filter(
+                WelderCertifiedProject.certification_id == cert.id,
+                WelderCertifiedProject.is_active == True,  # noqa: E712
+            )
+            .order_by(WelderCertifiedProject.expiry_date.asc())
+            .all()
+        )
+        if projects:
+            return [_project_to_dict(p) for p in projects]
+
+        created: List[WelderCertifiedProject] = []
+        # 1) 证书级 project_name / expiry
+        if cert.project_name or cert.expiry_date:
+            created.append(
+                self._create_project_row(
+                    certification=cert,
+                    data={
+                        "project_name": cert.project_name or cert.certification_type or "持证项目",
+                        "issue_date": cert.issue_date,
+                        "expiry_date": cert.expiry_date,
+                        "renewal_date": cert.renewal_date,
+                        "renewal_count": cert.renewal_count or 0,
+                        "next_renewal_date": cert.next_renewal_date,
+                        "renewal_result": cert.renewal_result,
+                        "renewal_notes": cert.renewal_notes,
+                        "status": cert.status or "valid",
+                    },
+                    current_user=current_user,
+                )
+            )
+        # 2) qualified_items JSON（只读兼容迁移）
+        elif cert.qualified_items:
+            try:
+                items = json.loads(cert.qualified_items) if isinstance(cert.qualified_items, str) else cert.qualified_items
+            except (TypeError, json.JSONDecodeError):
+                items = []
+            if isinstance(items, list):
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    name = item.get("item") or item.get("name") or item.get("description")
+                    if not name:
+                        continue
+                    created.append(
+                        self._create_project_row(
+                            certification=cert,
+                            data={
+                                "project_code": item.get("item"),
+                                "project_name": item.get("description") or name,
+                                "issue_date": cert.issue_date,
+                                "expiry_date": cert.expiry_date,
+                                "status": cert.status or "valid",
+                                "notes": item.get("notes"),
+                            },
+                            current_user=current_user,
+                        )
+                    )
+        return [_project_to_dict(p) for p in created]
+
+    def _sync_cert_expiry_from_projects(self, certification_id: int) -> None:
+        """用项目最近到期回写证书摘要字段，兼容旧列表."""
+        cert = (
+            self.db.query(WelderCertification)
+            .filter(WelderCertification.id == certification_id)
+            .first()
+        )
+        if not cert:
+            return
+        projects = (
+            self.db.query(WelderCertifiedProject)
+            .filter(
+                WelderCertifiedProject.certification_id == certification_id,
+                WelderCertifiedProject.is_active == True,  # noqa: E712
+            )
+            .all()
+        )
+        if not projects:
+            return
+        nearest = None
+        for p in projects:
+            if p.expiry_date and (nearest is None or p.expiry_date < nearest):
+                nearest = p.expiry_date
+        if nearest:
+            cert.expiry_date = nearest
+            cert.status = _compute_project_status(nearest)
+        if projects:
+            primary_p = projects[0]
+            if primary_p.project_name:
+                cert.project_name = primary_p.project_name
+        self.db.commit()
+
+    def get_certified_projects(
+        self,
+        welder_id: int,
+        certification_id: int,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+    ) -> List[Dict[str, Any]]:
+        workspace_context.validate()
+        self.get_welder_by_id(welder_id, current_user, workspace_context)
+        cert = (
+            self.db.query(WelderCertification)
+            .filter(
+                WelderCertification.id == certification_id,
+                WelderCertification.welder_id == welder_id,
+                WelderCertification.is_active == True,  # noqa: E712
+            )
+            .first()
+        )
+        if not cert:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="证书不存在")
+        return self._ensure_and_list_projects(cert, current_user)
+
+    def add_certified_project(
+        self,
+        welder_id: int,
+        certification_id: int,
+        project_data: Dict[str, Any],
+        current_user: User,
+        workspace_context: WorkspaceContext,
+    ) -> Dict[str, Any]:
+        workspace_context.validate()
+        welder = self.get_welder_by_id(welder_id, current_user, workspace_context)
+        self.data_access.check_access(current_user, welder, "EDIT", workspace_context)
+        cert = (
+            self.db.query(WelderCertification)
+            .filter(
+                WelderCertification.id == certification_id,
+                WelderCertification.welder_id == welder_id,
+                WelderCertification.is_active == True,  # noqa: E712
+            )
+            .first()
+        )
+        if not cert:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="证书不存在")
+        if not project_data.get("project_name"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="持证项目名称必填")
+        project = self._create_project_row(cert, project_data, current_user)
+        return _project_to_dict(project)
+
+    def update_certified_project(
+        self,
+        welder_id: int,
+        certification_id: int,
+        project_id: int,
+        project_data: Dict[str, Any],
+        current_user: User,
+        workspace_context: WorkspaceContext,
+    ) -> Dict[str, Any]:
+        workspace_context.validate()
+        welder = self.get_welder_by_id(welder_id, current_user, workspace_context)
+        self.data_access.check_access(current_user, welder, "EDIT", workspace_context)
+        project = (
+            self.db.query(WelderCertifiedProject)
+            .filter(
+                WelderCertifiedProject.id == project_id,
+                WelderCertifiedProject.certification_id == certification_id,
+                WelderCertifiedProject.welder_id == welder_id,
+                WelderCertifiedProject.is_active == True,  # noqa: E712
+            )
+            .first()
+        )
+        if not project:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="持证项目不存在")
+
+        for field in (
+            "project_code",
+            "project_name",
+            "renewal_result",
+            "renewal_notes",
+            "status",
+            "notes",
+            "renewal_count",
+        ):
+            if field in project_data and project_data[field] is not None:
+                setattr(project, field, project_data[field])
+        for date_field in ("issue_date", "expiry_date", "renewal_date", "next_renewal_date"):
+            if date_field in project_data:
+                setattr(project, date_field, self._parse_date_value(project_data[date_field]))
+        if "expiry_date" in project_data and "status" not in project_data:
+            project.status = _compute_project_status(project.expiry_date)
+        project.updated_by = current_user.id
+        project.updated_at = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(project)
+        self._sync_cert_expiry_from_projects(certification_id)
+        return _project_to_dict(project)
+
+    def delete_certified_project(
+        self,
+        welder_id: int,
+        certification_id: int,
+        project_id: int,
+        current_user: User,
+        workspace_context: WorkspaceContext,
+    ) -> bool:
+        workspace_context.validate()
+        welder = self.get_welder_by_id(welder_id, current_user, workspace_context)
+        self.data_access.check_access(current_user, welder, "EDIT", workspace_context)
+        project = (
+            self.db.query(WelderCertifiedProject)
+            .filter(
+                WelderCertifiedProject.id == project_id,
+                WelderCertifiedProject.certification_id == certification_id,
+                WelderCertifiedProject.welder_id == welder_id,
+                WelderCertifiedProject.is_active == True,  # noqa: E712
+            )
+            .first()
+        )
+        if not project:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="持证项目不存在")
+        project.is_active = False
+        project.updated_by = current_user.id
+        project.updated_at = datetime.utcnow()
+        self.db.commit()
+        self._sync_cert_expiry_from_projects(certification_id)
+        return True
 
     # ==================== 统计分析 ====================
 
@@ -1862,6 +2316,68 @@ class WelderService:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"添加工作履历失败: {str(e)}"
+            )
+
+    def update_work_history(
+        self,
+        welder_id: int,
+        history_id: int,
+        history_data: dict,
+        current_user: Any,
+        workspace_context: WorkspaceContext
+    ) -> dict:
+        """更新焊工工作履历"""
+        try:
+            from app.models.welder import WelderWorkHistory
+
+            welder = self.get_welder_by_id(welder_id, current_user, workspace_context)
+            history = self.db.query(WelderWorkHistory).filter(
+                WelderWorkHistory.id == history_id,
+                WelderWorkHistory.welder_id == welder_id
+            ).first()
+            if not history:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="工作履历不存在"
+                )
+
+            self.data_access.check_access(
+                current_user,
+                welder,
+                "EDIT",
+                workspace_context
+            )
+
+            for key, value in history_data.items():
+                if value is not None and hasattr(history, key):
+                    setattr(history, key, value)
+            history.updated_at = datetime.utcnow()
+            self.db.commit()
+            self.db.refresh(history)
+
+            return {
+                "id": history.id,
+                "welder_id": history.welder_id,
+                "company_name": history.company_name,
+                "position": history.position,
+                "start_date": history.start_date.isoformat() if history.start_date else None,
+                "end_date": history.end_date.isoformat() if history.end_date else None,
+                "department": history.department,
+                "location": history.location,
+                "job_description": history.job_description,
+                "achievements": history.achievements,
+                "leaving_reason": history.leaving_reason,
+                "created_by": history.created_by,
+                "created_at": history.created_at.isoformat() if history.created_at else None,
+                "updated_at": history.updated_at.isoformat() if history.updated_at else None,
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"更新工作履历失败: {str(e)}"
             )
 
     def delete_work_history(

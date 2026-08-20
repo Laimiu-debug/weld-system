@@ -18,7 +18,8 @@ const WorkHistoryList: React.FC<WorkHistoryListProps> = ({ welderId }) => {
   const currentWorkspace = workspaceService.getCurrentWorkspaceFromStorage();
   const [loading, setLoading] = useState(false);
   const [histories, setHistories] = useState<WelderWorkHistory[]>([]);
-  const [modalVisible, setModalVisible] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false)
+  const [editing, setEditing] = useState<WelderWorkHistory | null>(null);
 
   // 加载工作履历
   const loadHistories = async () => {
@@ -50,9 +51,20 @@ const WorkHistoryList: React.FC<WorkHistoryListProps> = ({ welderId }) => {
   }, [welderId]);
 
   const handleAddSuccess = () => {
-    setModalVisible(false);
-    loadHistories();
-  };
+    setModalVisible(false)
+    setEditing(null)
+    loadHistories()
+  }
+
+  const openCreate = () => {
+    setEditing(null)
+    setModalVisible(true)
+  }
+
+  const openEdit = (history: WelderWorkHistory) => {
+    setEditing(history)
+    setModalVisible(true)
+  }
 
   const handleDelete = async (id: number) => {
     if (!currentWorkspace) return;
@@ -89,11 +101,7 @@ const WorkHistoryList: React.FC<WorkHistoryListProps> = ({ welderId }) => {
     <Card
       title="工作履历"
       extra={
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => setModalVisible(true)}
-        >
+        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
           添加工作履历
         </Button>
       }
@@ -103,8 +111,8 @@ const WorkHistoryList: React.FC<WorkHistoryListProps> = ({ welderId }) => {
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description="暂无工作履历记录"
         >
-          <Button type="primary" onClick={() => setModalVisible(true)}>
-            点击上方按钮添加焊工的工作履历信息
+          <Button type="primary" onClick={openCreate}>
+            添加工作履历
           </Button>
         </Empty>
       ) : (
@@ -139,6 +147,14 @@ const WorkHistoryList: React.FC<WorkHistoryListProps> = ({ welderId }) => {
                 }
                 extra={
                   <Space>
+                    <Button
+                      type="link"
+                      icon={<EditOutlined />}
+                      size="small"
+                      onClick={() => openEdit(history)}
+                    >
+                      编辑
+                    </Button>
                     <Popconfirm
                       title="确定要删除这条工作履历吗？"
                       onConfirm={() => handleDelete(history.id)}
@@ -188,8 +204,12 @@ const WorkHistoryList: React.FC<WorkHistoryListProps> = ({ welderId }) => {
       <WorkHistoryModal
         visible={modalVisible}
         welderId={welderId}
+        editing={editing}
         onSuccess={handleAddSuccess}
-        onCancel={() => setModalVisible(false)}
+        onCancel={() => {
+          setModalVisible(false)
+          setEditing(null)
+        }}
       />
     </Card>
   );

@@ -38,6 +38,7 @@ import {
 import dayjs from 'dayjs'
 import { workspaceService } from '@/services/workspace'
 import materialsService, { Material, MaterialCreate, MaterialUpdate } from '@/services/materials'
+import ListPageHeader from '@/components/ListPageHeader'
 import StockInModal from './StockInModal'
 import StockOutModal from './StockOutModal'
 
@@ -534,10 +535,11 @@ const MaterialsList: React.FC = () => {
   ]
 
   return (
-    <div className="p-6">
-      {/* 页面标题和统计 */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-4">焊材管理</h1>
+    <div className="list-page">
+      <ListPageHeader
+        title="焊材管理"
+        description="焊材库存、规格与出入库管理"
+      />
 
         {/* 统计卡片 */}
         <Row gutter={16} className="mb-6">
@@ -593,24 +595,26 @@ const MaterialsList: React.FC = () => {
             className="mb-4"
           />
         )}
-      </div>
 
       {/* 工具栏 */}
-      <Card className="mb-4">
-        <div className="flex justify-between items-center flex-wrap gap-4">
-          <Space size="middle" wrap>
+      <Card className="mb-4 list-page-card">
+        <div className="doc-list-toolbar" style={{ borderBottom: 'none', marginBottom: 0, paddingBottom: 0 }}>
+          <div className="toolbar-search">
             <Search
               placeholder="搜索焊材名称、编号"
               allowClear
               enterButton={<SearchOutlined />}
-              style={{ width: 300 }}
+              size="large"
               onSearch={handleSearch}
               onChange={(e) => !e.target.value && handleSearch('')}
             />
+          </div>
+          <div className="toolbar-filter">
             <Select
               placeholder="类别筛选"
-              style={{ width: 120 }}
               allowClear
+              size="large"
+              style={{ width: '100%' }}
               onChange={(value) => handleFilterChange(value, lowStockFilter)}
             >
               <Option value="electrode">焊条</Option>
@@ -618,46 +622,38 @@ const MaterialsList: React.FC = () => {
               <Option value="flux">焊剂</Option>
               <Option value="gas">保护气体</Option>
             </Select>
+          </div>
+          <div className="toolbar-filter">
             <Select
               placeholder="库存状态"
-              style={{ width: 120 }}
               allowClear
+              size="large"
+              style={{ width: '100%' }}
               onChange={(value) => handleFilterChange(materialTypeFilter, value)}
             >
               <Option value={true}>低库存</Option>
               <Option value={false}>正常</Option>
             </Select>
-            <Button
-              icon={<ReloadOutlined />}
-              onClick={() => fetchMaterials()}
-            >
-              刷新
-            </Button>
-          </Space>
-
-          <Space>
+          </div>
+          <div className="toolbar-actions">
             {selectedRowKeys.length > 0 && (
-              <Button
-                danger
-                icon={<DeleteOutlined />}
-                onClick={handleBatchDelete}
-              >
+              <Button danger icon={<DeleteOutlined />} size="large" onClick={handleBatchDelete}>
                 批量删除 ({selectedRowKeys.length})
               </Button>
             )}
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={handleCreate}
-            >
+            <Button type="primary" icon={<PlusOutlined />} size="large" onClick={handleCreate}>
               新增焊材
             </Button>
-          </Space>
+            <Button icon={<ReloadOutlined />} size="large" onClick={() => fetchMaterials()}>
+              刷新
+            </Button>
+          </div>
         </div>
       </Card>
 
       {/* 焊材列表表格 */}
-      <Card>
+      <Card className="list-page-card">
+        <div className="list-table-wrap">
         <Table
           columns={columns}
           dataSource={Array.isArray(materials) ? materials : []}
@@ -681,6 +677,7 @@ const MaterialsList: React.FC = () => {
           }}
           scroll={{ x: 1400 }}
         />
+        </div>
       </Card>
 
       {/* 焊材详情/编辑/创建模态框 */}

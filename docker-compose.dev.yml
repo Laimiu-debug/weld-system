@@ -6,6 +6,9 @@ services:
     environment:
       DEVELOPMENT: "true"
       DEBUG: "true"
+      # 单企业内网部署示例：取消注释并改成企业名
+      # ORG_NAME: "某某焊接有限公司"
+      # BRAND_NAME: "焊序"
     ports:
       - "127.0.0.1:8000:8000"
 
@@ -13,6 +16,7 @@ services:
     build:
       args:
         VITE_API_BASE_URL: http://localhost:8000/api/v1
+        # VITE_ORG_NAME: "某某焊接有限公司"
     ports:
       - "127.0.0.1:3100:80"
 

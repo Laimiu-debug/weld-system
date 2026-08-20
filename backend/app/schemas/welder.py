@@ -574,3 +574,52 @@ class WelderWorkHistoryResponse(WelderWorkHistoryBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class WelderCertifiedProjectBase(BaseModel):
+    """持证项目基础 Schema"""
+    project_code: Optional[str] = Field(None, description="项目代号")
+    project_name: str = Field(..., description="持证项目名称")
+    issue_date: Optional[date] = Field(None, description="发证/生效日期")
+    expiry_date: Optional[date] = Field(None, description="到期日期")
+    renewal_date: Optional[date] = Field(None, description="最近审证日期")
+    renewal_count: Optional[int] = Field(default=0, description="审证次数")
+    next_renewal_date: Optional[date] = Field(None, description="下次审证日期")
+    renewal_result: Optional[str] = Field(None, description="审证结果")
+    renewal_notes: Optional[str] = Field(None, description="审证备注")
+    status: str = Field(default="valid", description="状态")
+    notes: Optional[str] = Field(None, description="备注")
+
+
+class WelderCertifiedProjectCreate(WelderCertifiedProjectBase):
+    """创建持证项目"""
+    pass
+
+
+class WelderCertifiedProjectUpdate(BaseModel):
+    """更新持证项目"""
+    project_code: Optional[str] = None
+    project_name: Optional[str] = None
+    issue_date: Optional[date] = None
+    expiry_date: Optional[date] = None
+    renewal_date: Optional[date] = None
+    renewal_count: Optional[int] = None
+    next_renewal_date: Optional[date] = None
+    renewal_result: Optional[str] = None
+    renewal_notes: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class WelderCertifiedProjectResponse(WelderCertifiedProjectBase):
+    """持证项目响应"""
+    id: int
+    certification_id: int
+    welder_id: int
+    is_active: bool = True
+    created_by: int
+    updated_by: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

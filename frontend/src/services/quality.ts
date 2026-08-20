@@ -210,6 +210,7 @@ export interface QualityInspectionListParams {
   result?: string
   inspection_type?: string
   inspector_id?: number
+  production_task_id?: number
 }
 
 export interface QualityInspectionListResponse {
@@ -261,6 +262,10 @@ class QualityService {
 
     if (params.inspector_id) {
       queryParams.inspector_id = params.inspector_id
+    }
+
+    if (params.production_task_id) {
+      queryParams.production_task_id = params.production_task_id
     }
 
     const response = await api.get(this.baseUrl, { params: queryParams })

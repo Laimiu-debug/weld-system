@@ -84,11 +84,22 @@ const Login: React.FC = () => {
         }, 100)
       } else {
         console.error('❌ 登录失败')
+        // toast 由 api 拦截器展示；此处只保留页面内 Alert
         setError('账号或密码错误，请重新输入')
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('❌ 登录异常:', err)
-      setError('登录失败，请稍后重试')
+      const detail = err?.response?.data?.detail
+      const tip =
+        typeof detail === 'string'
+          ? detail
+          : typeof detail?.message === 'string'
+            ? detail.message
+            : '登录失败，请稍后重试'
+      setError(tip)
+      if (!err?.response) {
+        message.error(tip)
+      }
     } finally {
       setLoading(false)
     }
@@ -183,11 +194,22 @@ const Login: React.FC = () => {
         }, 100)
       } else {
         console.error('❌ 验证码登录失败')
+        // toast 由 api 拦截器展示；此处只保留页面内 Alert
         setError('验证码错误或已过期，请重新获取')
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ 验证码登录异常:', error)
-      setError('登录失败，请稍后重试')
+      const detail = error?.response?.data?.detail
+      const tip =
+        typeof detail === 'string'
+          ? detail
+          : typeof detail?.message === 'string'
+            ? detail.message
+            : '登录失败，请稍后重试'
+      setError(tip)
+      if (!error?.response) {
+        message.error(tip)
+      }
     } finally {
       setLoading(false)
     }

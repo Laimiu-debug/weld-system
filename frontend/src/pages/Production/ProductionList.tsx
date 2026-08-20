@@ -66,6 +66,7 @@ import {
 } from '../../services/production'
 import weldersService from '../../services/welders'
 import equipmentService from '../../services/equipment'
+import ListPageHeader from '@/components/ListPageHeader'
 
 const { Search } = Input
 const { Option } = Select
@@ -777,10 +778,11 @@ const ProductionList: React.FC = () => {
   }
 
   return (
-    <div className="p-6">
-      {/* 页面标题和统计 */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-4">生产管理</h1>
+    <div className="list-page">
+      <ListPageHeader
+        title="生产管理"
+        description="生产任务安排、进度与工时管理"
+      />
 
         {/* 统计卡片 */}
         <Row gutter={16} className="mb-6">
@@ -856,7 +858,6 @@ const ProductionList: React.FC = () => {
             className="mb-4"
           />
         )}
-      </div>
 
       <Tabs
         activeKey={activeTab}
@@ -868,20 +869,23 @@ const ProductionList: React.FC = () => {
             children: (
               <>
                 {/* 工具栏 */}
-                <Card className="mb-4">
-                  <div className="flex justify-between items-center">
-                    <Space size="middle">
+                <Card className="mb-4 list-page-card">
+                  <div className="doc-list-toolbar" style={{ borderBottom: 'none', marginBottom: 0, paddingBottom: 0 }}>
+                    <div className="toolbar-search" style={{ maxWidth: 360 }}>
                       <Search
                         placeholder="搜索任务名称、编号、项目、焊工"
                         allowClear
                         enterButton={<SearchOutlined />}
-                        style={{ width: 350 }}
+                        size="large"
                         onSearch={handleSearch}
                         onChange={(e) => !e.target.value && handleSearch('')}
                       />
+                    </div>
+                    <div className="toolbar-filter">
                       <Select
                         placeholder="状态筛选"
-                        style={{ width: 120 }}
+                        size="large"
+                        style={{ width: '100%' }}
                         onChange={handleStatusFilter}
                         defaultValue="all"
                       >
@@ -892,9 +896,12 @@ const ProductionList: React.FC = () => {
                         <Option value="paused">已暂停</Option>
                         <Option value="cancelled">已取消</Option>
                       </Select>
+                    </div>
+                    <div className="toolbar-filter">
                       <Select
                         placeholder="优先级筛选"
-                        style={{ width: 120 }}
+                        size="large"
+                        style={{ width: '100%' }}
                         onChange={handlePriorityFilter}
                         defaultValue="all"
                       >
@@ -904,24 +911,23 @@ const ProductionList: React.FC = () => {
                         <Option value="high">高</Option>
                         <Option value="urgent">紧急</Option>
                       </Select>
-                    </Space>
-
-                    <Space>
-                      <Button icon={<ImportOutlined />}>批量导入</Button>
-                      <Button icon={<ExportOutlined />}>导出数据</Button>
+                    </div>
+                    <div className="toolbar-actions">
                       <Button
                         type="primary"
                         icon={<PlusOutlined />}
+                        size="large"
                         onClick={handleCreate}
                       >
                         创建任务
                       </Button>
-                    </Space>
+                    </div>
                   </div>
                 </Card>
 
                 {/* 生产任务列表表格 */}
-                <Card>
+                <Card className="list-page-card">
+                  <div className="list-table-wrap">
                   <Table
                     columns={columns}
                     dataSource={filteredData}
@@ -938,8 +944,9 @@ const ProductionList: React.FC = () => {
                       selectedRowKeys,
                       onChange: setSelectedRowKeys,
                     }}
-                    scroll={{ x: 1400 }}
+                    scroll={{ x: 1200 }}
                   />
+                  </div>
                 </Card>
               </>
             ),

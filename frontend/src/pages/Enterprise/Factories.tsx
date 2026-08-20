@@ -39,10 +39,11 @@ import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 import enterpriseService from '@/services/enterprise'
 import { useEnterpriseFactories } from '@/hooks/useEnterprise'
+import ListPageHeader from '@/components/ListPageHeader'
 
 const { Title, Text } = Typography
 const { Option } = Select
-const { TextArea } = Input
+const { TextArea, Search } = Input
 
 // 接口定义
 interface SimpleEmployee {
@@ -168,6 +169,7 @@ const Factories: React.FC = () => {
     {
       title: '工厂信息',
       key: 'factory',
+      width: 220,
       render: (_, record) => (
         <Space>
           <Avatar icon={<HomeOutlined />} />
@@ -186,6 +188,8 @@ const Factories: React.FC = () => {
     {
       title: '地址',
       key: 'address',
+      width: 220,
+      ellipsis: true,
       render: (_, record) => (
         <div>
           <div>
@@ -201,6 +205,7 @@ const Factories: React.FC = () => {
     {
       title: '联系人',
       key: 'contact',
+      width: 140,
       render: (_, record) => (
         <Space direction="vertical" size="small">
           <div>
@@ -217,6 +222,7 @@ const Factories: React.FC = () => {
       title: '员工数量',
       dataIndex: 'employee_count',
       key: 'employee_count',
+      width: 100,
       render: (count) => (
         <Badge count={count} showZero style={{ backgroundColor: '#52c41a' }} />
       ),
@@ -225,6 +231,7 @@ const Factories: React.FC = () => {
       title: '状态',
       dataIndex: 'is_active',
       key: 'is_active',
+      width: 110,
       render: (active) => (
         <Badge
           status={active ? 'success' : 'error'}
@@ -236,13 +243,16 @@ const Factories: React.FC = () => {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
+      width: 120,
       render: (date) => dayjs(date).format('YYYY-MM-DD'),
     },
     {
       title: '操作',
       key: 'actions',
+      width: 300,
+      fixed: 'right',
       render: (_, record) => (
-        <Space>
+        <Space wrap size={0}>
           <Button
             type="text"
             icon={<EyeOutlined />}
@@ -325,16 +335,16 @@ const Factories: React.FC = () => {
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <Title level={2}>工厂管理</Title>
-        <Text type="secondary">管理企业工厂信息和运营状态</Text>
-      </div>
+    <div className="list-page">
+      <ListPageHeader
+        title="工厂管理"
+        description="管理企业工厂信息和运营状态"
+      />
 
       {/* 统计概览 */}
-      <Row gutter={[16, 16]} className="mb-6">
-        <Col xs={24} sm={12} md={6}>
-          <Card>
+      <Row gutter={[16, 16]} className="list-stats-row">
+        <Col xs={12} sm={12} md={6}>
+          <Card className="stat-card" size="small">
             <Statistic
               title="工厂数量"
               value={stats.total}
@@ -343,8 +353,8 @@ const Factories: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
+        <Col xs={12} sm={12} md={6}>
+          <Card className="stat-card" size="small">
             <Statistic
               title="正常运营"
               value={stats.active}
@@ -354,8 +364,8 @@ const Factories: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
+        <Col xs={12} sm={12} md={6}>
+          <Card className="stat-card" size="small">
             <Statistic
               title="已停用"
               value={stats.inactive}
@@ -364,8 +374,8 @@ const Factories: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
+        <Col xs={12} sm={12} md={6}>
+          <Card className="stat-card" size="small">
             <Statistic
               title="总部数量"
               value={stats.headquarters}
@@ -376,35 +386,39 @@ const Factories: React.FC = () => {
         </Col>
       </Row>
 
-      {/* 搜索和筛选 */}
-      <Card className="mb-4">
-        <Row gutter={[16, 16]} align="middle">
-          <Col xs={24} sm={12} md={8}>
-            <Input
+      <Card className="list-page-card">
+        <div className="doc-list-toolbar">
+          <div className="toolbar-search">
+            <Search
               placeholder="搜索工厂名称、编码或地址"
-              prefix={<SearchOutlined />}
+              allowClear
+              enterButton={<SearchOutlined />}
+              size="large"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
+              onSearch={setSearchText}
             />
-          </Col>
-          <Col xs={12} sm={6} md={4}>
+          </div>
+          <div className="toolbar-filter">
             <Select
               placeholder="状态筛选"
-              value={filterStatus}
-              onChange={setFilterStatus}
+              value={filterStatus || undefined}
+              onChange={(v) => setFilterStatus(v || '')}
               allowClear
+              size="large"
               style={{ width: '100%' }}
             >
               <Option value="active">正常运营</Option>
               <Option value="inactive">已停用</Option>
             </Select>
-          </Col>
-          <Col xs={12} sm={6} md={4}>
+          </div>
+          <div className="toolbar-filter">
             <Select
               placeholder="城市筛选"
-              value={cityFilter}
-              onChange={setCityFilter}
+              value={cityFilter || undefined}
+              onChange={(v) => setCityFilter(v || '')}
               allowClear
+              size="large"
               style={{ width: '100%' }}
               showSearch
               filterOption={(input, option) =>
@@ -415,43 +429,42 @@ const Factories: React.FC = () => {
                 <Option key={city} value={city}>{city}</Option>
               ))}
             </Select>
-          </Col>
-          <Col xs={24} sm={12} md={8}>
-            <Space>
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() => {
-                  setModalType('create')
-                  setSelectedFactory(null)
-                  form.resetFields()
-                  setModalVisible(true)
-                }}
-              >
-                创建工厂
-              </Button>
-              <Button icon={<ExportOutlined />}>
-                导出数据
-              </Button>
-            </Space>
-          </Col>
-        </Row>
-      </Card>
+          </div>
+          <div className="toolbar-actions">
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              size="large"
+              onClick={() => {
+                setModalType('create')
+                setSelectedFactory(null)
+                form.resetFields()
+                setModalVisible(true)
+              }}
+            >
+              创建工厂
+            </Button>
+            <Button icon={<ExportOutlined />} size="large">
+              导出数据
+            </Button>
+          </div>
+        </div>
 
-      {/* 工厂列表 */}
-      <Card title="工厂列表">
-        <Table
-          columns={columns as any}
-          dataSource={filteredFactories}
-          rowKey={(record) => `${record.id}_${record.code}`}
-          loading={loading}
-          pagination={{
-            pageSize: 10,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
-          }}
-        />
+        <div className="list-table-wrap">
+          <Table
+            columns={columns as any}
+            dataSource={filteredFactories}
+            rowKey={(record) => `${record.id}_${record.code}`}
+            loading={loading}
+            scroll={{ x: 1200 }}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
+            }}
+          />
+        </div>
       </Card>
 
       {/* 创建/编辑工厂弹窗 */}

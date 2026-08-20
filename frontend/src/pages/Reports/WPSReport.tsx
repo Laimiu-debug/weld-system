@@ -25,6 +25,7 @@ import {
 import dayjs from 'dayjs'
 import wpsService from '@/services/wps'
 import { downloadCsv } from '@/utils/csv'
+import ListPageHeader from '@/components/ListPageHeader'
 
 const { Title, Text } = Typography
 const { RangePicker } = DatePicker
@@ -203,11 +204,11 @@ const WPSReport: React.FC = () => {
   ]
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <Title level={2}>WPS统计报表</Title>
-        <Text type="secondary">焊接工艺规程统计分析报告</Text>
-      </div>
+    <div className="list-page">
+      <ListPageHeader
+        title="WPS统计"
+        description="焊接工艺规程统计分析"
+      />
 
       {/* 筛选条件 */}
       <Card className="mb-6">

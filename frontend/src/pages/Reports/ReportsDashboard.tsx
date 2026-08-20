@@ -24,6 +24,7 @@ import {
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import reportsService, { ReportStatistics } from '@/services/reports'
+import ListPageHeader from '@/components/ListPageHeader'
 
 const { Title, Text } = Typography
 const { RangePicker } = DatePicker
@@ -110,11 +111,11 @@ const ReportsDashboard: React.FC = () => {
   ]
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <Title level={2}>报表统计</Title>
-        <Text type="secondary">基于当前工作区真实数据汇总</Text>
-      </div>
+    <div className="list-page">
+      <ListPageHeader
+        title="统计概览"
+        description="基于当前工作区真实数据汇总"
+      />
 
       <Card className="mb-6">
         <Row gutter={16} align="middle">

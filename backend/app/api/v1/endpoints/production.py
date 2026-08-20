@@ -395,6 +395,51 @@ def get_production_records(
     }
 
 
+@router.get("/tasks/{task_id}/inspections")
+def get_production_task_inspections(
+    task_id: int,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(deps.get_db),
+    current_user: Any = Depends(deps.get_current_active_user),
+) -> Any:
+    """获取生产任务关联的质量检验列表（生产直接调用质量管理结果）."""
+    from app.schemas.quality import QualityInspectionResponse
+    from app.services.quality_service import QualityService
+
+    workspace_context = WorkspaceContext(
+        workspace_type=workspace_type,
+        user_id=current_user.id,
+        company_id=company_id,
+        factory_id=factory_id,
+    )
+    production_service = ProductionService(db)
+    production_service.get_production_task_by_id(
+        task_id=task_id,
+        current_user=current_user,
+        workspace_context=workspace_context,
+    )
+    quality_service = QualityService(db)
+    inspections, total = quality_service.get_quality_inspection_list(
+        current_user=current_user,
+        workspace_context=workspace_context,
+        skip=skip,
+        limit=limit,
+        production_task_id=task_id,
+    )
+    return {
+        "success": True,
+        "data": {
+            "items": [QualityInspectionResponse.model_validate(i) for i in inspections],
+            "total": total,
+        },
+        "message": "获取关联质检成功",
+    }
+
+
 @router.get("/statistics/overview")
 def get_production_statistics(
     workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),

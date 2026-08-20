@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Card,
   Table,
@@ -18,6 +19,7 @@ import {
   Col,
   Descriptions,
   Typography,
+  Alert,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
@@ -39,6 +41,7 @@ import { useAuthStore } from '@/store/authStore'
 import qualityService from '@/services/quality'
 import type { QualityInspection, QualityInspectionCreate, QualityInspectionUpdate } from '@/services/quality'
 import workspaceService from '@/services/workspace'
+import ListPageHeader from '@/components/ListPageHeader'
 
 const { Title, Text } = Typography
 const { Search } = Input
@@ -46,11 +49,17 @@ const { Option } = Select
 const { TextArea } = Input
 
 const QualityList: React.FC = () => {
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const taskIdFromQuery = searchParams.get('taskId')
   const { checkPermission } = useAuthStore()
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [searchText, setSearchText] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('')
   const [resultFilter, setResultFilter] = useState<string>('')
+  const [taskIdFilter, setTaskIdFilter] = useState<number | undefined>(
+    taskIdFromQuery ? Number(taskIdFromQuery) : undefined
+  )
   const [loading, setLoading] = useState(false)
   const [inspections, setInspections] = useState<QualityInspection[]>([])
   const [total, setTotal] = useState(0)
@@ -60,6 +69,13 @@ const QualityList: React.FC = () => {
   const [modalType, setModalType] = useState<'create' | 'edit' | 'view'>('create')
   const [currentInspection, setCurrentInspection] = useState<QualityInspection | null>(null)
   const [form] = Form.useForm()
+
+  useEffect(() => {
+    if (taskIdFromQuery) {
+      setTaskIdFilter(Number(taskIdFromQuery))
+      setCurrentPage(1)
+    }
+  }, [taskIdFromQuery])
 
   // 获取质量检验列表
   const fetchInspections = async () => {
@@ -80,6 +96,7 @@ const QualityList: React.FC = () => {
         search: searchText || undefined,
         inspection_type: typeFilter || undefined,
         result: resultFilter || undefined,
+        production_task_id: taskIdFilter,
       }
 
       const response = await qualityService.getQualityInspectionList(params)
@@ -105,10 +122,14 @@ const QualityList: React.FC = () => {
 
   useEffect(() => {
     fetchInspections()
-  }, [currentPage, pageSize, searchText, typeFilter, resultFilter])
+  }, [currentPage, pageSize, searchText, typeFilter, resultFilter, taskIdFilter])
 
   // 处理创建质量检验
   const handleCreate = () => {
+    if (taskIdFilter) {
+      navigate(`/quality/create?taskId=${taskIdFilter}&from=production`)
+      return
+    }
     setModalType('create')
     setCurrentInspection(null)
     form.resetFields()
@@ -327,6 +348,20 @@ const QualityList: React.FC = () => {
       fixed: 'left',
     },
     {
+      title: '生产任务',
+      dataIndex: 'production_task_id',
+      key: 'production_task_id',
+      width: 110,
+      render: (taskId?: number) =>
+        taskId ? (
+          <Button type="link" style={{ padding: 0 }} onClick={() => navigate(`/production/${taskId}?tab=quality`)}>
+            #{taskId}
+          </Button>
+        ) : (
+          '-'
+        ),
+    },
+    {
       title: '检验类型',
       dataIndex: 'inspection_type',
       key: 'inspection_type',
@@ -425,77 +460,103 @@ const QualityList: React.FC = () => {
   }
 
   return (
-    <div style={{ padding: '24px' }}>
-      <Card>
-        <Space direction="vertical" size="large" style={{ width: '100%' }}>
-          {/* 工具栏 */}
-          <Row gutter={16}>
-            <Col flex="auto">
-              <Space>
-                <Search
-                  placeholder="搜索检验编号、检验员"
-                  allowClear
-                  enterButton={<SearchOutlined />}
-                  style={{ width: 300 }}
-                  onSearch={setSearchText}
-                  onChange={(e) => !e.target.value && setSearchText('')}
-                />
-                <Select
-                  placeholder="检验类型"
-                  allowClear
-                  style={{ width: 150 }}
-                  onChange={setTypeFilter}
-                  value={typeFilter || undefined}
-                >
-                  <Option value="">全部类型</Option>
-                  <Option value="visual">外观检验</Option>
-                  <Option value="radiographic">射线检验</Option>
-                  <Option value="ultrasonic">超声波检验</Option>
-                  <Option value="magnetic_particle">磁粉检验</Option>
-                  <Option value="liquid_penetrant">渗透检验</Option>
-                  <Option value="destructive">破坏性检验</Option>
-                </Select>
-                <Select
-                  placeholder="检验结果"
-                  allowClear
-                  style={{ width: 150 }}
-                  onChange={setResultFilter}
-                  value={resultFilter || undefined}
-                >
-                  <Option value="">全部结果</Option>
-                  <Option value="pass">合格</Option>
-                  <Option value="fail">不合格</Option>
-                  <Option value="conditional">有条件合格</Option>
-                  <Option value="pending">待检验</Option>
-                </Select>
-                <Button icon={<ReloadOutlined />} onClick={fetchInspections}>
-                  刷新
-                </Button>
-              </Space>
-            </Col>
-            <Col>
-              <Space>
-                {selectedRowKeys.length > 0 && (
-                  <Button danger onClick={handleBatchDelete}>
-                    批量删除 ({selectedRowKeys.length})
-                  </Button>
-                )}
-                {checkPermission('quality.create') && (
-                  <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
-                    新增质量检验
-                  </Button>
-                )}
-              </Space>
-            </Col>
-          </Row>
+    <div className="list-page">
+      <ListPageHeader
+        title="质量管理"
+        description="质量检验记录、结果与复检管理"
+      />
+      {taskIdFilter ? (
+        <Alert
+          className="mb-4"
+          type="info"
+          showIcon
+          message={`已按生产任务 #${taskIdFilter} 筛选质检`}
+          action={
+            <Space>
+              <Button size="small" onClick={() => navigate(`/production/${taskIdFilter}?tab=quality`)}>
+                返回生产任务
+              </Button>
+              <Button
+                size="small"
+                onClick={() => {
+                  setTaskIdFilter(undefined)
+                  setSearchParams({})
+                }}
+              >
+                清除筛选
+              </Button>
+            </Space>
+          }
+        />
+      ) : null}
+      <Card className="list-page-card">
+        <div className="doc-list-toolbar">
+          <div className="toolbar-search">
+            <Search
+              placeholder="搜索检验编号、检验员"
+              allowClear
+              enterButton={<SearchOutlined />}
+              size="large"
+              onSearch={setSearchText}
+              onChange={(e) => !e.target.value && setSearchText('')}
+            />
+          </div>
+          <div className="toolbar-filter">
+            <Select
+              placeholder="检验类型"
+              allowClear
+              size="large"
+              style={{ width: '100%' }}
+              onChange={(value) => setTypeFilter(value || '')}
+              value={typeFilter || undefined}
+            >
+              <Option value="visual">外观检验</Option>
+              <Option value="radiographic">射线检验</Option>
+              <Option value="ultrasonic">超声波检验</Option>
+              <Option value="magnetic_particle">磁粉检验</Option>
+              <Option value="liquid_penetrant">渗透检验</Option>
+              <Option value="destructive">破坏性检验</Option>
+            </Select>
+          </div>
+          <div className="toolbar-filter">
+            <Select
+              placeholder="检验结果"
+              allowClear
+              size="large"
+              style={{ width: '100%' }}
+              onChange={(value) => setResultFilter(value || '')}
+              value={resultFilter || undefined}
+            >
+              <Option value="pass">合格</Option>
+              <Option value="fail">不合格</Option>
+              <Option value="conditional">有条件合格</Option>
+              <Option value="pending">待检验</Option>
+            </Select>
+          </div>
+          <div className="toolbar-actions">
+            {selectedRowKeys.length > 0 && (
+              <Button danger size="large" onClick={handleBatchDelete}>
+                批量删除 ({selectedRowKeys.length})
+              </Button>
+            )}
+            {checkPermission('quality.create') && (
+              <Button type="primary" icon={<PlusOutlined />} size="large" onClick={handleCreate}>
+                新增质量检验
+              </Button>
+            )}
+            <Button icon={<ReloadOutlined />} size="large" onClick={fetchInspections}>
+              刷新
+            </Button>
+          </div>
+        </div>
 
-          {/* 表格 */}
+        <div className="list-table-wrap">
           <Table
             columns={columns}
             dataSource={inspections}
             rowKey="id"
             loading={loading}
-            scroll={{ x: 1400 }}
+            scroll={{ x: 1100 }}
             pagination={{
               current: currentPage,
               pageSize: pageSize,
@@ -510,7 +571,7 @@ const QualityList: React.FC = () => {
             }}
             rowSelection={rowSelection}
           />
-        </Space>
+        </div>
       </Card>
 
       {/* 质量检验模态框 */}

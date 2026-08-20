@@ -20,6 +20,7 @@ from app.models.shared_library import (
 from app.models.welder import (
     Welder,
     WelderCertification,
+    WelderCertifiedProject,
     WelderTraining,
     WelderWorkRecord,
     WelderAssessment,
@@ -61,6 +62,7 @@ __all__ = [
     "SharedComment",
     "Welder",
     "WelderCertification",
+    "WelderCertifiedProject",
     "WelderTraining",
     "WelderWorkRecord",
     "WelderAssessment",

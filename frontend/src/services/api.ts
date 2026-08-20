@@ -68,10 +68,29 @@ class ApiService {
 
         if (response) {
           switch (response.status) {
-            case 401:
-              message.error('登录已过期，请重新登录')
-              this.handleUnauthorized()
+            case 401: {
+              const requestUrl = String(error.config?.url || '')
+              const isAuthCredentialRequest =
+                /\/auth\/(login|login-json|login-with-verification-code|register)(\?|$)/.test(
+                  requestUrl
+                )
+              const detail = response.data?.detail
+              const detailMsg =
+                typeof detail === 'string'
+                  ? detail
+                  : typeof detail?.message === 'string'
+                    ? detail.message
+                    : null
+
+              if (isAuthCredentialRequest) {
+                // 登录/注册失败：展示后端原因，不要清 token 或整页跳转
+                message.error(detailMsg || '账号或密码错误')
+              } else {
+                message.error(detailMsg || '登录已过期，请重新登录')
+                this.handleUnauthorized()
+              }
               break
+            }
             case 403:
               // 显示后端返回的具体权限错误信息
               const permissionError = response.data?.detail

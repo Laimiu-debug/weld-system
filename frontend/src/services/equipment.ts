@@ -275,6 +275,36 @@ class EquipmentService {
   // ==================== 设备基础管理 ====================
 
   /**
+   * 获取当前工作区（从本地存储）
+   */
+  private getCurrentWorkspace() {
+    try {
+      const workspaceData = localStorage.getItem('current_workspace')
+      return workspaceData ? JSON.parse(workspaceData) : null
+    } catch (error) {
+      console.error('获取当前工作区失败:', error)
+      return null
+    }
+  }
+
+  /**
+   * 解开 api 拦截器 / 后端双重 { success, data } 包装
+   */
+  private unwrapPayload<T = any>(response: any): T {
+    let cur = response?.data ?? response
+    if (
+      cur &&
+      typeof cur === 'object' &&
+      'success' in cur &&
+      'data' in cur &&
+      cur.data != null
+    ) {
+      cur = cur.data
+    }
+    return cur as T
+  }
+
+  /**
    * 获取设备列表
    */
   async getEquipmentList(params?: EquipmentListParams): Promise<PaginatedResponse<Equipment>> {
@@ -290,44 +320,14 @@ class EquipmentService {
 
     const url = `/equipment/${queryParams.toString() ? `?${queryParams.toString()}` : ''}`
     const response = await apiService.get<PaginatedResponse<Equipment>>(url)
+    const payload = this.unwrapPayload<PaginatedResponse<Equipment>>(response)
 
-    return response.data
-  }
-
-  /**
-   * 获取设备详情
-   */
-  async getEquipmentDetail(equipmentId: string): Promise<ApiResponse<Equipment>> {
-    const response = await apiService.get<Equipment>(`/equipment/${equipmentId}`)
-    return response
-  }
-
-  /**
-   * 创建新设备
-   */
-  async createEquipment(data: CreateEquipmentData): Promise<ApiResponse<Equipment>> {
-    // 获取当前工作区类型
-    const currentWorkspace = this.getCurrentWorkspace()
-    const workspaceType = currentWorkspace?.type === 'enterprise' ? 'company' : 'personal'
-
-    // 添加工作区类型参数到URL (注意URL末尾的斜杠,避免307重定向)
-    const response = await apiService.post<Equipment>(
-      `/equipment/?workspace_type=${workspaceType}`,
-      data
-    )
-    return response
-  }
-
-  /**
-   * 获取当前工作区（从本地存储）
-   */
-  private getCurrentWorkspace() {
-    try {
-      const workspaceData = localStorage.getItem('current_workspace')
-      return workspaceData ? JSON.parse(workspaceData) : null
-    } catch (error) {
-      console.error('获取当前工作区失败:', error)
-      return null
+    return {
+      items: Array.isArray(payload?.items) ? payload.items : [],
+      total: payload?.total ?? 0,
+      page: payload?.page ?? 1,
+      page_size: payload?.page_size ?? params?.limit ?? 20,
+      total_pages: payload?.total_pages ?? 0,
     }
   }
 
@@ -383,7 +383,10 @@ class EquipmentService {
     const response = await apiService.get<EquipmentStatistics>(
       `/equipment/statistics/overview?workspace_type=${workspaceType}`
     )
-    return response
+    return {
+      success: true,
+      data: this.unwrapPayload<EquipmentStatistics>(response),
+    }
   }
 
   /**
@@ -391,7 +394,14 @@ class EquipmentService {
    */
   async getMaintenanceAlerts(days: number = 30): Promise<ApiResponse<{ items: MaintenanceAlert[], total: number }>> {
     const response = await apiService.get<{ items: MaintenanceAlert[], total: number }>(`/equipment/maintenance/alerts?days=${days}`)
-    return response
+    const payload = this.unwrapPayload<{ items: MaintenanceAlert[], total: number }>(response)
+    return {
+      success: true,
+      data: {
+        items: Array.isArray(payload?.items) ? payload.items : [],
+        total: payload?.total ?? 0,
+      },
+    }
   }
 
   async getMaintenanceRecords(params?: {
@@ -408,7 +418,14 @@ class EquipmentService {
     const response = await apiService.get<{ items: MaintenanceRecordItem[], total: number }>(
       `/equipment/maintenance-records?${queryParams.toString()}`
     )
-    return response
+    const payload = this.unwrapPayload<{ items: MaintenanceRecordItem[], total: number }>(response)
+    return {
+      success: true,
+      data: {
+        items: Array.isArray(payload?.items) ? payload.items : [],
+        total: payload?.total ?? 0,
+      },
+    }
   }
 
   async createMaintenanceRecord(
@@ -437,7 +454,14 @@ class EquipmentService {
     const response = await apiService.get<{ items: UsageRecordItem[], total: number }>(
       `/equipment/usage-records?${queryParams.toString()}`
     )
-    return response
+    const payload = this.unwrapPayload<{ items: UsageRecordItem[], total: number }>(response)
+    return {
+      success: true,
+      data: {
+        items: Array.isArray(payload?.items) ? payload.items : [],
+        total: payload?.total ?? 0,
+      },
+    }
   }
 
   async createUsageRecord(data: CreateUsageRecordData): Promise<ApiResponse<UsageRecordItem>> {

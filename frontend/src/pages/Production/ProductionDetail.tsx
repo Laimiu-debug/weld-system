@@ -41,10 +41,12 @@ import {
   deleteProductionTask,
   getProductionRecords,
   createProductionRecord,
+  getProductionTaskInspections,
   type ProductionTask as APIProductionTask,
   type ProductionRecord,
 } from '@/services/production'
 import workspaceService from '@/services/workspace'
+import type { QualityInspection } from '@/services/quality'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -65,16 +67,34 @@ const PRIORITY_MAP: Record<string, { color: string; text: string }> = {
   urgent: { color: 'red', text: '紧急' },
 }
 
+const QUALITY_RESULT_MAP: Record<string, { color: string; text: string }> = {
+  pass: { color: 'success', text: '合格' },
+  fail: { color: 'error', text: '不合格' },
+  conditional: { color: 'warning', text: '有条件合格' },
+  pending: { color: 'default', text: '待定' },
+  retest: { color: 'processing', text: '需复检' },
+}
+
+const INSPECTION_STATUS_MAP: Record<string, { color: string; text: string }> = {
+  pending: { color: 'default', text: '待检' },
+  in_progress: { color: 'processing', text: '检验中' },
+  completed: { color: 'success', text: '已完成' },
+}
+
 const formatDate = (value?: string | null) => (value ? dayjs(value).format('YYYY-MM-DD') : '-')
 
 const ProductionDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const [activeTab, setActiveTab] = useState(searchParams.get('tab') === 'logs' ? 'logs' : 'info')
+  const initialTab = searchParams.get('tab')
+  const [activeTab, setActiveTab] = useState(
+    initialTab === 'logs' || initialTab === 'quality' ? initialTab : 'info'
+  )
   const [loading, setLoading] = useState(false)
   const [taskData, setTaskData] = useState<APIProductionTask | null>(null)
   const [records, setRecords] = useState<ProductionRecord[]>([])
+  const [inspections, setInspections] = useState<QualityInspection[]>([])
   const [logOpen, setLogOpen] = useState(false)
   const [form] = Form.useForm()
 
@@ -88,12 +108,14 @@ const ProductionDetail: React.FC = () => {
     if (!taskId) return
     setLoading(true)
     try {
-      const [taskResp, recordResp] = await Promise.all([
+      const [taskResp, recordResp, inspectionResp] = await Promise.all([
         getProductionTaskById(taskId, workspaceType, companyId, factoryId),
         getProductionRecords(taskId, workspaceType, companyId, factoryId),
+        getProductionTaskInspections(taskId, workspaceType, companyId, factoryId),
       ])
       setTaskData(taskResp.data)
       setRecords(recordResp.data?.items || [])
+      setInspections(inspectionResp.data?.items || [])
     } catch (error) {
       console.error(error)
     } finally {
@@ -247,10 +269,107 @@ const ProductionDetail: React.FC = () => {
                         <Descriptions.Item label="进度" span={2}>
                           <Progress percent={taskData.progress_percentage || 0} />
                         </Descriptions.Item>
+                        <Descriptions.Item label="质检状态">
+                          {taskData.inspection_status ? (
+                            <Tag color={(INSPECTION_STATUS_MAP[taskData.inspection_status] || INSPECTION_STATUS_MAP.pending).color}>
+                              {(INSPECTION_STATUS_MAP[taskData.inspection_status] || { text: taskData.inspection_status }).text}
+                            </Tag>
+                          ) : (
+                            '-'
+                          )}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="最新质量结果">
+                          {taskData.quality_result ? (
+                            <Tag color={(QUALITY_RESULT_MAP[taskData.quality_result] || QUALITY_RESULT_MAP.pending).color}>
+                              {(QUALITY_RESULT_MAP[taskData.quality_result] || { text: taskData.quality_result }).text}
+                            </Tag>
+                          ) : (
+                            '-'
+                          )}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="缺陷数">{taskData.defect_count ?? 0}</Descriptions.Item>
+                        <Descriptions.Item label="关联质检">{inspections.length} 条</Descriptions.Item>
                         <Descriptions.Item label="备注" span={2}>
                           {taskData.notes || '-'}
                         </Descriptions.Item>
                       </Descriptions>
+                    ),
+                  },
+                  {
+                    key: 'quality',
+                    label: `质检结果（${inspections.length}）`,
+                    children: (
+                      <div>
+                        <Space style={{ marginBottom: 16 }}>
+                          <Button
+                            type="primary"
+                            icon={<PlusOutlined />}
+                            onClick={() => navigate(`/quality/create?taskId=${id}&from=production`)}
+                          >
+                            新建质检
+                          </Button>
+                          <Button onClick={() => navigate(`/quality?taskId=${id}`)}>在质量管理中查看</Button>
+                        </Space>
+                        {!inspections.length ? (
+                          <Alert
+                            type="info"
+                            showIcon
+                            message="暂无关联质检"
+                            description="可从此处新建质量检验，完成后结果会自动回写到本任务摘要。"
+                          />
+                        ) : (
+                          <Table
+                            rowKey="id"
+                            size="small"
+                            dataSource={inspections}
+                            pagination={false}
+                            columns={[
+                              {
+                                title: '检验编号',
+                                dataIndex: 'inspection_number',
+                                render: (v: string, row: QualityInspection) => (
+                                  <Button type="link" onClick={() => navigate(`/quality/${row.id}`)}>
+                                    {v}
+                                  </Button>
+                                ),
+                              },
+                              {
+                                title: '日期',
+                                dataIndex: 'inspection_date',
+                                render: (v: string) => formatDate(v),
+                              },
+                              {
+                                title: '结果',
+                                dataIndex: 'result',
+                                render: (v: string) => {
+                                  const cfg = QUALITY_RESULT_MAP[v] || { color: 'default', text: v || '-' }
+                                  return <Tag color={cfg.color}>{cfg.text}</Tag>
+                                },
+                              },
+                              {
+                                title: '是否合格',
+                                dataIndex: 'is_qualified',
+                                render: (v: boolean) =>
+                                  v ? <Tag color="success">合格</Tag> : <Tag color="error">不合格</Tag>,
+                              },
+                              {
+                                title: '缺陷数',
+                                dataIndex: 'defects_found',
+                                render: (v?: number) => v ?? 0,
+                              },
+                              {
+                                title: '操作',
+                                key: 'action',
+                                render: (_: unknown, row: QualityInspection) => (
+                                  <Button type="link" onClick={() => navigate(`/quality/${row.id}`)}>
+                                    查看
+                                  </Button>
+                                ),
+                              },
+                            ]}
+                          />
+                        )}
+                      </div>
                     ),
                   },
                   {
@@ -307,8 +426,15 @@ const ProductionDetail: React.FC = () => {
                 <Button type="primary" icon={<EditOutlined />} block onClick={() => navigate(`/production/${id}/edit`)}>
                   编辑任务
                 </Button>
-                <Button icon={<PlusOutlined />} block onClick={() => navigate(`/quality/create?taskId=${id}`)}>
-                  创建质检
+                <Button
+                  icon={<PlusOutlined />}
+                  block
+                  onClick={() => navigate(`/quality/create?taskId=${id}&from=production`)}
+                >
+                  新建质检
+                </Button>
+                <Button block onClick={() => setActiveTab('quality')}>
+                  查看质检结果
                 </Button>
                 {taskData.status === 'pending' && (
                   <Button type="primary" icon={<PlayCircleOutlined />} block onClick={() => handleStatus('in_progress')}>

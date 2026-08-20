@@ -145,11 +145,14 @@ export interface SystemConfig {
   registration_enabled: boolean;
   max_upload_size_mb: number;
   session_timeout_minutes: number;
-  email_service_enabled: boolean;
-  storage_service_enabled: boolean;
-  backup_enabled: boolean;
-  auto_backup_interval_hours: number;
-  log_retention_days: number;
+  email_service_enabled?: boolean;
+  storage_service_enabled?: boolean;
+  backup_enabled?: boolean;
+  auto_backup_interval_hours?: number;
+  log_retention_days?: number;
+  brand_name?: string;
+  brand_subtitle?: string;
+  org_name?: string;
 }
 
 export interface Admin {

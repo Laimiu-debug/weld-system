@@ -13,11 +13,17 @@ from app.core.config import settings
 # 使用PostgreSQL数据库
 database_url = str(settings.DATABASE_URL)
 
-# PostgreSQL配置
+# PostgreSQL配置：锁等待上限，避免 DDL/长事务把连接池卡死
 engine = create_engine(
     database_url,
     pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=20,
+    pool_timeout=30,
     echo=settings.DEBUG,
+    connect_args={
+        "options": "-c lock_timeout=5000 -c statement_timeout=30000",
+    },
 )
 async_engine = create_async_engine(
     database_url.replace("postgresql://", "postgresql+asyncpg://"),

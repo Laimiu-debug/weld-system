@@ -89,7 +89,43 @@ export interface WelderCertification {
   created_at: string;
   updated_at: string;
   is_active: boolean;
+  /** Phase2：体系证书下的持证项目 */
+  projects?: CertifiedProject[];
 }
+
+export interface CertifiedProject {
+  id: number;
+  certification_id: number;
+  welder_id: number;
+  project_code?: string;
+  project_name: string;
+  issue_date?: string;
+  expiry_date?: string;
+  renewal_date?: string;
+  renewal_count?: number;
+  next_renewal_date?: string;
+  renewal_result?: string;
+  renewal_notes?: string;
+  status?: string;
+  is_active?: boolean;
+  notes?: string;
+}
+
+export type CreateCertifiedProjectRequest = {
+  project_code?: string;
+  project_name: string;
+  issue_date?: string;
+  expiry_date?: string;
+  renewal_date?: string;
+  renewal_count?: number;
+  next_renewal_date?: string;
+  renewal_result?: string;
+  renewal_notes?: string;
+  status?: string;
+  notes?: string;
+};
+
+export type UpdateCertifiedProjectRequest = Partial<CreateCertifiedProjectRequest>;
 
 /**
  * 创建证书请求
@@ -272,6 +308,74 @@ class CertificationService {
 
     const data = response.data.data || response.data;
     return data.url;
+  }
+
+  private workspaceParams(workspaceType: string, companyId?: number, factoryId?: number) {
+    const params: Record<string, string | number> = { workspace_type: workspaceType };
+    if (companyId) params.company_id = companyId;
+    if (factoryId) params.factory_id = factoryId;
+    return params;
+  }
+
+  async listProjects(
+    welderId: number,
+    certificationId: number,
+    workspaceType: string,
+    companyId?: number,
+    factoryId?: number
+  ) {
+    const response = await api.get(
+      `/welders/${welderId}/certifications/${certificationId}/projects`,
+      { params: this.workspaceParams(workspaceType, companyId, factoryId) }
+    );
+    return response.data.data || response.data;
+  }
+
+  async createProject(
+    welderId: number,
+    certificationId: number,
+    data: CreateCertifiedProjectRequest,
+    workspaceType: string,
+    companyId?: number,
+    factoryId?: number
+  ): Promise<CertifiedProject> {
+    const response = await api.post(
+      `/welders/${welderId}/certifications/${certificationId}/projects`,
+      data,
+      { params: this.workspaceParams(workspaceType, companyId, factoryId) }
+    );
+    return response.data.data || response.data;
+  }
+
+  async updateProject(
+    welderId: number,
+    certificationId: number,
+    projectId: number,
+    data: UpdateCertifiedProjectRequest,
+    workspaceType: string,
+    companyId?: number,
+    factoryId?: number
+  ): Promise<CertifiedProject> {
+    const response = await api.put(
+      `/welders/${welderId}/certifications/${certificationId}/projects/${projectId}`,
+      data,
+      { params: this.workspaceParams(workspaceType, companyId, factoryId) }
+    );
+    return response.data.data || response.data;
+  }
+
+  async deleteProject(
+    welderId: number,
+    certificationId: number,
+    projectId: number,
+    workspaceType: string,
+    companyId?: number,
+    factoryId?: number
+  ): Promise<void> {
+    await api.delete(
+      `/welders/${welderId}/certifications/${certificationId}/projects/${projectId}`,
+      { params: this.workspaceParams(workspaceType, companyId, factoryId) }
+    );
   }
 }
 

@@ -1,4 +1,6 @@
 """Enterprise factory and department APIs."""
+from datetime import datetime
+import logging
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -10,6 +12,7 @@ from app.core.database import get_db
 from app.models.user import User
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ==================== 工厂管理API ====================
@@ -447,7 +450,8 @@ def get_enterprise_departments(
         }
     except HTTPException:
         raise
-    except Exception:
+    except Exception as exc:
+        logger.exception("获取部门列表失败: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="获取部门列表失败"

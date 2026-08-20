@@ -74,15 +74,58 @@ async def startup_event():
         try:
             from sqlalchemy import text
             from app.core.database import SessionLocal
+            from app.services.subscription_plan_seed import ensure_subscription_plans
 
             db = SessionLocal()
             try:
                 db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences TEXT"))
+                db.execute(
+                    text(
+                        """
+                        CREATE TABLE IF NOT EXISTS welder_certified_projects (
+                            id SERIAL PRIMARY KEY,
+                            certification_id INTEGER NOT NULL REFERENCES welder_certifications(id) ON DELETE CASCADE,
+                            welder_id INTEGER NOT NULL REFERENCES welders(id) ON DELETE CASCADE,
+                            project_code VARCHAR(100),
+                            project_name VARCHAR(200) NOT NULL,
+                            issue_date DATE,
+                            expiry_date DATE,
+                            renewal_date DATE,
+                            renewal_count INTEGER DEFAULT 0,
+                            next_renewal_date DATE,
+                            renewal_result VARCHAR(50),
+                            renewal_notes TEXT,
+                            status VARCHAR(50) DEFAULT 'valid',
+                            is_active BOOLEAN DEFAULT TRUE,
+                            notes TEXT,
+                            created_by INTEGER NOT NULL REFERENCES users(id),
+                            updated_by INTEGER REFERENCES users(id),
+                            created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+                            updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+                        )
+                        """
+                    )
+                )
+                db.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_welder_certified_projects_certification_id "
+                        "ON welder_certified_projects (certification_id)"
+                    )
+                )
+                db.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_welder_certified_projects_welder_id "
+                        "ON welder_certified_projects (welder_id)"
+                    )
+                )
                 db.commit()
+                created = ensure_subscription_plans(db)
+                if created:
+                    logger.info("Initialized %s subscription plans for empty database", created)
             finally:
                 db.close()
         except Exception as exc:
-            logger.warning("Failed to ensure users.preferences column: %s", exc)
+            logger.warning("Failed to ensure schema patches / subscription plans: %s", exc)
     else:
         assert_ready_or_raise()
     logger.info("Hanxu Backend started")

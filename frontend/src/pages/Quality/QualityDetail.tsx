@@ -29,6 +29,7 @@ import {
   ExclamationCircleOutlined,
   CheckCircleOutlined,
   WarningOutlined,
+  ClockCircleOutlined,
   FileImageOutlined,
   UploadOutlined,
 } from '@ant-design/icons'
@@ -200,6 +201,9 @@ const QualityDetail: React.FC = () => {
       fail: { color: 'error', text: '不合格', icon: <ExclamationCircleOutlined /> },
       unqualified: { color: 'error', text: '不合格', icon: <ExclamationCircleOutlined /> },
       conditional: { color: 'warning', text: '有条件合格', icon: <WarningOutlined /> },
+      conditional_qualified: { color: 'warning', text: '有条件合格', icon: <WarningOutlined /> },
+      pending: { color: 'default', text: '待定', icon: <ClockCircleOutlined /> },
+      retest: { color: 'processing', text: '需复检', icon: <ClockCircleOutlined /> },
     }
     return resultNames[result] || resultNames.pass
   }
@@ -353,6 +357,15 @@ const QualityDetail: React.FC = () => {
                       <Descriptions.Item label="检验编号">{inspectionData.inspection_number}</Descriptions.Item>
                       <Descriptions.Item label="检验日期">
                         {inspectionData.inspection_date ? dayjs(inspectionData.inspection_date).format('YYYY-MM-DD') : '-'}
+                      </Descriptions.Item>
+                      <Descriptions.Item label="关联生产任务" span={2}>
+                        {inspectionData.production_task_id ? (
+                          <Button type="link" style={{ padding: 0 }} onClick={() => navigate(`/production/${inspectionData.production_task_id}?tab=quality`)}>
+                            任务 #{inspectionData.production_task_id}（查看生产质检）
+                          </Button>
+                        ) : (
+                          '-'
+                        )}
                       </Descriptions.Item>
                       <Descriptions.Item label="检验员">{inspectionData.inspector_name || '-'}</Descriptions.Item>
                       <Descriptions.Item label="焊工">{inspectionData.welder_name || '-'}</Descriptions.Item>

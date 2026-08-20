@@ -221,7 +221,7 @@ const CertificationModal: React.FC<CertificationModalProps> = ({
 
   return (
     <Modal
-      title={isEdit ? '编辑证书' : '添加证书'}
+      title={isEdit ? '编辑持证项目' : '添加持证项目'}
       open={visible}
       onOk={handleOk}
       onCancel={onCancel}
@@ -271,7 +271,11 @@ const CertificationModal: React.FC<CertificationModalProps> = ({
 
                   <Row gutter={16}>
                     <Col span={12}>
-                      <Form.Item name="certification_system" label="认证体系">
+                      <Form.Item
+                        name="certification_system"
+                        label="认证体系"
+                        rules={[{ required: true, message: '请选择认证体系' }]}
+                      >
                         <Select placeholder="请选择认证体系">
                           <Option value="ASME">ASME（美国机械工程师协会）</Option>
                           <Option value="国标">国标（GB/T）</Option>
@@ -284,21 +288,25 @@ const CertificationModal: React.FC<CertificationModalProps> = ({
                       </Form.Item>
                     </Col>
                     <Col span={12}>
-                      <Form.Item name="certification_standard" label="认证标准">
-                        <Input placeholder="如：ASME IX, EN ISO 9606-1" />
+                      <Form.Item
+                        name="project_name"
+                        label="持证项目"
+                        rules={[{ required: true, message: '请输入持证项目名称' }]}
+                      >
+                        <Input placeholder="例如：SMAW 板对接 3G、管道 6G" />
                       </Form.Item>
                     </Col>
                   </Row>
 
                   <Row gutter={16}>
                     <Col span={12}>
-                      <Form.Item name="certification_level" label="证书等级">
-                        <Input placeholder="请输入证书等级" />
+                      <Form.Item name="certification_standard" label="认证标准">
+                        <Input placeholder="如：ASME IX, EN ISO 9606-1" />
                       </Form.Item>
                     </Col>
                     <Col span={12}>
-                      <Form.Item name="project_name" label="项目名称">
-                        <Input placeholder="请输入项目名称" />
+                      <Form.Item name="certification_level" label="证书等级">
+                        <Input placeholder="请输入证书等级" />
                       </Form.Item>
                     </Col>
                   </Row>

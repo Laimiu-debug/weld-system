@@ -37,6 +37,7 @@ def get_quality_inspections(
     result: Optional[str] = Query(None, description="检验结果"),
     inspection_type: Optional[str] = Query(None, description="检验类型"),
     inspector_id: Optional[int] = Query(None, description="检验员ID"),
+    production_task_id: Optional[int] = Query(None, description="关联生产任务ID"),
     current_user: Any = Depends(deps.get_current_active_user)
 ) -> Any:
     """
@@ -51,6 +52,7 @@ def get_quality_inspections(
     - **result**: 检验结果筛选
     - **inspection_type**: 检验类型筛选
     - **inspector_id**: 检验员ID筛选
+    - **production_task_id**: 关联生产任务筛选
     """
     try:
         # 构建工作区上下文
@@ -71,7 +73,8 @@ def get_quality_inspections(
             search=search,
             inspection_type=inspection_type,
             result=result,
-            inspector_id=inspector_id
+            inspector_id=inspector_id,
+            production_task_id=production_task_id,
         )
 
         # 计算分页信息

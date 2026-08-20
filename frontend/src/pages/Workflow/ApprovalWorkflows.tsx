@@ -39,6 +39,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import approvalApi, { ApprovalWorkflowDefinition, ApprovalWorkflowStep, CreateWorkflowData } from '@/services/approval'
 import enterpriseService, { CompanyRole, CompanyEmployee } from '@/services/enterprise'
+import ListPageHeader from '@/components/ListPageHeader'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -341,10 +342,10 @@ const ApprovalWorkflows: React.FC = () => {
     {
       title: '操作',
       key: 'actions',
-      width: 200,
+      width: 240,
       fixed: 'right',
       render: (_, record) => (
-        <Space>
+        <Space wrap size={0}>
           <Tooltip title="查看详情">
             <Button
               type="text"
@@ -418,37 +419,37 @@ const ApprovalWorkflows: React.FC = () => {
   ]
 
   return (
-    <div style={{ padding: 24 }}>
-      <Card>
-        <Row justify="space-between" align="middle" style={{ marginBottom: 16 }}>
-          <Col>
-            <Title level={4} style={{ margin: 0 }}>
-              <ApartmentOutlined /> 审批工作流管理
-            </Title>
-          </Col>
-          <Col>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => handleOpenModal('create')}
-            >
-              创建工作流
-            </Button>
-          </Col>
-        </Row>
+    <div className="list-page">
+      <ListPageHeader
+        title="审批流程"
+        description="配置文档审批工作流与步骤"
+        extra={
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => handleOpenModal('create')}
+          >
+            创建工作流
+          </Button>
+        }
+      />
 
-        <Table
-          columns={columns}
-          dataSource={workflows}
-          rowKey="id"
-          loading={loading}
-          pagination={{
-            pageSize: 10,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total) => `共 ${total} 条`,
-          }}
-        />
+      <Card className="list-page-card">
+        <div className="list-table-wrap">
+          <Table
+            columns={columns}
+            dataSource={workflows}
+            rowKey="id"
+            loading={loading}
+            scroll={{ x: 1100 }}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total) => `共 ${total} 条`,
+            }}
+          />
+        </div>
       </Card>
 
       {/* 创建/编辑工作流模态框 */}

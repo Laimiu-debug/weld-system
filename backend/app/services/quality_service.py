@@ -27,6 +27,68 @@ class QualityService:
         self.data_access = DataAccessMiddleware(db)
         self.quota_service = QuotaService(db)
 
+    @staticmethod
+    def _normalize_result(result: Optional[str]) -> Optional[str]:
+        """统一前端旧枚举与后端 InspectionResult."""
+        if not result:
+            return result
+        aliases = {
+            "qualified": "pass",
+            "unqualified": "fail",
+            "conditional_qualified": "conditional",
+            "pass": "pass",
+            "fail": "fail",
+            "conditional": "conditional",
+            "pending": "pending",
+            "retest": "retest",
+        }
+        return aliases.get(str(result).strip().lower(), str(result).strip().lower())
+
+    def _defect_total(self, inspection: QualityInspection) -> int:
+        return int(
+            (inspection.crack_count or 0)
+            + (inspection.porosity_count or 0)
+            + (inspection.inclusion_count or 0)
+            + (inspection.undercut_count or 0)
+            + (inspection.incomplete_penetration_count or 0)
+            + (inspection.incomplete_fusion_count or 0)
+            + (inspection.other_defect_count or 0)
+        )
+
+    def _sync_production_task_quality(self, production_task_id: int) -> None:
+        """把最新质检结果回写到生产任务，供生产模块直接调用."""
+        from app.models.production import ProductionTask
+
+        task = (
+            self.db.query(ProductionTask)
+            .filter(ProductionTask.id == production_task_id)
+            .first()
+        )
+        if not task:
+            return
+
+        latest = (
+            self.db.query(QualityInspection)
+            .filter(QualityInspection.production_task_id == production_task_id)
+            .order_by(QualityInspection.created_at.desc())
+            .first()
+        )
+        if not latest:
+            task.inspection_status = None
+            task.quality_result = None
+            task.defect_count = 0
+            self.db.commit()
+            return
+
+        result = self._normalize_result(latest.inspection_result)
+        task.quality_result = result
+        task.defect_count = self._defect_total(latest)
+        if result in ("pass", "fail", "conditional", "retest"):
+            task.inspection_status = "completed"
+        else:
+            task.inspection_status = "in_progress"
+        self.db.commit()
+
     # ==================== 质量检验基础管理 ====================
 
     def create_quality_inspection(
@@ -122,6 +184,10 @@ class QualityService:
             # 处理字段映射：前端发送的result映射到数据库的inspection_result
             if "result" in inspection_data_dict:
                 inspection_data_dict["inspection_result"] = inspection_data_dict.pop("result")
+            if "inspection_result" in inspection_data_dict and inspection_data_dict["inspection_result"]:
+                inspection_data_dict["inspection_result"] = self._normalize_result(
+                    inspection_data_dict["inspection_result"]
+                )
 
             # 移除数据库中不存在的虚拟字段
             virtual_fields = [
@@ -164,14 +230,7 @@ class QualityService:
             self.db.refresh(inspection)
 
             if inspection.production_task_id:
-                from app.models.production import ProductionTask
-
-                task = self.db.query(ProductionTask).filter(
-                    ProductionTask.id == inspection.production_task_id
-                ).first()
-                if task:
-                    task.inspection_status = "in_progress"
-                    self.db.commit()
+                self._sync_production_task_quality(inspection.production_task_id)
 
             # 更新配额使用（物理资产模块会自动跳过）
             self.quota_service.update_quota_usage(current_user, workspace_context, "quality", 1)
@@ -210,7 +269,8 @@ class QualityService:
         search: Optional[str] = None,
         inspection_type: Optional[str] = None,
         result: Optional[str] = None,
-        inspector_id: Optional[int] = None
+        inspector_id: Optional[int] = None,
+        production_task_id: Optional[int] = None,
     ) -> tuple[List[QualityInspection], int]:
         """
         获取质量检验列表
@@ -224,6 +284,7 @@ class QualityService:
             inspection_type: 检验类型筛选
             result: 检验结果筛选
             inspector_id: 检验员ID筛选
+            production_task_id: 关联生产任务筛选
 
         Returns:
             tuple: (检验列表, 总数)
@@ -257,11 +318,16 @@ class QualityService:
 
             # 检验结果筛选 (result映射到inspection_result)
             if result:
-                query = query.filter(QualityInspection.inspection_result == result)
+                query = query.filter(
+                    QualityInspection.inspection_result == self._normalize_result(result)
+                )
 
             # 检验员筛选
             if inspector_id:
                 query = query.filter(QualityInspection.inspector_id == inspector_id)
+
+            if production_task_id:
+                query = query.filter(QualityInspection.production_task_id == production_task_id)
 
             # 获取总数
             total = query.count()
@@ -377,6 +443,10 @@ class QualityService:
             # 处理字段映射：前端发送的result映射到数据库的inspection_result
             if "result" in inspection_data_dict:
                 inspection_data_dict["inspection_result"] = inspection_data_dict.pop("result")
+            if "inspection_result" in inspection_data_dict and inspection_data_dict["inspection_result"]:
+                inspection_data_dict["inspection_result"] = self._normalize_result(
+                    inspection_data_dict["inspection_result"]
+                )
 
             # 只更新数据库中实际存在的字段
             for key, value in inspection_data_dict.items():
@@ -387,6 +457,9 @@ class QualityService:
 
             self.db.commit()
             self.db.refresh(inspection)
+
+            if inspection.production_task_id:
+                self._sync_production_task_quality(inspection.production_task_id)
 
             return inspection
 

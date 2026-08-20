@@ -53,7 +53,16 @@ const QualityCreate: React.FC = () => {
     try {
       const currentWorkspace = workspaceService.getCurrentWorkspaceFromStorage()
       const workspaceType = currentWorkspace?.type === 'enterprise' ? 'enterprise' : 'personal'
-      const qualified = values.inspectionResult === 'qualified'
+      const resultMap: Record<string, string> = {
+        qualified: 'pass',
+        unqualified: 'fail',
+        conditional_qualified: 'conditional',
+        pass: 'pass',
+        fail: 'fail',
+        conditional: 'conditional',
+      }
+      const normalizedResult = resultMap[values.inspectionResult] || values.inspectionResult
+      const qualified = normalizedResult === 'pass'
       await qualityService.createQualityInspection(
         {
           production_task_id: values.production_task_id || (taskIdFromQuery ? Number(taskIdFromQuery) : undefined),
@@ -66,7 +75,7 @@ const QualityCreate: React.FC = () => {
           weld_location: values.projectName,
           inspection_method: values.weldingMethod,
           inspection_standard: values.wpsStandard,
-          result: values.inspectionResult,
+          result: normalizedResult,
           is_qualified: qualified,
           defects_found: defects.length,
           defect_details: JSON.stringify(defects),
@@ -81,7 +90,11 @@ const QualityCreate: React.FC = () => {
         currentWorkspace?.factory_id
       )
       message.success('质量检验记录创建成功')
-      navigate('/quality')
+      if (taskIdFromQuery && searchParams.get('from') === 'production') {
+        navigate(`/production/${taskIdFromQuery}?tab=quality`)
+      } else {
+        navigate('/quality')
+      }
     } catch (error) {
       message.error('创建失败')
     } finally {
@@ -372,9 +385,11 @@ const QualityCreate: React.FC = () => {
             rules={[{ required: true, message: '请选择检验结果' }]}
           >
             <Select placeholder="选择检验结果">
-              <Option value="qualified">合格</Option>
-              <Option value="conditional_qualified">有条件合格</Option>
-              <Option value="unqualified">不合格</Option>
+              <Option value="pass">合格</Option>
+              <Option value="conditional">有条件合格</Option>
+              <Option value="fail">不合格</Option>
+              <Option value="pending">待定</Option>
+              <Option value="retest">需复检</Option>
             </Select>
           </Form.Item>
 

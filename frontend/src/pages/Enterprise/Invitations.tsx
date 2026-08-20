@@ -45,9 +45,18 @@ import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 import enterpriseService from '@/services/enterprise'
 import { useEnterpriseInvitations, useEmployeeQuota } from '@/hooks/useEnterprise'
+import ListPageHeader from '@/components/ListPageHeader'
 
 const { Title, Text } = Typography
 const { Option } = Select
+const { Search } = Input
+
+const pickItems = (response: any): any[] => {
+  const payload = response?.data?.data ?? response?.data
+  if (Array.isArray(payload?.items)) return payload.items
+  if (Array.isArray(payload)) return payload
+  return []
+}
 
 // 接口定义
 interface EmployeeInvitation {
@@ -110,15 +119,15 @@ const Invitations: React.FC = () => {
   useEffect(() => {
     const loadFactoryAndDepartmentData = async () => {
       try {
-        // 加载工厂数据
-        const factoryResponse = await enterpriseService.getFactories()
-        setFactories(factoryResponse.data.items || [])
-
-        // 加载部门数据
-        const departmentResponse = await enterpriseService.getDepartments()
-        setDepartments(departmentResponse.data.items || [])
+        const [factoryResponse, departmentResponse] = await Promise.all([
+          enterpriseService.getFactories(),
+          enterpriseService.getDepartments(),
+        ])
+        setFactories(pickItems(factoryResponse))
+        setDepartments(pickItems(departmentResponse))
       } catch (error) {
-        message.error('加载基础数据失败')
+        console.error('加载工厂/部门失败:', error)
+        message.error('加载工厂或部门数据失败')
       }
     }
     loadFactoryAndDepartmentData()
@@ -165,6 +174,8 @@ const Invitations: React.FC = () => {
       title: '邮箱地址',
       dataIndex: 'email',
       key: 'email',
+      width: 220,
+      ellipsis: true,
       render: (email) => (
         <Space>
           <MailOutlined />
@@ -176,6 +187,7 @@ const Invitations: React.FC = () => {
       title: '邀请码',
       dataIndex: 'invitation_code',
       key: 'invitation_code',
+      width: 160,
       render: (code) => (
         <Space>
           <Text copyable={{ text: code }} style={{ cursor: 'pointer' }}>
@@ -193,6 +205,7 @@ const Invitations: React.FC = () => {
       title: '角色',
       dataIndex: 'role',
       key: 'role',
+      width: 100,
       render: (role) => {
         const roleMap: Record<string, any> = {
           admin: { color: 'red', text: '管理员' },
@@ -205,6 +218,7 @@ const Invitations: React.FC = () => {
     {
       title: '分配工厂/部门',
       key: 'organization',
+      width: 160,
       render: (_, record) => (
         <Space direction="vertical" size="small">
           <div>
@@ -222,6 +236,7 @@ const Invitations: React.FC = () => {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
+      width: 100,
       render: (status) => {
         const config = getStatusConfig(status)
         return (
@@ -235,6 +250,7 @@ const Invitations: React.FC = () => {
     {
       title: '有效期',
       key: 'expiry',
+      width: 130,
       render: (_, record) => {
         const expiresAt = dayjs(record.expires_at)
         const now = dayjs()
@@ -266,13 +282,16 @@ const Invitations: React.FC = () => {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
+      width: 110,
       render: (date) => dayjs(date).format('MM-DD HH:mm'),
     },
     {
       title: '操作',
       key: 'actions',
+      width: 280,
+      fixed: 'right',
       render: (_, record) => (
-        <Space>
+        <Space wrap size={0}>
           <Button
             type="text"
             icon={<EyeOutlined />}
@@ -380,11 +399,11 @@ const Invitations: React.FC = () => {
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <Title level={2}>邀请管理</Title>
-        <Text type="secondary">管理企业员工邀请，发送邀请码并跟踪邀请状态</Text>
-      </div>
+    <div className="list-page">
+      <ListPageHeader
+        title="邀请管理"
+        description="管理企业员工邀请，发送邀请码并跟踪邀请状态"
+      />
 
       {/* 配额显示 */}
       {!quotaLoading && quota && (
@@ -404,14 +423,14 @@ const Invitations: React.FC = () => {
           }
           type={quota.percentage >= 90 ? 'warning' : 'info'}
           showIcon
-          className="mb-6"
+          className="mb-4"
         />
       )}
 
       {/* 统计概览 */}
-      <Row gutter={[16, 16]} className="mb-6">
-        <Col xs={24} sm={12} md={6}>
-          <Card>
+      <Row gutter={[16, 16]} className="list-stats-row">
+        <Col xs={12} sm={12} md={6}>
+          <Card className="stat-card" size="small">
             <Statistic
               title="邀请总数"
               value={stats.total}
@@ -420,8 +439,8 @@ const Invitations: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
+        <Col xs={12} sm={12} md={6}>
+          <Card className="stat-card" size="small">
             <Statistic
               title="待接受"
               value={stats.pending}
@@ -430,8 +449,8 @@ const Invitations: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
+        <Col xs={12} sm={12} md={6}>
+          <Card className="stat-card" size="small">
             <Statistic
               title="已接受"
               value={stats.accepted}
@@ -440,8 +459,8 @@ const Invitations: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
+        <Col xs={12} sm={12} md={6}>
+          <Card className="stat-card" size="small">
             <Statistic
               title="已过期"
               value={stats.expired}
@@ -452,23 +471,26 @@ const Invitations: React.FC = () => {
         </Col>
       </Row>
 
-      {/* 搜索和筛选 */}
-      <Card className="mb-4">
-        <Row gutter={[16, 16]} align="middle">
-          <Col xs={24} sm={12} md={6}>
-            <Input
+      <Card className="list-page-card">
+        <div className="doc-list-toolbar">
+          <div className="toolbar-search">
+            <Search
               placeholder="搜索邮箱地址或邀请码"
-              prefix={<SearchOutlined />}
+              allowClear
+              enterButton={<SearchOutlined />}
+              size="large"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
+              onSearch={setSearchText}
             />
-          </Col>
-          <Col xs={12} sm={6} md={4}>
+          </div>
+          <div className="toolbar-filter">
             <Select
               placeholder="状态筛选"
-              value={filterStatus}
-              onChange={setFilterStatus}
+              value={filterStatus || undefined}
+              onChange={(v) => setFilterStatus(v || '')}
               allowClear
+              size="large"
               style={{ width: '100%' }}
             >
               <Option value="pending">待接受</Option>
@@ -476,25 +498,27 @@ const Invitations: React.FC = () => {
               <Option value="expired">已过期</Option>
               <Option value="cancelled">已取消</Option>
             </Select>
-          </Col>
-          <Col xs={12} sm={6} md={4}>
+          </div>
+          <div className="toolbar-filter">
             <Select
               placeholder="角色筛选"
-              value={filterRole}
-              onChange={setFilterRole}
+              value={filterRole || undefined}
+              onChange={(v) => setFilterRole(v || '')}
               allowClear
+              size="large"
               style={{ width: '100%' }}
             >
               <Option value="admin">管理员</Option>
               <Option value="employee">员工</Option>
             </Select>
-          </Col>
-          <Col xs={12} sm={6} md={4}>
+          </div>
+          <div className="toolbar-filter">
             <Select
               placeholder="工厂筛选"
-              value={filterFactory}
-              onChange={setFilterFactory}
+              value={filterFactory || undefined}
+              onChange={(v) => setFilterFactory(v || '')}
               allowClear
+              size="large"
               style={{ width: '100%' }}
             >
               {factories.map(factory => (
@@ -503,42 +527,41 @@ const Invitations: React.FC = () => {
                 </Option>
               ))}
             </Select>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Space>
-              <Button
-                type="primary"
-                icon={<UsergroupAddOutlined />}
-                onClick={() => {
-                  setModalVisible(true)
-                  form.resetFields()
-                }}
-                disabled={quota ? quota.current >= quota.max : false}
-              >
-                发送邀请
-              </Button>
-              <Button icon={<ExportOutlined />}>
-                导出记录
-              </Button>
-            </Space>
-          </Col>
-        </Row>
-      </Card>
+          </div>
+          <div className="toolbar-actions">
+            <Button
+              type="primary"
+              icon={<UsergroupAddOutlined />}
+              size="large"
+              onClick={() => {
+                setModalVisible(true)
+                form.resetFields()
+              }}
+              disabled={quota ? quota.current >= quota.max : false}
+            >
+              发送邀请
+            </Button>
+            <Button icon={<ExportOutlined />} size="large">
+              导出记录
+            </Button>
+          </div>
+        </div>
 
-      {/* 邀请列表 */}
-      <Card title="邀请记录">
-        <Table
-          columns={columns}
-          dataSource={filteredInvitations}
-          rowKey={(record) => `${record.id}_${record.invitation_code}`}
-          loading={loading}
-          pagination={{
-            pageSize: 10,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
-          }}
-        />
+        <div className="list-table-wrap">
+          <Table
+            columns={columns}
+            dataSource={filteredInvitations}
+            rowKey={(record) => `${record.id}_${record.invitation_code}`}
+            loading={loading}
+            scroll={{ x: 1300 }}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
+            }}
+          />
+        </div>
       </Card>
 
       {/* 发送邀请弹窗 */}

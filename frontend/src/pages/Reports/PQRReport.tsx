@@ -29,6 +29,7 @@ import {
 import dayjs from 'dayjs'
 import pqrService from '@/services/pqr'
 import { downloadCsv } from '@/utils/csv'
+import ListPageHeader from '@/components/ListPageHeader'
 
 const { Title, Text } = Typography
 const { RangePicker } = DatePicker
@@ -262,11 +263,11 @@ const PQRReport: React.FC = () => {
   ]
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <Title level={2}>PQR统计报表</Title>
-        <Text type="secondary">工艺评定记录统计分析报告</Text>
-      </div>
+    <div className="list-page">
+      <ListPageHeader
+        title="PQR统计"
+        description="工艺评定记录统计分析"
+      />
 
       {/* 筛选条件 */}
       <Card className="mb-6">

@@ -57,6 +57,7 @@ import { workspaceService, Workspace } from '@/services/workspace'
 import WorkspaceSwitcher from '@/components/WorkspaceSwitcher'
 import NotificationCenter from '@/components/NotificationCenter'
 import Footer from '@/components/Footer'
+import { useBranding } from '@/hooks/useBranding'
 
 const { Header, Sider, Content } = AntLayout
 const { Text } = Typography
@@ -66,6 +67,7 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = () => {
+  const branding = useBranding()
   const sidebarCollapsedPref = usePreferencesStore((s) => s.preferences.sidebarCollapsed)
   const [collapsed, setCollapsed] = useState(sidebarCollapsedPref)
   const [mobileDrawerVisible, setMobileDrawerVisible] = useState(false)
@@ -258,7 +260,7 @@ const Layout: React.FC<LayoutProps> = () => {
       children: [
         {
           key: '/wps',
-          label: 'WPS列表',
+          label: '全部WPS',
         },
         ...(isGuestMode || checkPermission('wps.create')
           ? [
@@ -278,7 +280,7 @@ const Layout: React.FC<LayoutProps> = () => {
       children: [
         {
           key: '/pqr',
-          label: 'PQR列表',
+          label: '全部PQR',
         },
         ...(isGuestMode || checkPermission('pqr.create')
           ? [
@@ -298,7 +300,7 @@ const Layout: React.FC<LayoutProps> = () => {
       children: [
         {
           key: '/ppqr',
-          label: 'pPQR列表',
+          label: '全部pPQR',
         },
         ...(checkPermission('ppqr.create')
           ? [
@@ -312,63 +314,33 @@ const Layout: React.FC<LayoutProps> = () => {
       hidden: isGuestMode ? true : !checkPermission('ppqr.read'),
     },
     {
-      key: 'materials-group',
+      key: '/materials',
       icon: <DatabaseOutlined />,
       label: '焊材管理',
-      children: [
-        {
-          key: '/materials',
-          label: '焊材列表',
-        },
-      ],
       hidden: isGuestMode ? true : !checkPermission('materials.read'),
     },
     {
-      key: 'welders-group',
+      key: '/welders',
       icon: <TeamOutlined />,
       label: '焊工管理',
-      children: [
-        {
-          key: '/welders',
-          label: '焊工列表',
-        },
-      ],
       hidden: isGuestMode ? true : !checkPermission('welders.read'),
     },
     {
-      key: 'equipment-group',
+      key: '/equipment',
       icon: <ToolOutlined />,
       label: '设备管理',
-      children: [
-        {
-          key: '/equipment',
-          label: '设备列表',
-        },
-      ],
       hidden: isGuestMode ? true : !checkPermission('equipment.read'),
     },
     {
-      key: 'production-group',
+      key: '/production',
       icon: <SafetyCertificateOutlined />,
       label: '生产管理',
-      children: [
-        {
-          key: '/production',
-          label: '生产任务',
-        },
-      ],
       hidden: isGuestMode ? true : !checkPermission('production.read'),
     },
     {
-      key: 'quality-group',
+      key: '/quality',
       icon: <PartitionOutlined />,
       label: '质量管理',
-      children: [
-        {
-          key: '/quality',
-          label: '质量检验',
-        },
-      ],
       hidden: isGuestMode ? true : !checkPermission('quality.read'),
     },
     {
@@ -378,7 +350,7 @@ const Layout: React.FC<LayoutProps> = () => {
       children: [
         {
           key: '/reports',
-          label: '报表概览',
+          label: '统计概览',
         },
         {
           key: '/reports/wps',
@@ -441,15 +413,9 @@ const Layout: React.FC<LayoutProps> = () => {
     },
 
     {
-      key: 'employees-group',
+      key: '/employees',
       icon: <TeamOutlined />,
       label: '员工管理',
-      children: [
-        {
-          key: '/employees',
-          label: '员工列表',
-        },
-      ],
       hidden: isGuestMode ? true : (!checkPermission('employees.read') || isEnterpriseUser()),
     },
     {
@@ -515,9 +481,43 @@ const Layout: React.FC<LayoutProps> = () => {
     }
   }
 
-  // 获取当前选中的菜单项
+  // 获取当前选中的菜单项（详情/编辑页高亮对应列表入口）
   const getSelectedKeys = () => {
     const pathname = location.pathname
+    const candidates = [
+      '/wps',
+      '/pqr',
+      '/ppqr',
+      '/materials',
+      '/welders',
+      '/equipment',
+      '/production',
+      '/quality',
+      '/reports',
+      '/employees',
+      '/modules',
+      '/templates',
+      '/shared-library',
+      '/membership',
+      '/profile',
+      '/enterprise',
+    ]
+    for (const base of candidates) {
+      if (pathname === base || pathname.startsWith(`${base}/`)) {
+        // 报表子路由保留精确选中
+        if (base === '/reports' && pathname !== '/reports') {
+          return [pathname]
+        }
+        // 创建页保留精确选中
+        if (
+          pathname.endsWith('/create') ||
+          pathname.includes('/create/')
+        ) {
+          return [pathname]
+        }
+        return [base]
+      }
+    }
     return [pathname]
   }
 
@@ -675,7 +675,7 @@ const Layout: React.FC<LayoutProps> = () => {
           <div className="sidebar-header">
             {collapsed ? (
               <div className="sidebar-logo-collapsed">
-                <span className="logo-text">焊序</span>
+                <span className="logo-text">{branding.collapsed_label}</span>
               </div>
             ) : (
               <div className="sidebar-logo-expanded">
@@ -683,8 +683,10 @@ const Layout: React.FC<LayoutProps> = () => {
                   <SafetyCertificateOutlined />
                 </div>
                 <div className="logo-text-wrapper">
-                  <span className="logo-title">焊序</span>
-                  <span className="logo-subtitle">Hanxu</span>
+                  <span className="logo-title">{branding.brand_name}</span>
+                  <span className="logo-subtitle" title={branding.display_subtitle}>
+                    {branding.display_subtitle}
+                  </span>
                 </div>
               </div>
             )}
@@ -696,7 +698,11 @@ const Layout: React.FC<LayoutProps> = () => {
       {/* 移动端抽屉 */}
       {isMobile && (
         <Drawer
-          title="焊序"
+          title={
+            branding.org_name
+              ? `${branding.brand_name} · ${branding.org_name}`
+              : branding.brand_name
+          }
           placement="left"
           onClose={() => setMobileDrawerVisible(false)}
           open={mobileDrawerVisible}
@@ -906,6 +912,8 @@ const Layout: React.FC<LayoutProps> = () => {
             margin: '24px',
             padding: '24px',
             minHeight: 'calc(100vh - 200px)',
+            minWidth: 0,
+            overflowX: 'hidden',
           }}
         >
           <Outlet />

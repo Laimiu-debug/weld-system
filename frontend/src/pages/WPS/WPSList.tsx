@@ -50,6 +50,7 @@ import wpsService, { WPSSummary } from '@/services/wps'
 import { approvalApi } from '@/services/approval'
 import ApprovalButton from '@/components/Approval/ApprovalButton'
 import { sanitizeDocumentHtml } from '@/utils/sanitizeHtml'
+import ListPageHeader from '@/components/ListPageHeader'
 
 const { Title, Text } = Typography
 const { Search } = Input
@@ -875,15 +876,11 @@ const WPSList: React.FC = () => {
 
 
   return (
-    <div className="wps-list-container">
-      <div className="page-header">
-        <div className="page-title">
-          <Title level={2}>WPS管理</Title>
-          <Text type="secondary">
-            焊接工艺规程 (Welding Procedure Specification) 管理
-          </Text>
-        </div>
-      </div>
+    <div className="wps-list-container list-page">
+      <ListPageHeader
+        title="WPS管理"
+        description="焊接工艺规程 (Welding Procedure Specification) 管理"
+      />
 
       {/* 统计卡片 */}
       {wpsData?.data?.items && (

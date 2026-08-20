@@ -37,10 +37,11 @@ import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 import enterpriseService from '@/services/enterprise'
 import { useEnterpriseDepartments, useEnterpriseFactories } from '@/hooks/useEnterprise'
+import ListPageHeader from '@/components/ListPageHeader'
 
 const { Title, Text } = Typography
 const { Option } = Select
-const { TextArea } = Input
+const { TextArea, Search } = Input
 
 // 接口定义
 interface SimpleEmployee {
@@ -110,10 +111,14 @@ const Departments: React.FC = () => {
 
   // 过滤数据
   const filteredDepartments = departments.filter(department => {
+    const name = (department.department_name || '').toLowerCase()
+    const code = (department.department_code || '').toLowerCase()
+    const desc = (department.description || '').toLowerCase()
+    const keyword = searchText.toLowerCase()
     const matchSearch = !searchText ||
-      department.department_name.toLowerCase().includes(searchText.toLowerCase()) ||
-      department.department_code.toLowerCase().includes(searchText.toLowerCase()) ||
-      department.description.toLowerCase().includes(searchText.toLowerCase())
+      name.includes(keyword) ||
+      code.includes(keyword) ||
+      desc.includes(keyword)
     const matchFactory = !filterFactory || department.factory_id === filterFactory
     return matchSearch && matchFactory
   })
@@ -123,6 +128,7 @@ const Departments: React.FC = () => {
     {
       title: '部门信息',
       key: 'department',
+      width: 260,
       render: (_, record) => (
         <Space>
           <Avatar icon={<BankOutlined />} />
@@ -141,6 +147,7 @@ const Departments: React.FC = () => {
     {
       title: '负责人',
       key: 'manager',
+      width: 140,
       render: (_, record) => (
         record.manager_name ? (
           <Space>
@@ -156,6 +163,7 @@ const Departments: React.FC = () => {
       title: '员工数量',
       dataIndex: 'employee_count',
       key: 'employee_count',
+      width: 100,
       render: (count) => (
         <Badge count={count} showZero style={{ backgroundColor: '#52c41a' }} />
       ),
@@ -163,6 +171,7 @@ const Departments: React.FC = () => {
     {
       title: '所属工厂',
       key: 'factory',
+      width: 160,
       render: (_, record) => {
         const factory = factories.find(f => f.id === record.factory_id)
         return factory ? (
@@ -179,13 +188,16 @@ const Departments: React.FC = () => {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
+      width: 120,
       render: (date) => dayjs(date).format('YYYY-MM-DD'),
     },
     {
       title: '操作',
       key: 'actions',
+      width: 300,
+      fixed: 'right',
       render: (_, record) => (
-        <Space>
+        <Space wrap size={0}>
           <Button
             type="text"
             icon={<EyeOutlined />}
@@ -268,16 +280,16 @@ const Departments: React.FC = () => {
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <Title level={2}>部门管理</Title>
-        <Text type="secondary">管理企业组织架构和部门设置</Text>
-      </div>
+    <div className="list-page">
+      <ListPageHeader
+        title="部门管理"
+        description="管理企业组织架构和部门设置"
+      />
 
       {/* 统计概览 */}
-      <Row gutter={[16, 16]} className="mb-6">
-        <Col xs={24} sm={12} md={8}>
-          <Card>
+      <Row gutter={[16, 16]} className="list-stats-row">
+        <Col xs={12} sm={12} md={8}>
+          <Card className="stat-card" size="small">
             <Statistic
               title="部门总数"
               value={stats.total}
@@ -286,8 +298,8 @@ const Departments: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={8}>
-          <Card>
+        <Col xs={12} sm={12} md={8}>
+          <Card className="stat-card" size="small">
             <Statistic
               title="员工总数"
               value={stats.totalEmployees}
@@ -297,7 +309,7 @@ const Departments: React.FC = () => {
           </Card>
         </Col>
         <Col xs={24} sm={12} md={8}>
-          <Card>
+          <Card className="stat-card" size="small">
             <Statistic
               title="已设负责人"
               value={stats.withManager}
@@ -309,23 +321,26 @@ const Departments: React.FC = () => {
         </Col>
       </Row>
 
-      {/* 搜索和筛选 */}
-      <Card className="mb-4">
-        <Row gutter={[16, 16]} align="middle">
-          <Col xs={24} sm={12} md={8}>
-            <Input
+      <Card className="list-page-card">
+        <div className="doc-list-toolbar">
+          <div className="toolbar-search">
+            <Search
               placeholder="搜索部门名称、编码或描述"
-              prefix={<SearchOutlined />}
+              allowClear
+              enterButton={<SearchOutlined />}
+              size="large"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
+              onSearch={setSearchText}
             />
-          </Col>
-          <Col xs={12} sm={6} md={4}>
+          </div>
+          <div className="toolbar-filter">
             <Select
               placeholder="工厂筛选"
-              value={filterFactory}
-              onChange={setFilterFactory}
+              value={filterFactory || undefined}
+              onChange={(v) => setFilterFactory(v || '')}
               allowClear
+              size="large"
               style={{ width: '100%' }}
             >
               {factories.map(factory => (
@@ -334,11 +349,12 @@ const Departments: React.FC = () => {
                 </Option>
               ))}
             </Select>
-          </Col>
-          <Col xs={12} sm={6} md={4}>
+          </div>
+          <div className="toolbar-filter">
             <Select
               placeholder="部门类型"
               allowClear
+              size="large"
               style={{ width: '100%' }}
             >
               <Option value="tech">技术部门</Option>
@@ -346,49 +362,48 @@ const Departments: React.FC = () => {
               <Option value="quality">质量部门</Option>
               <Option value="admin">行政部门</Option>
             </Select>
-          </Col>
-          <Col xs={24} sm={12} md={8}>
-            <Space>
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                disabled={factories.length === 0}
-                onClick={() => {
-                  setModalType('create')
-                  setSelectedDepartment(null)
-                  form.resetFields()
-                  setModalVisible(true)
-                }}
-              >
-                创建部门
-              </Button>
-              <Button icon={<ExportOutlined />}>
-                导出数据
-              </Button>
-              {factories.length === 0 && (
-                <Text type="warning">
-                  请先创建工厂后再创建部门
-                </Text>
-              )}
-            </Space>
-          </Col>
-        </Row>
-      </Card>
+          </div>
+          <div className="toolbar-actions">
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              size="large"
+              disabled={factories.length === 0}
+              onClick={() => {
+                setModalType('create')
+                setSelectedDepartment(null)
+                form.resetFields()
+                setModalVisible(true)
+              }}
+            >
+              创建部门
+            </Button>
+            <Button icon={<ExportOutlined />} size="large">
+              导出数据
+            </Button>
+            {factories.length === 0 && (
+              <Text type="warning">
+                请先创建工厂后再创建部门
+              </Text>
+            )}
+          </div>
+        </div>
 
-      {/* 部门列表 */}
-      <Card title="部门列表">
-        <Table
-          columns={columns}
-          dataSource={filteredDepartments}
-          rowKey={(record) => `${record.id}_${record.department_code}`}
-          loading={loading}
-          pagination={{
-            pageSize: 10,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
-          }}
-        />
+        <div className="list-table-wrap">
+          <Table
+            columns={columns}
+            dataSource={filteredDepartments}
+            rowKey={(record) => `${record.id}_${record.department_code}`}
+            loading={loading}
+            scroll={{ x: 1100 }}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
+            }}
+          />
+        </div>
       </Card>
 
       {/* 创建/编辑部门弹窗 */}

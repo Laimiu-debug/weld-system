@@ -653,30 +653,44 @@ class NotificationService:
     def notify_expiring_welder_certs(self, days_ahead: int = 30) -> int:
         from datetime import date
 
-        from app.models.welder import Welder, WelderCertification
+        from app.models.welder import Welder, WelderCertification, WelderCertifiedProject
 
         today = date.today()
         until = today + timedelta(days=days_ahead)
-        rows = (
-            self.db.query(WelderCertification, Welder)
-            .join(Welder, Welder.id == WelderCertification.welder_id)
+        sent = 0
+
+        # 优先：持证项目到期
+        project_rows = (
+            self.db.query(WelderCertifiedProject, WelderCertification, Welder)
+            .join(
+                WelderCertification,
+                WelderCertification.id == WelderCertifiedProject.certification_id,
+            )
+            .join(Welder, Welder.id == WelderCertifiedProject.welder_id)
             .filter(
-                Welder.is_active == True,
-                WelderCertification.expiry_date.isnot(None),
-                WelderCertification.expiry_date >= today,
-                WelderCertification.expiry_date <= until,
+                Welder.is_active == True,  # noqa: E712
+                WelderCertifiedProject.is_active == True,  # noqa: E712
+                WelderCertification.is_active == True,  # noqa: E712
+                WelderCertifiedProject.expiry_date.isnot(None),
+                WelderCertifiedProject.expiry_date >= today,
+                WelderCertifiedProject.expiry_date <= until,
             )
             .all()
         )
-        sent = 0
-        for cert, welder in rows:
-            days_left = (cert.expiry_date - today).days
+        for project, cert, welder in project_rows:
+            days_left = (project.expiry_date - today).days
             if days_left <= 30:
                 welder.certification_status = "expiring_soon"
-            title = f"焊工资质即将过期：{welder.full_name}"
+                project.status = "expiring_soon"
+                cert.status = "expiring_soon"
+            system = cert.certification_system or "未标注体系"
+            project_name = project.project_name or "持证项目"
+            title = f"持证即将到期：{welder.full_name} · {system}"
             content = (
-                f"焊工 {welder.full_name}（{welder.welder_code}）的证书 "
-                f"{cert.certification_number} 将于 {cert.expiry_date} 到期，剩余 {days_left} 天。"
+                f"焊工 {welder.full_name}（{welder.welder_code}）"
+                f"【{system}】持证项目「{project_name}」"
+                f"（证号 {cert.certification_number}）将于 {project.expiry_date} 到期，剩余 {days_left} 天。"
+                f"请及时安排复审/换证。"
             )
             if self._notify_user_once_today(
                 welder.user_id,
@@ -685,6 +699,113 @@ class NotificationService:
                 category="welder_certifications",
             ):
                 sent += 1
+
+        # 兼容：无项目子表的旧证书到期
+        has_project = self.db.query(WelderCertifiedProject.certification_id).filter(
+            WelderCertifiedProject.is_active == True,  # noqa: E712
+        )
+        legacy_rows = (
+            self.db.query(WelderCertification, Welder)
+            .join(Welder, Welder.id == WelderCertification.welder_id)
+            .filter(
+                Welder.is_active == True,  # noqa: E712
+                WelderCertification.is_active == True,  # noqa: E712
+                ~WelderCertification.id.in_(has_project),
+                WelderCertification.expiry_date.isnot(None),
+                WelderCertification.expiry_date >= today,
+                WelderCertification.expiry_date <= until,
+            )
+            .all()
+        )
+        for cert, welder in legacy_rows:
+            days_left = (cert.expiry_date - today).days
+            if days_left <= 30:
+                welder.certification_status = "expiring_soon"
+                cert.status = "expiring_soon"
+            system = cert.certification_system or "未标注体系"
+            project_name = cert.project_name or cert.certification_type or "持证项目"
+            title = f"持证即将到期：{welder.full_name} · {system}"
+            content = (
+                f"焊工 {welder.full_name}（{welder.welder_code}）"
+                f"【{system}】持证项目「{project_name}」"
+                f"（证号 {cert.certification_number}）将于 {cert.expiry_date} 到期，剩余 {days_left} 天。"
+                f"请及时安排复审/换证。"
+            )
+            if self._notify_user_once_today(
+                welder.user_id,
+                title,
+                content,
+                category="welder_certifications",
+            ):
+                sent += 1
+
+        # 审证日（next_renewal_date）预警 — 项目优先
+        renewal_project_rows = (
+            self.db.query(WelderCertifiedProject, WelderCertification, Welder)
+            .join(
+                WelderCertification,
+                WelderCertification.id == WelderCertifiedProject.certification_id,
+            )
+            .join(Welder, Welder.id == WelderCertifiedProject.welder_id)
+            .filter(
+                Welder.is_active == True,  # noqa: E712
+                WelderCertifiedProject.is_active == True,  # noqa: E712
+                WelderCertification.is_active == True,  # noqa: E712
+                WelderCertifiedProject.next_renewal_date.isnot(None),
+                WelderCertifiedProject.next_renewal_date >= today,
+                WelderCertifiedProject.next_renewal_date <= until,
+            )
+            .all()
+        )
+        for project, cert, welder in renewal_project_rows:
+            days_left = (project.next_renewal_date - today).days
+            system = cert.certification_system or "未标注体系"
+            project_name = project.project_name or "持证项目"
+            title = f"审证临近：{welder.full_name} · {system}"
+            content = (
+                f"焊工 {welder.full_name}（{welder.welder_code}）"
+                f"【{system}】持证项目「{project_name}」"
+                f"下次审证日为 {project.next_renewal_date}，剩余 {days_left} 天。"
+            )
+            if self._notify_user_once_today(
+                welder.user_id,
+                title,
+                content,
+                category="welder_certifications",
+            ):
+                sent += 1
+
+        renewal_rows = (
+            self.db.query(WelderCertification, Welder)
+            .join(Welder, Welder.id == WelderCertification.welder_id)
+            .filter(
+                Welder.is_active == True,  # noqa: E712
+                WelderCertification.is_active == True,  # noqa: E712
+                ~WelderCertification.id.in_(has_project),
+                WelderCertification.next_renewal_date.isnot(None),
+                WelderCertification.next_renewal_date >= today,
+                WelderCertification.next_renewal_date <= until,
+            )
+            .all()
+        )
+        for cert, welder in renewal_rows:
+            days_left = (cert.next_renewal_date - today).days
+            system = cert.certification_system or "未标注体系"
+            project_name = cert.project_name or cert.certification_type or "持证项目"
+            title = f"审证临近：{welder.full_name} · {system}"
+            content = (
+                f"焊工 {welder.full_name}（{welder.welder_code}）"
+                f"【{system}】持证项目「{project_name}」"
+                f"下次审证日为 {cert.next_renewal_date}，剩余 {days_left} 天。"
+            )
+            if self._notify_user_once_today(
+                welder.user_id,
+                title,
+                content,
+                category="welder_certifications",
+            ):
+                sent += 1
+
         self.db.commit()
         return sent
 

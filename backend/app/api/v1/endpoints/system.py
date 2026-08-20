@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends
 from app.api import deps
 from app.core.config import settings
 from app.core.health import readiness
+from app.services.branding_service import get_branding
 
 router = APIRouter()
 
@@ -32,3 +33,27 @@ def system_info(
         "environment": "development" if settings.DEVELOPMENT else "production",
         "app_name": settings.APP_NAME,
     }
+
+
+@router.get("/branding")
+def system_branding() -> Any:
+    """公开品牌信息（侧栏产品名/企业名），无需登录."""
+    return {
+        "success": True,
+        "data": get_branding(),
+    }
+
+
+@router.put("/branding")
+def update_system_branding(
+    payload: dict,
+    current_user=Depends(deps.get_current_active_user),
+) -> Any:
+    """用户端更新品牌/企业显示名（不经由管理门户）."""
+    from app.services.branding_service import BRANDING_KEYS, update_branding
+
+    del current_user
+    data = {k: payload[k] for k in BRANDING_KEYS if k in payload}
+    if not data:
+        return {"success": False, "message": "无有效字段"}
+    return {"success": True, "data": update_branding(data), "message": "品牌信息已更新"}

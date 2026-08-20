@@ -31,6 +31,7 @@ import {
 import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 import enterpriseService, { CompanyRole, CreateRoleData, UpdateRoleData, PermissionConfig } from '@/services/enterprise'
+import ListPageHeader from '@/components/ListPageHeader'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -187,6 +188,7 @@ const RolesNew: React.FC = () => {
       title: '角色名称',
       dataIndex: 'name',
       key: 'name',
+      width: 180,
       render: (text, record) => (
         <Space>
           <SafetyOutlined style={{ color: record.is_system ? '#1890ff' : '#52c41a' }} />
@@ -199,18 +201,21 @@ const RolesNew: React.FC = () => {
       title: '角色代码',
       dataIndex: 'code',
       key: 'code',
+      width: 160,
       render: (text) => <Text code>{text}</Text>,
     },
     {
       title: '描述',
       dataIndex: 'description',
       key: 'description',
+      width: 200,
       ellipsis: true,
     },
     {
       title: '数据范围',
       dataIndex: 'data_access_scope',
       key: 'data_access_scope',
+      width: 110,
       render: (scope) => (
         <Tag color={scope === 'company' ? 'purple' : 'cyan'}>
           {scope === 'company' ? '全公司' : '工厂级'}
@@ -221,6 +226,7 @@ const RolesNew: React.FC = () => {
       title: '员工数',
       dataIndex: 'employee_count',
       key: 'employee_count',
+      width: 90,
       render: (count) => (
         <Space>
           <TeamOutlined />
@@ -232,6 +238,7 @@ const RolesNew: React.FC = () => {
       title: '状态',
       dataIndex: 'is_active',
       key: 'is_active',
+      width: 90,
       render: (isActive) => (
         <Badge status={isActive ? 'success' : 'default'} text={isActive ? '启用' : '禁用'} />
       ),
@@ -240,13 +247,16 @@ const RolesNew: React.FC = () => {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
+      width: 150,
       render: (text) => dayjs(text).format('YYYY-MM-DD HH:mm'),
     },
     {
       title: '操作',
       key: 'action',
+      width: 220,
+      fixed: 'right',
       render: (_, record) => (
-        <Space>
+        <Space wrap size={0}>
           <Button
             type="link"
             size="small"
@@ -288,14 +298,10 @@ const RolesNew: React.FC = () => {
   ]
 
   return (
-    <div>
-      <Card
-        title={
-          <Space>
-            <SafetyOutlined />
-            <span>角色管理</span>
-          </Space>
-        }
+    <div className="list-page">
+      <ListPageHeader
+        title="角色设置"
+        description="配置企业角色与模块权限"
         extra={
           <Button
             type="primary"
@@ -305,17 +311,22 @@ const RolesNew: React.FC = () => {
             创建角色
           </Button>
         }
-      >
-        <Table
-          columns={columns}
-          dataSource={roles}
-          rowKey={(record) => `${record.id}_${record.code}`}
-          loading={loading}
-          pagination={{
-            showSizeChanger: true,
-            showTotal: (total) => `共 ${total} 个角色`,
-          }}
-        />
+      />
+
+      <Card className="list-page-card">
+        <div className="list-table-wrap">
+          <Table
+            columns={columns}
+            dataSource={roles}
+            rowKey={(record) => `${record.id}_${record.code}`}
+            loading={loading}
+            scroll={{ x: 1200 }}
+            pagination={{
+              showSizeChanger: true,
+              showTotal: (total) => `共 ${total} 个角色`,
+            }}
+          />
+        </div>
       </Card>
 
       {/* 创建/编辑模态框 */}

@@ -4,6 +4,7 @@ Welder Management API endpoints for the welding system backend.
 from typing import Any, List, Optional
 from uuid import UUID
 from math import ceil
+from datetime import date, timedelta
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -13,16 +14,80 @@ from app.api import deps
 from app.schemas.welder import (
     WelderCreate, WelderUpdate, WelderResponse, WelderListResponse,
     WelderCertificationCreate, WelderCertificationUpdate, WelderCertificationResponse,
+    WelderCertifiedProjectCreate, WelderCertifiedProjectUpdate,
     WelderWorkRecordCreate, WelderWorkRecordResponse,
     WelderTrainingCreate, WelderTrainingResponse,
     WelderAssessmentCreate, WelderAssessmentResponse,
-    WelderWorkHistoryCreate, WelderWorkHistoryResponse
+    WelderWorkHistoryCreate, WelderWorkHistoryUpdate, WelderWorkHistoryResponse
 )
 from app.services.welder_service import WelderService
 from app.core.data_access import WorkspaceContext
+from app.models.welder import WelderCertification, WelderCertifiedProject
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _build_cert_summary(db: Session, welder_id: int) -> dict:
+    """Aggregate certification risk for list views（优先持证项目）."""
+    today = date.today()
+    soon = today + timedelta(days=30)
+    certs = (
+        db.query(WelderCertification)
+        .filter(
+            WelderCertification.welder_id == welder_id,
+            WelderCertification.is_active == True,  # noqa: E712
+        )
+        .all()
+    )
+    systems = sorted({c.certification_system for c in certs if c.certification_system})
+    projects = (
+        db.query(WelderCertifiedProject)
+        .filter(
+            WelderCertifiedProject.welder_id == welder_id,
+            WelderCertifiedProject.is_active == True,  # noqa: E712
+        )
+        .all()
+    )
+    cert_ids_with_projects = {p.certification_id for p in projects}
+    nearest_expiry = None
+    risk_count = 0
+    expired_count = 0
+
+    def _accumulate(expiry, status_val=None):
+        nonlocal nearest_expiry, risk_count, expired_count
+        if not expiry:
+            return
+        if nearest_expiry is None or expiry < nearest_expiry:
+            nearest_expiry = expiry
+        if expiry < today or (status_val or "") == "expired":
+            expired_count += 1
+            risk_count += 1
+        elif expiry <= soon or (status_val or "") == "expiring_soon":
+            risk_count += 1
+
+    for p in projects:
+        _accumulate(p.expiry_date, p.status)
+    for c in certs:
+        if c.id in cert_ids_with_projects:
+            continue
+        _accumulate(c.expiry_date, c.status)
+
+    risk_level = "valid"
+    if expired_count > 0:
+        risk_level = "expired"
+    elif risk_count > 0:
+        risk_level = "expiring_soon"
+    elif not certs:
+        risk_level = "none"
+    return {
+        "cert_count": len(certs),
+        "project_count": len(projects),
+        "systems": systems,
+        "nearest_expiry": nearest_expiry.isoformat() if nearest_expiry else None,
+        "risk_count": risk_count,
+        "risk_level": risk_level,
+    }
 
 
 @router.get("/", response_model=dict)
@@ -84,11 +149,17 @@ def get_welders_list(
         page = (skip // limit) + 1 if limit > 0 else 1
         total_pages = ceil(total / limit) if limit > 0 else 0
 
+        items = []
+        for w in welders:
+            item = WelderResponse.model_validate(w).model_dump()
+            item["cert_summary"] = _build_cert_summary(db, w.id)
+            items.append(item)
+
         logger.info(f"[焊工列表] 准备返回数据 - page={page}, total_pages={total_pages}")
         return {
             "success": True,
             "data": {
-                "items": [WelderResponse.model_validate(w) for w in welders],
+                "items": items,
                 "total": total,
                 "page": page,
                 "page_size": limit,
@@ -516,6 +587,172 @@ def delete_welder_certification(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+
+
+def _workspace_from_query(
+    workspace_type: str,
+    current_user: Any,
+    company_id: Optional[int],
+    factory_id: Optional[int],
+) -> WorkspaceContext:
+    return WorkspaceContext(
+        workspace_type=workspace_type,
+        user_id=current_user.id,
+        company_id=company_id,
+        factory_id=factory_id,
+    )
+
+
+@router.get("/{welder_id}/certifications/{certification_id}/projects", response_model=dict)
+def list_certified_projects(
+    welder_id: int,
+    certification_id: int,
+    workspace_type: str = Query(...),
+    company_id: Optional[int] = Query(None),
+    factory_id: Optional[int] = Query(None),
+    db: Session = Depends(deps.get_db),
+    current_user: Any = Depends(deps.get_current_active_user),
+) -> Any:
+    """列出体系证书下的持证项目."""
+    try:
+        service = WelderService(db)
+        items = service.get_certified_projects(
+            welder_id,
+            certification_id,
+            current_user,
+            _workspace_from_query(workspace_type, current_user, company_id, factory_id),
+        )
+        return {"success": True, "data": {"items": items, "total": len(items)}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{welder_id}/certifications/{certification_id}/projects", response_model=dict)
+def add_certified_project(
+    welder_id: int,
+    certification_id: int,
+    project_data: WelderCertifiedProjectCreate,
+    workspace_type: str = Query(...),
+    company_id: Optional[int] = Query(None),
+    factory_id: Optional[int] = Query(None),
+    db: Session = Depends(deps.get_db),
+    current_user: Any = Depends(deps.get_current_active_user),
+) -> Any:
+    """在体系证书下新增持证项目."""
+    try:
+        service = WelderService(db)
+        item = service.add_certified_project(
+            welder_id,
+            certification_id,
+            project_data.model_dump(),
+            current_user,
+            _workspace_from_query(workspace_type, current_user, company_id, factory_id),
+        )
+        return {"success": True, "data": item, "message": "持证项目已添加"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put(
+    "/{welder_id}/certifications/{certification_id}/projects/{project_id}",
+    response_model=dict,
+)
+def update_certified_project(
+    welder_id: int,
+    certification_id: int,
+    project_id: int,
+    project_data: WelderCertifiedProjectUpdate,
+    workspace_type: str = Query(...),
+    company_id: Optional[int] = Query(None),
+    factory_id: Optional[int] = Query(None),
+    db: Session = Depends(deps.get_db),
+    current_user: Any = Depends(deps.get_current_active_user),
+) -> Any:
+    """更新持证项目."""
+    try:
+        service = WelderService(db)
+        item = service.update_certified_project(
+            welder_id,
+            certification_id,
+            project_id,
+            project_data.model_dump(exclude_unset=True),
+            current_user,
+            _workspace_from_query(workspace_type, current_user, company_id, factory_id),
+        )
+        return {"success": True, "data": item, "message": "持证项目已更新"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete(
+    "/{welder_id}/certifications/{certification_id}/projects/{project_id}",
+    response_model=dict,
+)
+def delete_certified_project(
+    welder_id: int,
+    certification_id: int,
+    project_id: int,
+    workspace_type: str = Query(...),
+    company_id: Optional[int] = Query(None),
+    factory_id: Optional[int] = Query(None),
+    db: Session = Depends(deps.get_db),
+    current_user: Any = Depends(deps.get_current_active_user),
+) -> Any:
+    """删除持证项目."""
+    try:
+        service = WelderService(db)
+        service.delete_certified_project(
+            welder_id,
+            certification_id,
+            project_id,
+            current_user,
+            _workspace_from_query(workspace_type, current_user, company_id, factory_id),
+        )
+        return {"success": True, "message": "持证项目已删除"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{welder_id}/resume.pdf")
+def download_welder_resume_pdf(
+    welder_id: int,
+    workspace_type: str = Query(...),
+    company_id: Optional[int] = Query(None),
+    factory_id: Optional[int] = Query(None),
+    db: Session = Depends(deps.get_db),
+    current_user: Any = Depends(deps.get_current_active_user),
+):
+    """导出正式焊工履历表 PDF（人员 + 按体系持证项目 + 履历）."""
+    from io import BytesIO
+
+    from fastapi.responses import StreamingResponse
+
+    from app.services.welder_resume_service import build_welder_resume_pdf
+
+    try:
+        workspace = _workspace_from_query(workspace_type, current_user, company_id, factory_id)
+        pdf_bytes, filename = build_welder_resume_pdf(
+            db, welder_id, current_user, workspace
+        )
+        return StreamingResponse(
+            BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except HTTPException:
+        raise
+    except ImportError as e:
+        raise HTTPException(status_code=503, detail=f"PDF 引擎不可用: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ==================== 统计分析端点 ====================
@@ -1029,6 +1266,47 @@ def add_welder_work_history(
             "message": "工作履历添加成功"
         }
 
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.put("/{welder_id}/work-histories/{history_id}", response_model=dict)
+def update_welder_work_history(
+    welder_id: int,
+    history_id: int,
+    history_data: WelderWorkHistoryUpdate,
+    workspace_type: str = Query(..., description="工作区类型：personal/enterprise"),
+    company_id: Optional[int] = Query(None, description="企业ID（企业工作区必填）"),
+    factory_id: Optional[int] = Query(None, description="工厂ID（可选）"),
+    db: Session = Depends(deps.get_db),
+    current_user: Any = Depends(deps.get_current_active_user)
+) -> Any:
+    """更新焊工工作履历"""
+    try:
+        workspace_context = WorkspaceContext(
+            workspace_type=workspace_type,
+            user_id=current_user.id,
+            company_id=company_id,
+            factory_id=factory_id
+        )
+        service = WelderService(db)
+        history = service.update_work_history(
+            welder_id=welder_id,
+            history_id=history_id,
+            history_data=history_data.model_dump(exclude_unset=True),
+            current_user=current_user,
+            workspace_context=workspace_context
+        )
+        return {
+            "success": True,
+            "data": history,
+            "message": "工作履历更新成功"
+        }
     except HTTPException:
         raise
     except Exception as e:

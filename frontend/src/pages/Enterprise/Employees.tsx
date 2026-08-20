@@ -40,9 +40,11 @@ import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 import enterpriseService, { CompanyRole } from '@/services/enterprise'
 import { useEnterpriseEmployees, useEmployeeQuota } from '@/hooks/useEnterprise'
+import ListPageHeader from '@/components/ListPageHeader'
 
 const { Title, Text } = Typography
 const { Option } = Select
+const { Search } = Input
 
 // 接口定义
 interface EnterpriseEmployee {
@@ -207,6 +209,7 @@ const EnterpriseEmployees: React.FC = () => {
     {
       title: '员工信息',
       key: 'employee',
+      width: 220,
       render: (_, record) => (
         <Space>
           <Avatar icon={<UserOutlined />} />
@@ -225,6 +228,8 @@ const EnterpriseEmployees: React.FC = () => {
     {
       title: '联系方式',
       key: 'contact',
+      width: 200,
+      ellipsis: true,
       render: (_, record) => (
         <Space direction="vertical" size="small">
           <div>
@@ -241,6 +246,7 @@ const EnterpriseEmployees: React.FC = () => {
     {
       title: '工厂/部门',
       key: 'organization',
+      width: 160,
       render: (_, record) => (
         <Space direction="vertical" size="small">
           <div>
@@ -257,6 +263,7 @@ const EnterpriseEmployees: React.FC = () => {
     {
       title: '角色',
       key: 'roles',
+      width: 160,
       render: (_, record) => (
         <Space direction="vertical" size="small">
           <div>
@@ -280,6 +287,7 @@ const EnterpriseEmployees: React.FC = () => {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
+      width: 90,
       render: (status) => {
         const config = getStatusConfig(status)
         return (
@@ -294,6 +302,7 @@ const EnterpriseEmployees: React.FC = () => {
       title: '数据权限',
       dataIndex: 'data_access_scope',
       key: 'data_access_scope',
+      width: 110,
       render: (scope) => (
         <Tag color={scope === 'company' ? 'red' : 'blue'}>
           {scope === 'company' ? '全公司' : '当前工厂'}
@@ -303,6 +312,7 @@ const EnterpriseEmployees: React.FC = () => {
     {
       title: '工作量',
       key: 'workload',
+      width: 110,
       render: (_, record) => (
         <Space direction="vertical" size="small">
           <div>
@@ -320,13 +330,16 @@ const EnterpriseEmployees: React.FC = () => {
       title: '最后活跃',
       dataIndex: 'last_active_at',
       key: 'last_active_at',
+      width: 110,
       render: (date) => date ? dayjs(date).format('MM-DD HH:mm') : '-',
     },
     {
       title: '操作',
       key: 'actions',
+      width: 280,
+      fixed: 'right',
       render: (_, record) => (
-        <Space>
+        <Space wrap size={0}>
           <Button
             type="text"
             icon={<EyeOutlined />}
@@ -441,11 +454,11 @@ const EnterpriseEmployees: React.FC = () => {
   }
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <Title level={2}>员工管理</Title>
-        <Text type="secondary">管理企业员工信息、权限和状态</Text>
-      </div>
+    <div className="list-page">
+      <ListPageHeader
+        title="员工管理"
+        description="管理企业员工信息、权限和状态"
+      />
 
       {/* 配额显示 */}
       {!quotaLoading && quota && (
@@ -465,14 +478,14 @@ const EnterpriseEmployees: React.FC = () => {
           }
           type={quota.percentage >= 90 ? 'warning' : 'info'}
           showIcon
-          className="mb-6"
+          className="mb-4"
         />
       )}
 
       {/* 统计概览 */}
-      <Row gutter={[16, 16]} className="mb-6">
-        <Col xs={24} sm={12} md={6}>
-          <Card>
+      <Row gutter={[16, 16]} className="list-stats-row">
+        <Col xs={12} sm={12} md={6}>
+          <Card className="stat-card" size="small">
             <Statistic
               title="员工总数"
               value={stats.total}
@@ -481,8 +494,8 @@ const EnterpriseEmployees: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
+        <Col xs={12} sm={12} md={6}>
+          <Card className="stat-card" size="small">
             <Statistic
               title="在职员工"
               value={stats.active}
@@ -492,8 +505,8 @@ const EnterpriseEmployees: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
+        <Col xs={12} sm={12} md={6}>
+          <Card className="stat-card" size="small">
             <Statistic
               title="离职员工"
               value={stats.inactive}
@@ -502,8 +515,8 @@ const EnterpriseEmployees: React.FC = () => {
             />
           </Card>
         </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
+        <Col xs={12} sm={12} md={6}>
+          <Card className="stat-card" size="small">
             <Statistic
               title="管理员"
               value={stats.admins}
@@ -514,8 +527,7 @@ const EnterpriseEmployees: React.FC = () => {
         </Col>
       </Row>
 
-      {/* 状态标签页 */}
-      <Card className="mb-4">
+      <Card className="list-page-card">
         <Tabs
           activeKey={activeTab}
           onChange={setActiveTab}
@@ -531,92 +543,95 @@ const EnterpriseEmployees: React.FC = () => {
               children: null,
             },
           ]}
+          style={{ marginBottom: 8 }}
         />
-      </Card>
 
-      {/* 搜索和筛选 */}
-      <Card className="mb-4">
-        <Row gutter={[16, 16]} align="middle">
-          <Col xs={24} sm={12} md={6}>
-            <Input
+        <div className="doc-list-toolbar">
+          <div className="toolbar-search">
+            <Search
               placeholder="搜索员工姓名、邮箱或工号"
-              prefix={<SearchOutlined />}
+              allowClear
+              enterButton={<SearchOutlined />}
+              size="large"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
+              onSearch={setSearchText}
             />
-          </Col>
-          <Col xs={12} sm={6} md={4}>
+          </div>
+          <div className="toolbar-filter">
             <Select
               placeholder="状态筛选"
-              value={filterStatus}
-              onChange={setFilterStatus}
+              value={filterStatus || undefined}
+              onChange={(v) => setFilterStatus(v || '')}
               allowClear
+              size="large"
               style={{ width: '100%' }}
             >
               <Option value="active">在职</Option>
               <Option value="inactive">离职</Option>
             </Select>
-          </Col>
-          <Col xs={12} sm={6} md={4}>
+          </div>
+          <div className="toolbar-filter">
             <Select
               placeholder="角色筛选"
-              value={filterRole}
-              onChange={setFilterRole}
+              value={filterRole || undefined}
+              onChange={(v) => setFilterRole(v || '')}
               allowClear
+              size="large"
               style={{ width: '100%' }}
             >
               <Option value="admin">管理员</Option>
               <Option value="employee">员工</Option>
             </Select>
-          </Col>
-          <Col xs={12} sm={6} md={4}>
+          </div>
+          <div className="toolbar-filter">
             <Select
               placeholder="工厂筛选"
-              value={filterFactory}
-              onChange={setFilterFactory}
+              value={filterFactory || undefined}
+              onChange={(v) => setFilterFactory(v || '')}
               allowClear
+              size="large"
               style={{ width: '100%' }}
             >
-              <Option value="f1">北京工厂</Option>
-              <Option value="f2">上海工厂</Option>
-              <Option value="f3">广州工厂</Option>
+              {factories.map((factory: any) => (
+                <Option key={factory.id} value={factory.id}>{factory.name}</Option>
+              ))}
             </Select>
-          </Col>
-          <Col xs={24} sm={12} md={6}>
-            <Space>
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() => {
-                  createForm.resetFields()
-                  setCreateModalVisible(true)
-                }}
-                disabled={quota ? quota.current >= quota.max : false}
-              >
-                创建员工
-              </Button>
-              <Button icon={<ExportOutlined />}>
-                导出数据
-              </Button>
-            </Space>
-          </Col>
-        </Row>
-      </Card>
+          </div>
+          <div className="toolbar-actions">
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              size="large"
+              onClick={() => {
+                createForm.resetFields()
+                setCreateModalVisible(true)
+              }}
+              disabled={quota ? quota.current >= quota.max : false}
+            >
+              创建员工
+            </Button>
+            <Button icon={<ExportOutlined />} size="large">
+              导出数据
+            </Button>
+          </div>
+        </div>
 
-      {/* 员工列表 */}
-      <Card title="员工列表">
-        <Table
-          columns={columns}
-          dataSource={filteredEmployees}
-          rowKey={(record) => `${record.id}_${record.user_id}`}
-          loading={loading}
-          pagination={{
-            pageSize: 10,
-            showSizeChanger: true,
-            showQuickJumper: true,
-            showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
-          }}
-        />
+        <div className="list-table-wrap">
+          <Table
+            columns={columns}
+            dataSource={filteredEmployees}
+            rowKey={(record) => `${record.id}_${record.user_id}`}
+            loading={loading}
+            scroll={{ x: 1400 }}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showQuickJumper: true,
+              showTotal: (total, range) => `第 ${range[0]}-${range[1]} 条，共 ${total} 条`,
+            }}
+          />
+        </div>
       </Card>
 
       {/* 创建员工弹窗 */}

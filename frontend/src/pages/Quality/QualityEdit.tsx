@@ -123,9 +123,11 @@ const QualityEdit: React.FC = () => {
           </Form.Item>
           <Form.Item name="result" label="检验结果">
             <Select>
-              <Option value="qualified">合格</Option>
-              <Option value="unqualified">不合格</Option>
-              <Option value="conditional_qualified">有条件合格</Option>
+              <Option value="pass">合格</Option>
+              <Option value="conditional">有条件合格</Option>
+              <Option value="fail">不合格</Option>
+              <Option value="pending">待定</Option>
+              <Option value="retest">需复检</Option>
             </Select>
           </Form.Item>
           <Form.Item name="is_qualified" label="是否合格">

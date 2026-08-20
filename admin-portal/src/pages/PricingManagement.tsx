@@ -74,20 +74,22 @@ const PricingManagement: React.FC = () => {
   const loadPlans = async () => {
     try {
       setLoading(true);
-      const response = await apiService.get('/membership/subscription-plans');
-      console.log('订阅计划数据:', response);
+      // 拦截器已解包 {success,data}，此处应直接拿到数组
+      const response = await apiService.getSubscriptionPlans();
+      const list = Array.isArray(response)
+        ? response
+        : Array.isArray((response as any)?.data)
+          ? (response as any).data
+          : [];
 
-      if (response && Array.isArray(response)) {
-        setPlans(response);
-      } else if (response && response.data && Array.isArray(response.data)) {
-        setPlans(response.data);
-      } else {
-        message.warning('未获取到订阅计划数据');
-        setPlans([]);
+      if (list.length === 0) {
+        message.warning('暂无订阅计划数据，请确认后端已初始化套餐');
       }
+      setPlans(list);
     } catch (error: any) {
       console.error('加载订阅计划失败:', error);
       message.error('加载订阅计划失败: ' + (error.message || '未知错误'));
+      setPlans([]);
     } finally {
       setLoading(false);
     }
@@ -136,7 +138,7 @@ const PricingManagement: React.FC = () => {
         features: Array.isArray(values.features) ? values.features : values.features.split(','),
       };
 
-      await apiService.put(`/admin/membership/subscription-plans/${currentPlan?.id}`, updateData);
+      await apiService.updateSubscriptionPlan(String(currentPlan?.id), updateData);
       message.success('订阅计划更新成功');
       setEditModalVisible(false);
       loadPlans();
@@ -185,7 +187,7 @@ const PricingManagement: React.FC = () => {
         newPrices[key] = Math.round(newPrices[key] * 100) / 100;
       });
 
-      await apiService.put(`/admin/membership/subscription-plans/${currentPlan.id}`, newPrices);
+      await apiService.updateSubscriptionPlan(String(currentPlan.id), newPrices);
       message.success('价格调整成功');
       setDiscountModalVisible(false);
       loadPlans();

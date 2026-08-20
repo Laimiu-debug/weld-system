@@ -331,7 +331,7 @@ class ApiService {
         }), 500);
       });
     }
-    return this.api.get('/membership/subscription-plans/');
+    return this.api.get('/membership/subscription-plans');
   }
 
   async updateSubscriptionPlan(planId: string, data: any) {
@@ -343,7 +343,7 @@ class ApiService {
         }), 1000);
       });
     }
-    return this.api.put(`/membership/subscription-plans/${planId}/`, data);
+    return this.api.put(`/membership/subscription-plans/${planId}`, data);
   }
 
   async createSubscriptionPlan(data: any) {
@@ -355,7 +355,7 @@ class ApiService {
         }), 1000);
       });
     }
-    return this.api.post('/membership/subscription-plans/', data);
+    return this.api.post('/membership/subscription-plans', data);
   }
 
   // 认证相关方法

@@ -378,7 +378,7 @@ const Dashboard: React.FC = () => {
           description={
             <Space wrap>
               {(stats?.expiring_certs || 0) > 0 && (
-                <Button type="link" onClick={() => navigate('/welders?status=expiring_soon')}>
+                <Button type="link" onClick={() => navigate('/welders?certStatus=expiring_soon')}>
                   {stats?.expiring_certs} 本焊工资质将在 30 天内到期
                 </Button>
               )}

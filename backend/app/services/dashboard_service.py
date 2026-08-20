@@ -34,16 +34,33 @@ class DashboardService:
     ) -> Dict[str, int]:
         from datetime import date
 
-        from app.models.welder import WelderCertification
+        from app.models.welder import WelderCertification, WelderCertifiedProject
 
         today = date.today()
         until = today + timedelta(days=days)
 
-        cert_query = (
+        # 优先统计持证项目；无项目的旧证书仍计入
+        project_query = (
+            self.db.query(func.count(WelderCertifiedProject.id))
+            .join(Welder, Welder.id == WelderCertifiedProject.welder_id)
+            .filter(
+                Welder.is_active == True,  # noqa: E712
+                WelderCertifiedProject.is_active == True,  # noqa: E712
+                WelderCertifiedProject.expiry_date.isnot(None),
+                WelderCertifiedProject.expiry_date >= today,
+                WelderCertifiedProject.expiry_date <= until,
+            )
+        )
+        has_project = self.db.query(WelderCertifiedProject.certification_id).filter(
+            WelderCertifiedProject.is_active == True,  # noqa: E712
+        )
+        legacy_query = (
             self.db.query(func.count(WelderCertification.id))
             .join(Welder, Welder.id == WelderCertification.welder_id)
             .filter(
-                Welder.is_active == True,
+                Welder.is_active == True,  # noqa: E712
+                WelderCertification.is_active == True,  # noqa: E712
+                ~WelderCertification.id.in_(has_project),
                 WelderCertification.expiry_date.isnot(None),
                 WelderCertification.expiry_date >= today,
                 WelderCertification.expiry_date <= until,
@@ -56,10 +73,15 @@ class DashboardService:
             Equipment.warranty_expiry_date <= until,
         )
         if company_id:
-            cert_query = cert_query.filter(Welder.company_id == company_id)
+            project_query = project_query.filter(Welder.company_id == company_id)
+            legacy_query = legacy_query.filter(Welder.company_id == company_id)
             warranty_query = warranty_query.filter(Equipment.company_id == company_id)
         elif user_id:
-            cert_query = cert_query.filter(
+            project_query = project_query.filter(
+                Welder.user_id == user_id,
+                Welder.workspace_type == WorkspaceType.PERSONAL,
+            )
+            legacy_query = legacy_query.filter(
                 Welder.user_id == user_id,
                 Welder.workspace_type == WorkspaceType.PERSONAL,
             )
@@ -68,7 +90,7 @@ class DashboardService:
                 Equipment.workspace_type == WorkspaceType.PERSONAL,
             )
         return {
-            "expiring_certs": cert_query.scalar() or 0,
+            "expiring_certs": (project_query.scalar() or 0) + (legacy_query.scalar() or 0),
             "expiring_warranties": warranty_query.scalar() or 0,
         }
 

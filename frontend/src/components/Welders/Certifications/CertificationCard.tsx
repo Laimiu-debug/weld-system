@@ -1,9 +1,8 @@
 /**
- * 焊工证书卡片组件
- * 突出显示认证项目和合格范围信息
+ * 体系证书卡片：展示证书信息 + 下属持证项目
  */
-import React from 'react';
-import { Card, Tag, Space, Button, Descriptions, Badge, Tooltip, Popconfirm, Table } from 'antd';
+import React from 'react'
+import { Card, Tag, Space, Button, Descriptions, Badge, Popconfirm, List, Typography } from 'antd'
 import {
   EditOutlined,
   DeleteOutlined,
@@ -12,126 +11,109 @@ import {
   ClockCircleOutlined,
   ExclamationCircleOutlined,
   CloseCircleOutlined,
-} from '@ant-design/icons';
-import dayjs from 'dayjs';
-import type { WelderCertification, QualifiedItem, QualifiedRangeItem } from '../../../services/certifications';
+  StarOutlined,
+  AuditOutlined,
+  PlusOutlined,
+} from '@ant-design/icons'
+import dayjs from 'dayjs'
+import type {
+  WelderCertification,
+  CertifiedProject,
+  QualifiedItem,
+  QualifiedRangeItem,
+} from '../../../services/certifications'
+
+const { Text } = Typography
 
 interface CertificationCardProps {
-  certification: WelderCertification;
-  onEdit: (certification: WelderCertification) => void;
-  onDelete: (certificationId: number) => void;
-  onViewDetails?: (certification: WelderCertification) => void;
+  certification: WelderCertification
+  onEdit: (certification: WelderCertification) => void
+  onDelete: (certificationId: number) => void
+  onSetPrimary?: (certification: WelderCertification) => void
+  onAddProject?: (certification: WelderCertification) => void
+  onEditProject?: (certification: WelderCertification, project: CertifiedProject) => void
+  onDeleteProject?: (certification: WelderCertification, project: CertifiedProject) => void
+  onRenewProject?: (certification: WelderCertification, project: CertifiedProject) => void
 }
 
-/**
- * 证书卡片组件
- */
 const CertificationCard: React.FC<CertificationCardProps> = ({
   certification,
   onEdit,
   onDelete,
-  onViewDetails,
+  onSetPrimary,
+  onAddProject,
+  onEditProject,
+  onDeleteProject,
+  onRenewProject,
 }) => {
-  // 获取证书状态标签
   const getStatusBadge = (status: string) => {
     const statusMap: Record<string, { status: any; text: string; icon: React.ReactNode }> = {
-      valid: {
-        status: 'success',
-        text: '有效',
-        icon: <CheckCircleOutlined />,
-      },
-      expiring_soon: {
-        status: 'warning',
-        text: '即将过期',
-        icon: <ClockCircleOutlined />,
-      },
-      expired: {
-        status: 'error',
-        text: '已过期',
-        icon: <ExclamationCircleOutlined />,
-      },
-      suspended: {
-        status: 'default',
-        text: '已暂停',
-        icon: <CloseCircleOutlined />,
-      },
-      revoked: {
-        status: 'error',
-        text: '已吊销',
-        icon: <CloseCircleOutlined />,
-      },
-    };
-
-    const config = statusMap[status] || statusMap.valid;
+      valid: { status: 'success', text: '有效', icon: <CheckCircleOutlined /> },
+      expiring_soon: { status: 'warning', text: '即将过期', icon: <ClockCircleOutlined /> },
+      expired: { status: 'error', text: '已过期', icon: <ExclamationCircleOutlined /> },
+      suspended: { status: 'default', text: '已暂停', icon: <CloseCircleOutlined /> },
+      revoked: { status: 'error', text: '已吊销', icon: <CloseCircleOutlined /> },
+    }
+    const config = statusMap[status] || statusMap.valid
     return (
-      <Badge status={config.status} text={
-        <span>
-          {config.icon} {config.text}
-        </span>
-      } />
-    );
-  };
+      <Badge
+        status={config.status}
+        text={
+          <span>
+            {config.icon} {config.text}
+          </span>
+        }
+      />
+    )
+  }
 
-  // 获取认证体系颜色
   const getSystemColor = (system?: string) => {
     const colorMap: Record<string, string> = {
-      'ASME': 'blue',
-      '国标': 'green',
-      '欧标': 'purple',
-      'AWS': 'orange',
-      'API': 'cyan',
-      'DNV': 'geekblue',
-    };
-    return colorMap[system || ''] || 'default';
-  };
+      ASME: 'blue',
+      国标: 'green',
+      欧标: 'purple',
+      AWS: 'orange',
+      API: 'cyan',
+      DNV: 'geekblue',
+    }
+    return colorMap[system || ''] || 'default'
+  }
 
-  // 格式化日期
-  const formatDate = (date?: string) => {
-    return date ? dayjs(date).format('YYYY-MM-DD') : '-';
-  };
+  const formatDate = (date?: string) => (date ? dayjs(date).format('YYYY-MM-DD') : '-')
 
-  // 计算剩余天数
-  const getDaysRemaining = (expiryDate?: string) => {
-    if (!expiryDate) return null;
-    const days = dayjs(expiryDate).diff(dayjs(), 'day');
-    return days;
-  };
-
-  const daysRemaining = getDaysRemaining(certification.expiry_date);
-
-  // 解析合格项目 JSON
   const parseQualifiedItems = (): QualifiedItem[] => {
     try {
-      if (!certification.qualified_items) return [];
-      return JSON.parse(certification.qualified_items);
-    } catch (e) {
-      console.error('解析合格项目失败:', e);
-      return [];
+      if (!certification.qualified_items) return []
+      return JSON.parse(certification.qualified_items)
+    } catch {
+      return []
     }
-  };
+  }
 
-  // 解析合格范围 JSON
   const parseQualifiedRange = (): QualifiedRangeItem[] => {
     try {
-      if (!certification.qualified_range) return [];
-      return JSON.parse(certification.qualified_range);
-    } catch (e) {
-      console.error('解析合格范围失败:', e);
-      return [];
+      if (!certification.qualified_range) return []
+      return JSON.parse(certification.qualified_range)
+    } catch {
+      return []
     }
-  };
+  }
 
-  const qualifiedItems = parseQualifiedItems();
-  const qualifiedRange = parseQualifiedRange();
+  const projects = certification.projects || []
+  const qualifiedItems = parseQualifiedItems()
+  const qualifiedRange = parseQualifiedRange()
 
   return (
     <Card
       size="small"
       title={
-        <Space>
+        <Space wrap>
           <FileTextOutlined />
-          <span>{certification.certification_type}</span>
-          {certification.is_primary && <Tag color="gold">主要证书</Tag>}
+          <span>
+            {certification.certification_system || '体系证书'} ·{' '}
+            {certification.certification_number}
+          </span>
+          {certification.is_primary && <Tag color="gold">主要</Tag>}
           {certification.certification_system && (
             <Tag color={getSystemColor(certification.certification_system)}>
               {certification.certification_system}
@@ -140,17 +122,32 @@ const CertificationCard: React.FC<CertificationCardProps> = ({
         </Space>
       }
       extra={
-        <Space>
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => onEdit(certification)}
-          >
-            编辑
+        <Space wrap size={0}>
+          {onSetPrimary && !certification.is_primary && (
+            <Button
+              type="link"
+              size="small"
+              icon={<StarOutlined />}
+              onClick={() => onSetPrimary(certification)}
+            >
+              设为主要
+            </Button>
+          )}
+          {onAddProject && (
+            <Button
+              type="link"
+              size="small"
+              icon={<PlusOutlined />}
+              onClick={() => onAddProject(certification)}
+            >
+              加持证项目
+            </Button>
+          )}
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => onEdit(certification)}>
+            编辑证书
           </Button>
           <Popconfirm
-            title="确定要删除这个证书吗？"
+            title="确定删除该体系证书及其持证项目？"
             onConfirm={() => onDelete(certification.id)}
             okText="确定"
             cancelText="取消"
@@ -164,132 +161,125 @@ const CertificationCard: React.FC<CertificationCardProps> = ({
       style={{ marginBottom: 16 }}
     >
       <Descriptions column={2} size="small">
-        {/* 证书编号 */}
         <Descriptions.Item label="证书编号" span={2}>
           <strong>{certification.certification_number}</strong>
         </Descriptions.Item>
-
-        {/* 认证标准 */}
-        {certification.certification_standard && (
-          <Descriptions.Item label="认证标准" span={2}>
-            <Tag>{certification.certification_standard}</Tag>
-          </Descriptions.Item>
-        )}
-
-        {/* 项目名称 */}
-        {certification.project_name && (
-          <Descriptions.Item label="项目名称" span={2}>
-            {certification.project_name}
-          </Descriptions.Item>
-        )}
-
-        {/* 合格项目 - 突出显示 */}
-        {qualifiedItems.length > 0 && (
-          <Descriptions.Item label={<strong style={{ color: '#1890ff' }}>合格项目</strong>} span={2}>
-            <Space direction="vertical" style={{ width: '100%' }}>
-              {qualifiedItems.map((item, index) => (
-                <div key={index} style={{ marginBottom: 4 }}>
-                  <Tag color="blue">{item.item}</Tag>
-                  {item.description && <span style={{ marginLeft: 8, color: '#666' }}>{item.description}</span>}
-                  {item.notes && <span style={{ marginLeft: 8, fontSize: '12px', color: '#999' }}>({item.notes})</span>}
-                </div>
-              ))}
-            </Space>
-          </Descriptions.Item>
-        )}
-
-        {/* 合格范围 - 突出显示 */}
-        {qualifiedRange.length > 0 && (
-          <Descriptions.Item label={<strong style={{ color: '#1890ff' }}>合格范围</strong>} span={2}>
-            <Space direction="vertical" style={{ width: '100%' }}>
-              {qualifiedRange.map((range, index) => (
-                <div key={index} style={{ marginBottom: 4 }}>
-                  <strong>{range.name}:</strong> <Tag color="green">{range.value}</Tag>
-                  {range.notes && <span style={{ marginLeft: 8, fontSize: '12px', color: '#999' }}>({range.notes})</span>}
-                </div>
-              ))}
-            </Space>
-          </Descriptions.Item>
-        )}
-
-        {/* 颁发信息 */}
-        <Descriptions.Item label="颁发机构">
-          {certification.issuing_authority}
+        <Descriptions.Item label="证书类型">{certification.certification_type}</Descriptions.Item>
+        <Descriptions.Item label="发证机构">
+          {certification.issuing_authority || '-'}
         </Descriptions.Item>
-        <Descriptions.Item label="颁发日期">
-          {formatDate(certification.issue_date)}
-        </Descriptions.Item>
-
-        {/* 有效期 */}
-        <Descriptions.Item label="有效期至">
-          {certification.expiry_date ? (
-            <Space>
-              <span>{formatDate(certification.expiry_date)}</span>
-              {daysRemaining !== null && daysRemaining > 0 && daysRemaining <= 90 && (
-                <Tooltip title={`还有 ${daysRemaining} 天过期`}>
-                  <Tag color="warning">即将过期</Tag>
-                </Tooltip>
-              )}
-              {daysRemaining !== null && daysRemaining <= 0 && (
-                <Tag color="error">已过期</Tag>
-              )}
-            </Space>
-          ) : '长期有效'}
-        </Descriptions.Item>
-
-        {/* 证书状态 */}
+        <Descriptions.Item label="发证日">{formatDate(certification.issue_date)}</Descriptions.Item>
         <Descriptions.Item label="状态">
-          {getStatusBadge(certification.status)}
+          {getStatusBadge(certification.status || 'valid')}
         </Descriptions.Item>
-
-        {/* 复审信息 */}
-        {certification.renewal_date && (
-          <>
-            <Descriptions.Item label="最近复审">
-              {formatDate(certification.renewal_date)}
-            </Descriptions.Item>
-            <Descriptions.Item label="复审次数">
-              {certification.renewal_count || 0} 次
-            </Descriptions.Item>
-          </>
-        )}
-
-        {certification.next_renewal_date && (
-          <Descriptions.Item label="下次复审" span={2}>
-            <Space>
-              <span>{formatDate(certification.next_renewal_date)}</span>
-              {certification.renewal_result && (
-                <Tag color={certification.renewal_result === '通过' ? 'success' : 'error'}>
-                  {certification.renewal_result}
-                </Tag>
-              )}
-            </Space>
-          </Descriptions.Item>
-        )}
-
-        {/* 备注 */}
-        {certification.notes && (
-          <Descriptions.Item label="备注" span={2}>
-            {certification.notes}
-          </Descriptions.Item>
-        )}
       </Descriptions>
 
-      {/* 查看详情按钮 */}
-      {onViewDetails && (
-        <div style={{ marginTop: 12, textAlign: 'right' }}>
-          <Button
-            type="link"
+      <div style={{ marginTop: 12 }}>
+        <Space style={{ marginBottom: 8 }}>
+          <Text strong>持证项目</Text>
+          <Tag>{projects.length} 项</Tag>
+        </Space>
+        {projects.length === 0 ? (
+          <Text type="secondary">暂无持证项目，请点击「加持证项目」</Text>
+        ) : (
+          <List
             size="small"
-            onClick={() => onViewDetails(certification)}
-          >
-            查看完整信息
-          </Button>
+            bordered
+            dataSource={projects}
+            renderItem={(p) => {
+              const days = p.expiry_date ? dayjs(p.expiry_date).diff(dayjs(), 'day') : null
+              return (
+                <List.Item
+                  actions={[
+                    onRenewProject ? (
+                      <Popconfirm
+                        key="renew"
+                        title="记录审证通过？"
+                        description="写入审证日并将到期延长约一年"
+                        onConfirm={() => onRenewProject(certification, p)}
+                      >
+                        <Button type="link" size="small" icon={<AuditOutlined />}>
+                          记审证
+                        </Button>
+                      </Popconfirm>
+                    ) : null,
+                    onEditProject ? (
+                      <Button
+                        key="edit"
+                        type="link"
+                        size="small"
+                        onClick={() => onEditProject(certification, p)}
+                      >
+                        编辑
+                      </Button>
+                    ) : null,
+                    onDeleteProject ? (
+                      <Popconfirm
+                        key="del"
+                        title="删除该持证项目？"
+                        onConfirm={() => onDeleteProject(certification, p)}
+                      >
+                        <Button type="link" size="small" danger>
+                          删除
+                        </Button>
+                      </Popconfirm>
+                    ) : null,
+                  ].filter(Boolean)}
+                >
+                  <List.Item.Meta
+                    title={
+                      <Space wrap>
+                        <span>{p.project_name}</span>
+                        {p.project_code && <Tag>{p.project_code}</Tag>}
+                        {getStatusBadge(p.status || 'valid')}
+                      </Space>
+                    }
+                    description={
+                      <span>
+                        到期 {formatDate(p.expiry_date)}
+                        {days !== null && (
+                          <Text type={days <= 30 ? 'danger' : 'secondary'}>
+                            {' '}
+                            · 剩余 {days} 天
+                          </Text>
+                        )}
+                        {p.next_renewal_date && ` · 下次审证 ${formatDate(p.next_renewal_date)}`}
+                      </span>
+                    }
+                  />
+                </List.Item>
+              )
+            }}
+          />
+        )}
+      </div>
+
+      {qualifiedItems.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <Text type="secondary">合格项目（兼容）</Text>
+          <div style={{ marginTop: 4 }}>
+            {qualifiedItems.map((item, index) => (
+              <Tag key={index} color="blue" style={{ marginBottom: 4 }}>
+                {item.item}
+              </Tag>
+            ))}
+          </div>
+        </div>
+      )}
+      {qualifiedRange.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          <Text type="secondary">合格范围（兼容）</Text>
+          <div style={{ marginTop: 4 }}>
+            {qualifiedRange.map((item, index) => (
+              <Tag key={index} style={{ marginBottom: 4 }}>
+                {item.name}: {item.value}
+              </Tag>
+            ))}
+          </div>
         </div>
       )}
     </Card>
-  );
-};
+  )
+}
 
-export default CertificationCard;
-
+export default CertificationCard

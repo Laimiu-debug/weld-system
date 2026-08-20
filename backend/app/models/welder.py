@@ -229,6 +229,52 @@ class WelderCertification(Base):
         return f"<WelderCertification(id={self.id}, number={self.certification_number})>"
 
 
+class WelderCertifiedProject(Base):
+    """体系证书下的持证项目（可独立到期与审证）"""
+
+    __tablename__ = "welder_certified_projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    certification_id = Column(
+        Integer,
+        ForeignKey("welder_certifications.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="所属证书ID",
+    )
+    welder_id = Column(
+        Integer,
+        ForeignKey("welders.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="焊工ID（冗余便于聚合）",
+    )
+
+    project_code = Column(String(100), comment="项目代号")
+    project_name = Column(String(200), nullable=False, comment="持证项目名称")
+
+    issue_date = Column(Date, comment="发证/生效日期")
+    expiry_date = Column(Date, comment="到期日期")
+
+    renewal_date = Column(Date, comment="最近审证日期")
+    renewal_count = Column(Integer, default=0, comment="审证次数")
+    next_renewal_date = Column(Date, comment="下次审证日期")
+    renewal_result = Column(String(50), comment="审证结果")
+    renewal_notes = Column(Text, comment="审证备注")
+
+    status = Column(String(50), default="valid", comment="状态")
+    is_active = Column(Boolean, default=True, comment="是否启用")
+    notes = Column(Text, comment="备注")
+
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False, comment="创建人ID")
+    updated_by = Column(Integer, ForeignKey("users.id"), nullable=True, comment="更新人ID")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间")
+
+    def __repr__(self):
+        return f"<WelderCertifiedProject(id={self.id}, name={self.project_name})>"
+
+
 class WelderTraining(Base):
     """焊工培训记录模型"""
 

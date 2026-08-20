@@ -9,55 +9,19 @@ import {
   Col,
   Select,
   DatePicker,
-  Typography,
   Space,
   message,
-  Steps,
-  Upload,
-  Modal,
-  Descriptions,
   Spin,
+  Alert,
 } from 'antd'
-import {
-  SaveOutlined,
-  EyeOutlined,
-  LeftOutlined,
-  RightOutlined,
-  CheckOutlined,
-  UploadOutlined,
-} from '@ant-design/icons'
+import { SaveOutlined, ArrowLeftOutlined } from '@ant-design/icons'
+import dayjs from 'dayjs'
 import weldersService from '@/services/welders'
 import type { Welder } from '@/services/welders'
-import dayjs from 'dayjs'
+import ListPageHeader from '@/components/ListPageHeader'
 
-const { Title } = Typography
 const { Option } = Select
-const { Step } = Steps
-
-interface WeldersEditForm {
-  // 基本信息
-  welder_code: string
-  full_name: string
-  id_number: string
-  phone?: string
-  email?: string
-  
-  // 资质信息
-  certification_number: string
-  certification_level: string
-  certification_date: string
-  expiry_date: string
-  issuing_authority: string
-  qualified_processes: string[]
-  welding_position: string
-  base_material: string
-  thickness_range: string
-  
-  // 其他信息
-  special_skills?: string
-  notes: string
-  attachments: any[]
-}
+const { TextArea } = Input
 
 const WeldersEdit: React.FC = () => {
   const { id } = useParams<{ id: string }>()
@@ -65,29 +29,6 @@ const WeldersEdit: React.FC = () => {
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
   const [pageLoading, setPageLoading] = useState(true)
-  const [currentStep, setCurrentStep] = useState(0)
-  const [initialData, setInitialData] = useState<Welder | null>(null)
-  const [previewOpen, setPreviewOpen] = useState(false)
-
-  // 步骤配置
-  const steps = [
-    {
-      title: '基本信息',
-      description: '填写焊工的基本信息',
-    },
-    {
-      title: '资质信息',
-      description: '填写焊工资质证书信息',
-    },
-    {
-      title: '技能信息',
-      description: '填写焊工技能范围',
-    },
-    {
-      title: '附件上传',
-      description: '上传相关证书和文件',
-    },
-  ]
 
   useEffect(() => {
     const fetchWelderDetail = async () => {
@@ -100,24 +41,23 @@ const WeldersEdit: React.FC = () => {
           message.error('未找到焊工信息')
           return
         }
-        setInitialData(data)
-        const processes = data.qualified_processes
-          ? String(data.qualified_processes).split(',').map((item) => item.trim()).filter(Boolean)
-          : []
         form.setFieldsValue({
           welder_code: data.welder_code,
           full_name: data.full_name,
+          gender: data.gender,
+          date_of_birth: data.date_of_birth ? dayjs(data.date_of_birth) : undefined,
+          id_type: data.id_type || '身份证',
           id_number: data.id_number,
+          nationality: data.nationality || '中国',
           phone: data.phone,
           email: data.email,
-          certification_number: data.primary_certification_number,
-          certification_level: data.primary_certification_level,
-          certification_date: data.primary_certification_date ? dayjs(data.primary_certification_date) : undefined,
-          expiry_date: data.primary_expiry_date ? dayjs(data.primary_expiry_date) : undefined,
-          issuing_authority: data.primary_issuing_authority,
-          qualified_processes: processes,
-          welding_position: data.qualified_positions,
-          base_material: data.qualified_materials,
+          address: data.address,
+          department: data.department,
+          position: data.position,
+          hire_date: data.hire_date ? dayjs(data.hire_date) : undefined,
+          skill_level: data.skill_level,
+          specialization: data.specialization,
+          status: data.status,
           notes: data.notes,
         })
       } catch {
@@ -129,424 +69,203 @@ const WeldersEdit: React.FC = () => {
     void fetchWelderDetail()
   }, [id, form])
 
-  // 处理步骤变化
-  const handleStepChange = (step: number) => {
-    setCurrentStep(step)
-  }
-
-  // 处理下一步
-  const handleNext = async () => {
-    try {
-      // 验证当前步骤的表单
-      const fields = getStepFields(currentStep)
-      await form.validateFields(fields)
-      
-      // 进入下一步
-      if (currentStep < steps.length - 1) {
-        handleStepChange(currentStep + 1)
-      } else {
-        // 最后一步，提交表单
-        handleSubmit()
-      }
-    } catch (error) {
-      message.error('请完成当前步骤的必填项')
-    }
-  }
-
-  // 处理上一步
-  const handlePrev = () => {
-    if (currentStep > 0) {
-      handleStepChange(currentStep - 1)
-    }
-  }
-
-  // 获取当前步骤需要验证的字段
-  const getStepFields = (step: number): string[] => {
-    const stepFields: string[][] = [
-      // 基本信息
-      ['welder_code', 'full_name', 'id_number', 'phone', 'email'],
-      // 资质信息
-      ['certification_number', 'certification_level', 'certification_date', 'expiry_date', 'issuing_authority'],
-      // 技能信息
-      ['qualified_processes', 'welding_position', 'base_material', 'thickness_range'],
-      // 附件上传
-      [],
-    ]
-    
-    return stepFields[step] || []
-  }
-
-  // 处理表单提交
   const handleSubmit = async () => {
     if (!id) return
-    setLoading(true)
     try {
-      const values = form.getFieldsValue()
+      const values = await form.validateFields()
+      setLoading(true)
       await weldersService.update(Number(id), {
         welder_code: values.welder_code,
         full_name: values.full_name,
+        gender: values.gender,
+        date_of_birth: values.date_of_birth
+          ? dayjs(values.date_of_birth).format('YYYY-MM-DD')
+          : undefined,
+        id_type: values.id_type,
         id_number: values.id_number,
+        nationality: values.nationality,
         phone: values.phone,
         email: values.email,
-        primary_certification_number: values.certification_number,
-        primary_certification_level: values.certification_level,
-        primary_certification_date: values.certification_date ? dayjs(values.certification_date).format('YYYY-MM-DD') : undefined,
-        primary_expiry_date: values.expiry_date ? dayjs(values.expiry_date).format('YYYY-MM-DD') : undefined,
-        primary_issuing_authority: values.issuing_authority,
-        qualified_processes: Array.isArray(values.qualified_processes) ? values.qualified_processes.join(',') : values.qualified_processes,
-        qualified_positions: values.welding_position,
-        qualified_materials: values.base_material,
+        address: values.address,
+        department: values.department,
+        position: values.position,
+        hire_date: values.hire_date
+          ? dayjs(values.hire_date).format('YYYY-MM-DD')
+          : undefined,
+        skill_level: values.skill_level,
+        specialization: values.specialization,
+        status: values.status,
         notes: values.notes,
       })
-      message.success('焊工信息更新成功')
+      message.success('人员信息已保存')
       navigate(`/welders/${id}`)
-    } catch {
-      message.error('更新失败，请稍后重试')
+    } catch (error: any) {
+      if (error?.errorFields) return
+      message.error(error.response?.data?.detail || '保存失败')
     } finally {
       setLoading(false)
     }
   }
 
-  const handlePreview = () => {
-    setPreviewOpen(true)
-  }
-
-  // 处理文件上传
-  const handleUploadChange = (info: any) => {
-    if (info.file.status === 'done') {
-      message.success(`${info.file.name} 上传成功`)
-    } else if (info.file.status === 'error') {
-      message.error(`${info.file.name} 上传失败`)
-    }
-  }
-
-  // 渲染当前步骤的表单
-  const renderStepForm = () => {
-    switch (currentStep) {
-      case 0:
-        return (
-          <Row gutter={[16, 16]}>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="welder_code"
-                label="焊工编号"
-                rules={[{ required: true, message: '请输入焊工编号' }]}
-              >
-                <Input placeholder="例如: WLD-2024-001" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="full_name"
-                label="姓名"
-                rules={[{ required: true, message: '请输入姓名' }]}
-              >
-                <Input placeholder="请输入姓名" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="id_number"
-                label="身份证号"
-                rules={[
-                  { required: true, message: '请输入身份证号' },
-                  { pattern: /^[1-9]\d{5}(18|19|20)\d{2}((0[1-9])|(1[0-2]))(([0-2][1-9])|10|20|30|31)\d{3}[0-9Xx]$/, message: '请输入有效的身份证号' }
-                ]}
-              >
-                <Input placeholder="请输入身份证号" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="phone"
-                label="联系电话"
-                rules={[
-                  { pattern: /^1[3-9]\d{9}$/, message: '请输入有效的手机号码' }
-                ]}
-              >
-                <Input placeholder="请输入联系电话" />
-              </Form.Item>
-            </Col>
-            <Col xs={24}>
-              <Form.Item
-                name="email"
-                label="邮箱"
-                rules={[
-                  { type: 'email', message: '请输入有效的邮箱地址' }
-                ]}
-              >
-                <Input placeholder="请输入邮箱" />
-              </Form.Item>
-            </Col>
-          </Row>
-        )
-      
-      case 1:
-        return (
-          <Row gutter={[16, 16]}>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="certification_number"
-                label="证书编号"
-                rules={[{ required: true, message: '请输入证书编号' }]}
-              >
-                <Input placeholder="请输入证书编号" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="certification_level"
-                label="证书等级"
-                rules={[{ required: true, message: '请选择证书等级' }]}
-              >
-                <Select placeholder="请选择证书等级">
-                  <Option value="初级">初级</Option>
-                  <Option value="中级">中级</Option>
-                  <Option value="高级">高级</Option>
-                  <Option value="技师">技师</Option>
-                  <Option value="高级技师">高级技师</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="certification_date"
-                label="发证日期"
-                rules={[{ required: true, message: '请选择发证日期' }]}
-              >
-                <DatePicker style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="expiry_date"
-                label="有效期至"
-                rules={[{ required: true, message: '请选择有效期' }]}
-              >
-                <DatePicker style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col xs={24}>
-              <Form.Item
-                name="issuing_authority"
-                label="发证机构"
-                rules={[{ required: true, message: '请输入发证机构' }]}
-              >
-                <Input placeholder="请输入发证机构" />
-              </Form.Item>
-            </Col>
-          </Row>
-        )
-      
-      case 2:
-        return (
-          <Row gutter={[16, 16]}>
-            <Col xs={24}>
-              <Form.Item
-                name="qualified_processes"
-                label="资质工艺"
-                rules={[{ required: true, message: '请选择资质工艺' }]}
-              >
-                <Select
-                  mode="multiple"
-                  placeholder="请选择资质工艺"
-                  style={{ width: '100%' }}
-                >
-                  <Option value="SMAW">SMAW (手工焊)</Option>
-                  <Option value="GMAW">GMAW (熔化极气体保护焊)</Option>
-                  <Option value="GTAW">GTAW (钨极氩弧焊)</Option>
-                  <Option value="FCAW">FCAW (药芯焊丝电弧焊)</Option>
-                  <Option value="SAW">SAW (埋弧焊)</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="welding_position"
-                label="焊接位置"
-                rules={[{ required: true, message: '请选择焊接位置' }]}
-              >
-                <Select placeholder="请选择焊接位置">
-                  <Option value="1G">1G (平焊)</Option>
-                  <Option value="2G">2G (横焊)</Option>
-                  <Option value="3G">3G (立焊)</Option>
-                  <Option value="4G">4G (仰焊)</Option>
-                  <Option value="1F">1F (平角焊)</Option>
-                  <Option value="2F">2F (横角焊)</Option>
-                  <Option value="3F">3F (立角焊)</Option>
-                  <Option value="4F">4F (仰角焊)</Option>
-                  <Option value="6G">6G (全位置)</Option>
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item
-                name="base_material"
-                label="母材"
-                rules={[{ required: true, message: '请输入母材' }]}
-              >
-                <Input placeholder="例如: Q235" />
-              </Form.Item>
-            </Col>
-            <Col xs={24}>
-              <Form.Item
-                name="thickness_range"
-                label="厚度范围"
-                rules={[{ required: true, message: '请输入厚度范围' }]}
-              >
-                <Input placeholder="例如: 3-20mm" />
-              </Form.Item>
-            </Col>
-            <Col xs={24}>
-              <Form.Item name="special_skills" label="特殊技能">
-                <Input.TextArea
-                  rows={2}
-                  placeholder="请输入特殊技能"
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-        )
-      
-      case 3:
-        return (
-          <Row gutter={[16, 16]}>
-            <Col xs={24}>
-              <Form.Item
-                name="attachments"
-                label="附件上传"
-              >
-                <Upload.Dragger
-                  name="files"
-                  multiple
-                  action="/api/upload"
-                  onChange={handleUploadChange}
-                >
-                  <p className="ant-upload-drag-icon">
-                    <UploadOutlined />
-                  </p>
-                  <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
-                  <p className="ant-upload-hint">
-                    支持单个或批量上传。严格禁止上传公司数据或其他敏感信息。
-                  </p>
-                </Upload.Dragger>
-              </Form.Item>
-            </Col>
-            <Col xs={24}>
-              <Form.Item name="notes" label="备注">
-                <Input.TextArea
-                  rows={3}
-                  placeholder="请输入其他备注信息"
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-        )
-      
-      default:
-        return null
-    }
-  }
-
   if (pageLoading) {
     return (
-      <div className="edit-welder-container flex justify-center items-center" style={{ minHeight: 320 }}>
+      <div className="list-page" style={{ textAlign: 'center', padding: 80 }}>
         <Spin size="large" />
       </div>
     )
   }
 
-  if (!initialData) {
-    return <div>未找到焊工信息</div>
-  }
-
-  const previewValues = form.getFieldsValue()
-
   return (
-    <div className="edit-welder-container">
-      <div className="page-header">
-        <Title level={2}>编辑焊工</Title>
-      </div>
-
-      <Card>
-        {/* 步骤指示器 */}
-        <Steps current={currentStep} className="steps-container">
-          {steps.map((step, index) => (
-            <Step
-              key={index}
-              title={step.title}
-              description={step.description}
-              icon={index < currentStep ? <CheckOutlined /> : undefined}
-            />
-          ))}
-        </Steps>
-
-        {/* 表单区域 */}
-        <Form
-          form={form}
-          layout="vertical"
-          initialValues={{
-            certification_date: initialData.primary_certification_date
-              ? dayjs(initialData.primary_certification_date)
-              : undefined,
-            expiry_date: initialData.primary_expiry_date
-              ? dayjs(initialData.primary_expiry_date)
-              : undefined,
-          }}
-        >
-          {renderStepForm()}
-        </Form>
-
-        {/* 操作按钮 */}
-        <div className="form-actions">
-          <Button
-            icon={<LeftOutlined />}
-            onClick={handlePrev}
-            disabled={currentStep === 0}
-          >
-            上一步
-          </Button>
-
+    <div className="list-page">
+      <ListPageHeader
+        title="编辑焊工"
+        description="仅维护人员档案；持证项目请在详情页按体系管理"
+        extra={
           <Space>
-            <Button
-              icon={<EyeOutlined />}
-              onClick={handlePreview}
-            >
-              预览
-            </Button>
-            <Button
-              type="primary"
-              icon={<RightOutlined />}
-              onClick={handleNext}
-              loading={loading}
-            >
-              保存修改
+            <Button onClick={() => navigate(`/welders/${id}`)}>查看详情</Button>
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/welders')}>
+              返回列表
             </Button>
           </Space>
-        </div>
-      </Card>
+        }
+      />
 
-      <Modal
-        title="焊工信息预览"
-        open={previewOpen}
-        onCancel={() => setPreviewOpen(false)}
-        footer={<Button onClick={() => setPreviewOpen(false)}>关闭</Button>}
-      >
-        <Descriptions column={1} bordered size="small">
-          <Descriptions.Item label="焊工编号">{previewValues.welder_code || '-'}</Descriptions.Item>
-          <Descriptions.Item label="姓名">{previewValues.full_name || '-'}</Descriptions.Item>
-          <Descriptions.Item label="证件号">{previewValues.id_number || '-'}</Descriptions.Item>
-          <Descriptions.Item label="电话">{previewValues.phone || '-'}</Descriptions.Item>
-          <Descriptions.Item label="证书编号">{previewValues.certification_number || '-'}</Descriptions.Item>
-          <Descriptions.Item label="资质等级">{previewValues.certification_level || '-'}</Descriptions.Item>
-          <Descriptions.Item label="发证机构">{previewValues.issuing_authority || '-'}</Descriptions.Item>
-          <Descriptions.Item label="合格工艺">
-            {Array.isArray(previewValues.qualified_processes)
-              ? previewValues.qualified_processes.join('、')
-              : previewValues.qualified_processes || '-'}
-          </Descriptions.Item>
-        </Descriptions>
-      </Modal>
+      <Alert
+        type="info"
+        showIcon
+        className="mb-4"
+        message="持证信息不在此页编辑"
+        description="体系、持证项目、到期与审证请到焊工详情「持证项目」区域管理。"
+        action={
+          <Button size="small" type="link" onClick={() => navigate(`/welders/${id}`)}>
+            去管理持证
+          </Button>
+        }
+      />
+
+      <Card className="list-page-card">
+        <Form form={form} layout="vertical">
+          <Row gutter={[16, 0]}>
+            <Col xs={24} sm={12} md={8}>
+              <Form.Item
+                name="welder_code"
+                label="焊工编号"
+                rules={[{ required: true, message: '请输入焊工编号' }]}
+              >
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12} md={8}>
+              <Form.Item
+                name="full_name"
+                label="姓名"
+                rules={[{ required: true, message: '请输入姓名' }]}
+              >
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12} md={8}>
+              <Form.Item name="gender" label="性别">
+                <Select allowClear>
+                  <Option value="男">男</Option>
+                  <Option value="女">女</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12} md={8}>
+              <Form.Item name="date_of_birth" label="出生日期">
+                <DatePicker style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12} md={8}>
+              <Form.Item name="id_type" label="证件类型">
+                <Select>
+                  <Option value="身份证">身份证</Option>
+                  <Option value="护照">护照</Option>
+                  <Option value="其他">其他</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12} md={8}>
+              <Form.Item
+                name="id_number"
+                label="证件号码"
+                rules={[{ required: true, message: '请输入证件号码' }]}
+              >
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12} md={8}>
+              <Form.Item name="phone" label="联系电话">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12} md={8}>
+              <Form.Item name="email" label="邮箱">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12} md={8}>
+              <Form.Item name="status" label="在职状态">
+                <Select>
+                  <Option value="active">在职</Option>
+                  <Option value="inactive">离职</Option>
+                  <Option value="on_leave">休假</Option>
+                  <Option value="suspended">停职</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12} md={8}>
+              <Form.Item name="department" label="部门">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12} md={8}>
+              <Form.Item name="position" label="岗位">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12} md={8}>
+              <Form.Item name="hire_date" label="入职日期">
+                <DatePicker style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12} md={8}>
+              <Form.Item name="skill_level" label="技能等级">
+                <Select allowClear>
+                  <Option value="junior">初级</Option>
+                  <Option value="intermediate">中级</Option>
+                  <Option value="senior">高级</Option>
+                  <Option value="expert">专家</Option>
+                  <Option value="master">大师</Option>
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12} md={8}>
+              <Form.Item name="specialization" label="专业方向">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={24}>
+              <Form.Item name="address" label="住址">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={24}>
+              <Form.Item name="notes" label="备注">
+                <TextArea rows={3} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Space>
+            <Button type="primary" icon={<SaveOutlined />} loading={loading} onClick={handleSubmit}>
+              保存人员信息
+            </Button>
+            <Button onClick={() => navigate(`/welders/${id}`)}>取消</Button>
+          </Space>
+        </Form>
+      </Card>
     </div>
   )
 }

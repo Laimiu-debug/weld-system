@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     DEVELOPMENT: bool = True
 
+    # 品牌展示（私有化/单企业部署可改）
+    # 侧栏主标题默认「焊序」；ORG_NAME 有值时作为副标题显示企业名
+    BRAND_NAME: str = "焊序"
+    BRAND_SUBTITLE: str = "Hanxu"
+    ORG_NAME: str = ""
+    BRANDING_CONFIG_PATH: str = "./storage/config/branding.json"
+
     # 服务器配置
     HOST: str = "localhost"
     PORT: int = 8000

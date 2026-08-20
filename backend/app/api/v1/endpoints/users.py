@@ -5,7 +5,6 @@ import json
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Path
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api import deps
@@ -34,15 +33,6 @@ from app.models.system_log import SystemLog
 router = APIRouter()
 
 _DEFAULT_PREFERENCES = UserPreferences().model_dump()
-
-
-def _ensure_preferences_column(db: Session) -> None:
-    """Idempotently add preferences column for environments without migrated schema."""
-    try:
-        db.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences TEXT"))
-        db.commit()
-    except Exception:
-        db.rollback()
 
 
 def _parse_preferences(raw: Any) -> dict:
@@ -123,7 +113,6 @@ def get_my_preferences(
     current_user: User = Depends(deps.get_current_user),
 ) -> Any:
     """获取当前用户的系统偏好设置."""
-    _ensure_preferences_column(db)
     user = user_service.get(db, id=current_user.id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
@@ -137,7 +126,6 @@ def update_my_preferences(
     current_user: User = Depends(deps.get_current_user),
 ) -> Any:
     """更新当前用户的系统偏好设置."""
-    _ensure_preferences_column(db)
     user = user_service.get(db, id=current_user.id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
@@ -198,7 +186,6 @@ def get_my_security(
     current_user: User = Depends(deps.get_current_user),
 ) -> Any:
     """获取当前用户的安全概览与最近登录记录."""
-    _ensure_preferences_column(db)
     user = user_service.get(db, id=current_user.id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")
@@ -257,7 +244,6 @@ def update_my_security(
     current_user: User = Depends(deps.get_current_user),
 ) -> Any:
     """更新安全相关偏好设置."""
-    _ensure_preferences_column(db)
     user = user_service.get(db, id=current_user.id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="用户不存在")

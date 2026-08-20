@@ -47,6 +47,7 @@ import { useAuthStore } from '@/store/authStore'
 import ppqrService, { PPQRSummary } from '@/services/ppqr'
 import { ApprovalButton } from '@/components/Approval/ApprovalButton'
 import { sanitizeDocumentHtml } from '@/utils/sanitizeHtml'
+import ListPageHeader from '@/components/ListPageHeader'
 
 const { Title, Text } = Typography
 const { Search } = Input
@@ -627,16 +628,12 @@ const PPQRList: React.FC = () => {
   }
 
   return (
-    <div style={{ padding: '24px' }}>
-      {/* 页面标题 */}
-      <div style={{ marginBottom: '24px' }}>
-        <Title level={2}>
-          <ExperimentOutlined /> pPQR管理
-        </Title>
-        <Text type="secondary">
-          预备工艺评定记录 (Preliminary Procedure Qualification Record) 管理
-        </Text>
-      </div>
+    <div className="list-page">
+      <ListPageHeader
+        title="pPQR管理"
+        description="预备工艺评定记录 (Preliminary Procedure Qualification Record) 管理"
+        icon={<ExperimentOutlined />}
+      />
 
       {/* 统计卡片 */}
       <Row gutter={16} style={{ marginBottom: '24px' }}>
@@ -703,66 +700,64 @@ const PPQRList: React.FC = () => {
       })()}
 
       {/* 主内容卡片 */}
-      <Card>
-        {/* 搜索和筛选区域 */}
-        <Row gutter={16} style={{ marginBottom: '16px' }}>
-          <Col xs={24} sm={12} md={8}>
+      <Card className="list-page-card">
+        <div className="doc-list-toolbar">
+          <div className="toolbar-search">
             <Search
               placeholder="搜索pPQR编号或标题"
               allowClear
               enterButton={<SearchOutlined />}
+              size="large"
               onSearch={handleSearch}
             />
-          </Col>
-          <Col xs={24} sm={12} md={4}>
+          </div>
+          <div className="toolbar-filter">
             <Select
               placeholder="筛选状态"
               allowClear
+              size="large"
               style={{ width: '100%' }}
               onChange={handleStatusFilter}
               value={statusFilter || undefined}
             >
-              <Option value="">全部</Option>
               <Option value="draft">草稿</Option>
               <Option value="testing">试验中</Option>
               <Option value="completed">已完成</Option>
               <Option value="converted">已转换</Option>
             </Select>
-          </Col>
-          <Col xs={24} sm={12} md={4}>
+          </div>
+          <div className="toolbar-filter">
             <Select
               placeholder="试验结论"
               allowClear
+              size="large"
               style={{ width: '100%' }}
               onChange={handleConclusionFilter}
               value={conclusionFilter || undefined}
             >
-              <Option value="">全部</Option>
               <Option value="qualified">合格</Option>
               <Option value="unqualified">不合格</Option>
               <Option value="pending">待定</Option>
             </Select>
-          </Col>
-          <Col xs={24} sm={12} md={8}>
-            <Space>
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() => navigate('/ppqr/create')}
-              >
-                创建pPQR
-              </Button>
-              <Button
-                icon={<ReloadOutlined />}
-                onClick={() => refetch()}
-              >
-                刷新
-              </Button>
-            </Space>
-          </Col>
-        </Row>
-
-        <Divider />
+          </div>
+          <div className="toolbar-actions">
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              size="large"
+              onClick={() => navigate('/ppqr/create')}
+            >
+              创建pPQR
+            </Button>
+            <Button
+              icon={<ReloadOutlined />}
+              size="large"
+              onClick={() => refetch()}
+            >
+              刷新
+            </Button>
+          </div>
+        </div>
 
         {/* 卡片列表区域 */}
         <Spin spinning={isLoading}>

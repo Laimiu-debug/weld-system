@@ -14,6 +14,7 @@ from app.models.user import User
 from app.models.subscription import SubscriptionPlan, SubscriptionTransaction
 from app.services.membership_service import MembershipService
 from app.services.system_service import SystemService
+from app.services.subscription_plan_seed import parse_plan_features
 from app.core.database import get_db
 
 router = APIRouter()
@@ -49,7 +50,7 @@ def get_subscription_plans_admin(
             "max_equipment": plan.max_equipment,
             "max_factories": plan.max_factories,
             "max_employees": plan.max_employees,
-            "features": plan.features.split(",") if plan.features else [],
+            "features": parse_plan_features(plan.features),
             "sort_order": plan.sort_order,
             "is_recommended": plan.is_recommended,
             "is_active": plan.is_active,

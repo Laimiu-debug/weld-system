@@ -54,6 +54,14 @@ export interface ProductionTask {
   priority: string;
   progress_percentage: number;
   notes?: string;
+
+  // 质量关联摘要（由质检回写）
+  quality_inspection_required?: boolean;
+  inspection_status?: string;
+  quality_result?: string;
+  defect_count?: number;
+  rework_count?: number;
+  quality_requirements?: string;
   
   // 数据隔离字段
   workspace_type: string;
@@ -404,6 +412,21 @@ export const createProductionRecord = async (
     }
   );
   message.success('生产记录已保存');
+  return response.data;
+};
+
+/** 拉取生产任务关联的质检结果 */
+export const getProductionTaskInspections = async (
+  taskId: number,
+  workspaceType: string,
+  companyId?: number,
+  factoryId?: number
+): Promise<{ success: boolean; data: { items: any[]; total: number } }> => {
+  const token = localStorage.getItem('token');
+  const response = await axios.get(`${API_BASE_URL}/production/tasks/${taskId}/inspections`, {
+    params: workspaceParams(workspaceType, companyId, factoryId),
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return response.data;
 };
 

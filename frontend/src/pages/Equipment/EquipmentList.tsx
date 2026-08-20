@@ -63,6 +63,7 @@ import {
   UpdateEquipmentData
 } from '@/services/equipment'
 import { workspaceService } from '@/services/workspace'
+import ListPageHeader from '@/components/ListPageHeader'
 
 const { Search } = Input
 const { Option } = Select
@@ -123,10 +124,10 @@ const EquipmentList: React.FC = () => {
       const response = await equipmentService.getEquipmentList(queryParams)
 
       if (response) {
-        setEquipment(response.items)
+        setEquipment(Array.isArray(response.items) ? response.items : [])
         setPagination(prev => ({
           ...prev,
-          total: response.total
+          total: response.total || 0
         }))
       } else {
         message.error('获取设备列表失败')
@@ -146,7 +147,7 @@ const EquipmentList: React.FC = () => {
   const loadStatistics = async () => {
     try {
       const response = await equipmentService.getEquipmentStatistics()
-      if (response.success) {
+      if (response.success && response.data) {
         setStatistics(response.data)
       }
     } catch (error: any) {
@@ -159,7 +160,7 @@ const EquipmentList: React.FC = () => {
     try {
       const response = await equipmentService.getMaintenanceAlerts(30)
       if (response.success) {
-        setMaintenanceAlerts(response.data.items)
+        setMaintenanceAlerts(Array.isArray(response.data?.items) ? response.data.items : [])
       }
     } catch (error: any) {
       console.error('获取维护提醒失败:', error)
@@ -663,10 +664,11 @@ const EquipmentList: React.FC = () => {
 
   
   return (
-    <div className="p-6">
-      {/* 页面标题和统计 */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-4">设备管理</h1>
+    <div className="list-page">
+      <ListPageHeader
+        title="设备管理"
+        description="焊接设备台账、状态与维护管理"
+      />
 
         {/* 统计卡片 */}
         <Row gutter={16} className="mb-6">
@@ -754,7 +756,6 @@ const EquipmentList: React.FC = () => {
             className="mb-4"
           />
         )}
-      </div>
 
       <Tabs
         activeKey={activeTab}
@@ -766,20 +767,23 @@ const EquipmentList: React.FC = () => {
             children: (
               <>
                 {/* 工具栏 */}
-                <Card className="mb-4">
-                  <div className="flex justify-between items-center">
-                    <Space size="middle">
+                <Card className="mb-4 list-page-card">
+                  <div className="doc-list-toolbar" style={{ borderBottom: 'none', marginBottom: 0, paddingBottom: 0 }}>
+                    <div className="toolbar-search" style={{ maxWidth: 360 }}>
                       <Search
-                        placeholder="搜索设备名称、编号、制造商、型号、序列号"
+                        placeholder="搜索设备名称、编号、制造商、型号"
                         allowClear
                         enterButton={<SearchOutlined />}
-                        style={{ width: 350 }}
+                        size="large"
                         onSearch={handleSearch}
                         onChange={(e) => !e.target.value && handleSearch('')}
                       />
+                    </div>
+                    <div className="toolbar-filter">
                       <Select
                         placeholder="类型筛选"
-                        style={{ width: 140 }}
+                        size="large"
+                        style={{ width: '100%' }}
                         onChange={handleTypeFilter}
                         value={filters.equipment_type || 'all'}
                       >
@@ -790,9 +794,12 @@ const EquipmentList: React.FC = () => {
                           </Option>
                         ))}
                       </Select>
+                    </div>
+                    <div className="toolbar-filter">
                       <Select
                         placeholder="状态筛选"
-                        style={{ width: 120 }}
+                        size="large"
+                        style={{ width: '100%' }}
                         onChange={handleStatusFilter}
                         value={filters.status || 'all'}
                       >
@@ -803,31 +810,30 @@ const EquipmentList: React.FC = () => {
                           </Option>
                         ))}
                       </Select>
-                    </Space>
-
-                    <Space>
+                    </div>
+                    <div className="toolbar-actions">
+                      <Button
+                        type="primary"
+                        icon={<PlusOutlined />}
+                        size="large"
+                        onClick={handleCreate}
+                      >
+                        新增设备
+                      </Button>
                       <Button
                         icon={<ReloadOutlined />}
+                        size="large"
                         onClick={handleRefresh}
                         loading={loading}
                       >
                         刷新
                       </Button>
-                      <Button icon={<ImportOutlined />}>批量导入</Button>
-                      <Button icon={<ExportOutlined />}>导出数据</Button>
-                      <Button
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        onClick={handleCreate}
-                      >
-                        新增设备
-                      </Button>
-                    </Space>
+                    </div>
                   </div>
                 </Card>
 
                 {/* 设备列表表格 */}
-                <Card>
+                <Card className="list-page-card">
                   {equipment.length === 0 && !loading ? (
                     <Empty
                       description="暂无设备数据"
@@ -842,6 +848,7 @@ const EquipmentList: React.FC = () => {
                       </Button>
                     </Empty>
                   ) : (
+                    <div className="list-table-wrap">
                     <Table
                       columns={columns}
                       dataSource={equipment}
@@ -861,8 +868,9 @@ const EquipmentList: React.FC = () => {
                         selectedRowKeys,
                         onChange: setSelectedRowKeys,
                       }}
-                      scroll={{ x: 1400 }}
+                      scroll={{ x: 1200 }}
                     />
+                    </div>
                   )}
                 </Card>
               </>

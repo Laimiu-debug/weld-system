@@ -31,6 +31,7 @@ import reportsService from '@/services/reports'
 import { equipmentService } from '@/services/equipment'
 import wpsService from '@/services/wps'
 import { downloadCsv } from '@/utils/csv'
+import ListPageHeader from '@/components/ListPageHeader'
 
 const { Title, Text } = Typography
 const { RangePicker } = DatePicker
@@ -336,11 +337,11 @@ const UsageReport: React.FC = () => {
   ]
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <Title level={2}>使用统计报表</Title>
-        <Text type="secondary">系统使用情况和统计分析报告</Text>
-      </div>
+    <div className="list-page">
+      <ListPageHeader
+        title="使用统计"
+        description="系统使用情况与操作统计分析"
+      />
 
       {/* 筛选条件 */}
       <Card className="mb-6">

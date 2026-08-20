@@ -11,6 +11,7 @@ import {
   Row,
   Col,
   Space,
+  Input,
   InputNumber,
   ColorPicker,
   TimePicker,
@@ -25,6 +26,7 @@ import {
   GlobalOutlined,
   ClockCircleOutlined,
   BulbOutlined,
+  BankOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import {
@@ -32,6 +34,7 @@ import {
   UserSystemPreferences,
 } from '@/types/preferences'
 import { usePreferencesStore } from '@/store/preferencesStore'
+import { loadBranding, updateBranding } from '@/hooks/useBranding'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -47,7 +50,9 @@ function toHexColor(value: string | Color | undefined, fallback: string): string
 
 const SystemSettingsPage: React.FC = () => {
   const [form] = Form.useForm()
+  const [brandingForm] = Form.useForm()
   const [saving, setSaving] = useState(false)
+  const [brandingSaving, setBrandingSaving] = useState(false)
   const preferences = usePreferencesStore((s) => s.preferences)
   const loading = usePreferencesStore((s) => s.loading)
   const loaded = usePreferencesStore((s) => s.loaded)
@@ -57,7 +62,14 @@ const SystemSettingsPage: React.FC = () => {
 
   useEffect(() => {
     void loadFromServer()
-  }, [loadFromServer])
+    void loadBranding(true).then((info) => {
+      brandingForm.setFieldsValue({
+        brand_name: info.brand_name,
+        brand_subtitle: info.brand_subtitle,
+        org_name: info.org_name,
+      })
+    })
+  }, [loadFromServer, brandingForm])
 
   useEffect(() => {
     form.setFieldsValue({
@@ -124,19 +136,95 @@ const SystemSettingsPage: React.FC = () => {
     }
   }
 
+  const handleSaveBranding = async () => {
+    try {
+      const values = await brandingForm.validateFields()
+      setBrandingSaving(true)
+      const info = await updateBranding({
+        brand_name: values.brand_name,
+        brand_subtitle: values.brand_subtitle,
+        org_name: values.org_name || '',
+      })
+      brandingForm.setFieldsValue({
+        brand_name: info.brand_name,
+        brand_subtitle: info.brand_subtitle,
+        org_name: info.org_name,
+      })
+      message.success('企业名称已更新，刷新页面后侧栏立即可见')
+    } catch (error: any) {
+      if (error?.errorFields) return
+      message.error('保存企业名称失败')
+    } finally {
+      setBrandingSaving(false)
+    }
+  }
+
   return (
     <div className="page-container">
       <div className="page-header">
         <Title level={2}>系统设置</Title>
-        <Text type="secondary">配置个人界面偏好、工作时间与数据显示方式</Text>
+        <Text type="secondary">配置侧栏企业名、个人界面偏好与工作时间</Text>
       </div>
 
       <Alert
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="设置会同步到您的账号，并在本机立即应用主题色、紧凑模式与侧边栏偏好。"
+        message="侧栏「企业名称」在此页修改；个人偏好会同步到您的账号。"
       />
+
+      <Card
+        title={
+          <Space>
+            <BankOutlined />
+            <span>品牌与企业名称（用户端侧栏）</span>
+          </Space>
+        }
+        style={{ marginBottom: 16 }}
+        extra={
+          <Button
+            type="primary"
+            icon={<SaveOutlined />}
+            loading={brandingSaving}
+            onClick={() => void handleSaveBranding()}
+          >
+            保存企业名
+          </Button>
+        }
+      >
+        <Form form={brandingForm} layout="vertical">
+          <Row gutter={16}>
+            <Col xs={24} md={8}>
+              <Form.Item
+                name="brand_name"
+                label="产品名称"
+                rules={[{ required: true, message: '请输入产品名称' }]}
+                extra="侧栏主标题，默认「焊序」"
+              >
+                <Input maxLength={32} placeholder="焊序" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item
+                name="brand_subtitle"
+                label="默认副标题"
+                extra="未填企业名称时显示"
+              >
+                <Input maxLength={64} placeholder="Hanxu" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={8}>
+              <Form.Item
+                name="org_name"
+                label="企业名称"
+                extra="填写后显示在侧栏产品名下方"
+              >
+                <Input maxLength={64} placeholder="例如：某某焊接有限公司" />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Form>
+      </Card>
 
       <Spin spinning={loading && !loaded}>
         <Form

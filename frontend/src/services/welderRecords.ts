@@ -126,6 +126,14 @@ export const workHistoryService = {
   },
 
   /**
+   * 更新工作履历
+   */
+  async update(welderId: number, historyId: number, data: Partial<WelderWorkHistory>, params?: any) {
+    const response = await api.put(`/welders/${welderId}/work-histories/${historyId}`, data, { params });
+    return response.data.data || response.data;
+  },
+
+  /**
    * 删除工作履历
    */
   async delete(welderId: number, historyId: number, params?: any) {

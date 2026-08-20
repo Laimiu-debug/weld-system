@@ -40,7 +40,7 @@ export interface Welder {
   qualified_positions?: string
   qualified_materials?: string
   
-  // 主要证书信息
+  // 主要证书信息（列表摘要，由持证项目「设为主要」回写）
   primary_certification_number?: string
   primary_certification_level?: string
   primary_certification_date?: string
@@ -50,6 +50,16 @@ export interface Welder {
   certification_level?: string
   certification_date?: string
   expiry_date?: string
+
+  // 列表附带持证摘要
+  cert_summary?: {
+    cert_count: number
+    project_count?: number
+    systems: string[]
+    nearest_expiry?: string | null
+    risk_count: number
+    risk_level: string
+  }
   
   // 状态信息
   status: string
@@ -110,6 +120,7 @@ export interface WelderCreate {
   address?: string
   emergency_contact?: string
   emergency_phone?: string
+  hire_date?: string
   employment_date?: string
   employment_type?: string
   department?: string

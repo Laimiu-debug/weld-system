@@ -46,6 +46,7 @@ import { usePreferencesStore } from '@/store/preferencesStore'
 import pqrService, { PQRSummary } from '@/services/pqr'
 import { ApprovalButton } from '@/components/Approval/ApprovalButton'
 import { sanitizeDocumentHtml } from '@/utils/sanitizeHtml'
+import ListPageHeader from '@/components/ListPageHeader'
 
 const { Title, Text } = Typography
 const { Search } = Input
@@ -635,15 +636,11 @@ const PQRList: React.FC = () => {
   const tier = (user as any)?.member_tier || user?.membership_tier || 'personal_free'
 
   return (
-    <div className="pqr-list-container">
-      <div className="page-header">
-        <div className="page-title">
-          <Title level={2}>PQR管理</Title>
-          <Text type="secondary">
-            工艺评定记录 (Procedure Qualification Record) 管理
-          </Text>
-        </div>
-      </div>
+    <div className="pqr-list-container list-page">
+      <ListPageHeader
+        title="PQR管理"
+        description="工艺评定记录 (Procedure Qualification Record) 管理"
+      />
 
       {/* 统计卡片 */}
       <Row gutter={[16, 16]} className="stats-cards" style={{ marginBottom: 16 }}>

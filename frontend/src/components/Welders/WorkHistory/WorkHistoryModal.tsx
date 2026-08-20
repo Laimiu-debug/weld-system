@@ -1,91 +1,118 @@
 /**
  * 焊工工作履历添加/编辑模态框
  */
-import React, { useState } from 'react';
-import { Modal, Form, Input, DatePicker, Row, Col, message } from 'antd';
-import dayjs from 'dayjs';
-import { workHistoryService } from '../../../services/welderRecords';
-import { workspaceService } from '../../../services/workspace';
+import React, { useEffect, useState } from 'react'
+import { Modal, Form, Input, DatePicker, Row, Col, message } from 'antd'
+import dayjs from 'dayjs'
+import { workHistoryService, type WelderWorkHistory } from '../../../services/welderRecords'
+import { workspaceService } from '../../../services/workspace'
 
-const { TextArea } = Input;
-const { RangePicker } = DatePicker;
+const { TextArea } = Input
+const { RangePicker } = DatePicker
 
 interface WorkHistoryModalProps {
-  visible: boolean;
-  welderId: number;
-  onSuccess: () => void;
-  onCancel: () => void;
+  visible: boolean
+  welderId: number
+  editing?: WelderWorkHistory | null
+  onSuccess: () => void
+  onCancel: () => void
 }
 
 const WorkHistoryModal: React.FC<WorkHistoryModalProps> = ({
   visible,
   welderId,
+  editing,
   onSuccess,
   onCancel,
 }) => {
-  const currentWorkspace = workspaceService.getCurrentWorkspaceFromStorage();
-  const [form] = Form.useForm();
-  const [loading, setLoading] = useState(false);
+  const currentWorkspace = workspaceService.getCurrentWorkspaceFromStorage()
+  const [form] = Form.useForm()
+  const [loading, setLoading] = useState(false)
+  const isEdit = !!editing
+
+  useEffect(() => {
+    if (!visible) return
+    if (editing) {
+      form.setFieldsValue({
+        company_name: editing.company_name,
+        position: editing.position,
+        department: editing.department,
+        location: editing.location,
+        job_description: editing.job_description,
+        achievements: editing.achievements,
+        leaving_reason: editing.leaving_reason,
+        work_period: [
+          editing.start_date ? dayjs(editing.start_date) : undefined,
+          editing.end_date ? dayjs(editing.end_date) : undefined,
+        ],
+      })
+    } else {
+      form.resetFields()
+    }
+  }, [visible, editing, form])
 
   const handleOk = async () => {
     if (!currentWorkspace) {
-      message.error('未找到工作区信息');
-      return;
+      message.error('未找到工作区信息')
+      return
     }
-
     try {
-      const values = await form.validateFields();
-      setLoading(true);
-
-      // 格式化日期
+      const values = await form.validateFields()
+      setLoading(true)
       const formattedValues = {
-        ...values,
-        start_date: values.work_period ? values.work_period[0].format('YYYY-MM-DD') : undefined,
-        end_date: values.work_period && values.work_period[1] ? values.work_period[1].format('YYYY-MM-DD') : undefined,
-      };
-      delete formattedValues.work_period;
-
+        company_name: values.company_name,
+        position: values.position,
+        department: values.department,
+        location: values.location,
+        job_description: values.job_description,
+        achievements: values.achievements,
+        leaving_reason: values.leaving_reason,
+        start_date: values.work_period?.[0]
+          ? values.work_period[0].format('YYYY-MM-DD')
+          : undefined,
+        end_date: values.work_period?.[1]
+          ? values.work_period[1].format('YYYY-MM-DD')
+          : undefined,
+      }
       const params = {
         workspace_type: currentWorkspace.type,
         company_id: currentWorkspace.company_id,
         factory_id: currentWorkspace.factory_id,
-      };
-
-      await workHistoryService.create(welderId, formattedValues, params);
-
-      message.success('添加成功');
-      form.resetFields();
-      onSuccess();
+      }
+      if (isEdit && editing) {
+        await workHistoryService.update(welderId, editing.id, formattedValues, params)
+        message.success('履历已更新')
+      } else {
+        await workHistoryService.create(welderId, formattedValues, params)
+        message.success('履历已添加')
+      }
+      form.resetFields()
+      onSuccess()
     } catch (error: any) {
       if (error.errorFields) {
-        message.error('请填写必填字段');
+        message.error('请填写必填字段')
       } else {
-        message.error(error.response?.data?.detail || '添加失败');
+        message.error(error.response?.data?.detail || '保存失败')
       }
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
-
-  const handleCancel = () => {
-    form.resetFields();
-    onCancel();
-  };
+  }
 
   return (
     <Modal
-      title="添加工作履历"
+      title={isEdit ? '编辑工作履历' : '添加工作履历'}
       open={visible}
       onOk={handleOk}
-      onCancel={handleCancel}
+      onCancel={() => {
+        form.resetFields()
+        onCancel()
+      }}
       confirmLoading={loading}
       width={800}
       destroyOnClose
     >
-      <Form
-        form={form}
-        layout="vertical"
-      >
+      <Form form={form} layout="vertical">
         <Row gutter={16}>
           <Col span={12}>
             <Form.Item
@@ -106,7 +133,6 @@ const WorkHistoryModal: React.FC<WorkHistoryModalProps> = ({
             </Form.Item>
           </Col>
         </Row>
-
         <Row gutter={16}>
           <Col span={12}>
             <Form.Item
@@ -114,8 +140,8 @@ const WorkHistoryModal: React.FC<WorkHistoryModalProps> = ({
               name="work_period"
               rules={[{ required: true, message: '请选择工作时间' }]}
             >
-              <RangePicker 
-                style={{ width: '100%' }} 
+              <RangePicker
+                style={{ width: '100%' }}
                 placeholder={['开始日期', '结束日期（可不填）']}
                 allowEmpty={[false, true]}
               />
@@ -127,26 +153,21 @@ const WorkHistoryModal: React.FC<WorkHistoryModalProps> = ({
             </Form.Item>
           </Col>
         </Row>
-
         <Form.Item label="工作地点" name="location">
           <Input placeholder="请输入工作地点" />
         </Form.Item>
-
         <Form.Item label="工作内容" name="job_description">
           <TextArea rows={3} placeholder="请描述主要工作内容" />
         </Form.Item>
-
         <Form.Item label="主要成就" name="achievements">
-          <TextArea rows={3} placeholder="请描述在该公司的主要成就或项目经验" />
+          <TextArea rows={3} placeholder="主要成就或项目经验" />
         </Form.Item>
-
         <Form.Item label="离职原因" name="leaving_reason">
-          <Input placeholder="请输入离职原因（可选）" />
+          <Input placeholder="可选" />
         </Form.Item>
       </Form>
     </Modal>
-  );
-};
+  )
+}
 
-export default WorkHistoryModal;
-
+export default WorkHistoryModal

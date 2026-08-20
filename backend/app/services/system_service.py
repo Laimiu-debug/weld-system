@@ -414,8 +414,9 @@ class SystemService:
 
     def get_system_config(self) -> Dict[str, Any]:
         """获取系统配置"""
-        # 这里可以从数据库或配置文件中读取系统配置
-        # 目前返回默认配置
+        from app.services.branding_service import get_branding
+
+        branding = get_branding()
         return {
             "maintenance_mode": False,
             "registration_enabled": True,
@@ -427,21 +428,25 @@ class SystemService:
             "auto_cleanup_days": 90,
             "email_notifications": True,
             "sms_notifications": False,
+            "brand_name": branding["brand_name"],
+            "brand_subtitle": branding["brand_subtitle"],
+            "org_name": branding["org_name"],
         }
 
     def update_system_config(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
-        """更新系统配置"""
-        # TODO: 实现系统配置的持久化存储
-        # 目前只是返回更新后的配置
-        updated_config = self.get_system_config()
-        updated_config.update(config_data)
+        """更新系统配置（管理门户：忽略品牌字段，品牌仅用户端可改）"""
+        branding_keys = ("brand_name", "brand_subtitle", "org_name")
+        filtered = {k: v for k, v in config_data.items() if k not in branding_keys}
 
-        # 记录配置更新日志
+        updated_config = self.get_system_config()
+        for key, value in filtered.items():
+            updated_config[key] = value
+
         self.create_system_log(
             log_level="info",
             log_type="system",
             message="系统配置已更新",
-            details=updated_config
+            details={k: updated_config.get(k) for k in list(filtered.keys())[:20]},
         )
 
         return updated_config
