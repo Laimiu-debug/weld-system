@@ -44,7 +44,6 @@ const TrainingRecordList: React.FC<TrainingRecordListProps> = ({ welderId }) => 
     if (welderId && currentWorkspace) {
       loadRecords();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [welderId]);
 
   // 删除记录

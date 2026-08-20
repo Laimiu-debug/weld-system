@@ -72,7 +72,6 @@ const CertificationList: React.FC<CertificationListProps> = ({ welderId, onChang
 
   useEffect(() => {
     loadCertifications()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [welderId])
 
   const notifyChanged = () => {

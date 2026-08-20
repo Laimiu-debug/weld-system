@@ -93,7 +93,6 @@ const WeldersDetail: React.FC = () => {
 
   useEffect(() => {
     fetchWelderDetail()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   useEffect(() => {
@@ -185,6 +184,7 @@ const WeldersDetail: React.FC = () => {
             {
               system: c.certification_system,
               project: c.project_name || c.certification_type,
+              project_code: undefined,
               number: c.certification_number,
               issue_date: c.issue_date,
               expiry_date: c.expiry_date,

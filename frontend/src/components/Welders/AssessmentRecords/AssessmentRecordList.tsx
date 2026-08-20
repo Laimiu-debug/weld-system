@@ -44,7 +44,6 @@ const AssessmentRecordList: React.FC<AssessmentRecordListProps> = ({ welderId })
     if (welderId && currentWorkspace) {
       loadRecords();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [welderId]);
 
   // 添加记录成功

@@ -7,9 +7,9 @@
 - [x] 完成项目结构、入口、配置、路由、依赖和部署文件的首轮检查。
 - [x] `python -m compileall -q app` 通过，未发现 Python 语法错误。
 - [x] `backend/tests` 下 `pytest` 现可收集并运行。根目录旧 `test_*.py` 仍未迁移，不在默认 `testpaths` 内。
-- [x] GitHub Actions 已加入 `backend-unit`（compileall + pytest）、`frontend-build` 与 `admin-build`（`npm ci` + `vite build`）。生产依赖 `npm audit` 为 informational、允许失败。本地 `tsc` 仍可能有历史类型错误，故 CI 不强制 `build:check`。
-- [x] 生产依赖审计已执行（npm 官方 registry）：用户端生产 high 剩余主要为 `react-router` v6 与 TipTap 传递依赖；Vite 5 已落地。
-- [ ] Docker 联调未执行：当前机器没有可用的 Docker 命令。
+- [x] GitHub Actions 已加入 `backend-unit`（compileall + pytest）、`frontend-build` 与 `admin-build`（`npm ci` + type-check + Vite build）。生产依赖 `npm audit` 是阻断式门禁。
+- [x] 生产依赖审计已使用 npm 官方 registry 执行：用户端与管理端均为 0 个已知漏洞；Vite 8 已落地。
+- [x] Docker Compose 配置、容器健康状态与本地 HTTP 冒烟已验证；完整业务流程联调仍待补充。
 
 ## P0：发布前必须处理
 
@@ -43,7 +43,7 @@
 
 - [x] 重建后端测试体系，使 `pytest` 可重复运行。
   - `[tool.pytest.ini_options]`、`testpaths = ["tests"]`、`norecursedirs` 已配置。
-  - 单元测试无需外部服务即可运行（64 passed）。根目录旧 `test_*.py` 尚未迁移，默认不收集。
+  - 单元测试无需外部服务即可运行（79 passed）。根目录旧 `test_*.py` 尚未迁移，默认不收集。
 
 - [x] 统一 Python 依赖来源并补齐运行依赖。
   - `pyproject.toml` 为依赖真源（含 pytz、psycopg2-binary、导出库）；`[project.optional-dependencies] dev` 放测试/格式化工具。
@@ -85,13 +85,14 @@
 
 - [x] 升级并修复前端依赖安全告警（基线）。
   - `axios` 已升到当前 1.x 修复线；用户端 `echarts` / `uuid` 同步升级。
-  - Vite 从 4.5.14 升到 5.4.19，并配置 vendor/antd/editor 分包；生产关闭 sourcemap。
-  - 生产 `npm audit --omit=dev` 剩余 high：`react-router` v6（升 v7 有破坏性，暂缓）以及 TipTap 传递的 `linkify-it`。
+  - Vite 已升级到 8.2.1，并配置 vendor/antd/editor 分包；生产关闭 sourcemap。
+  - 生产 `npm audit --omit=dev` 当前为 0 个已知漏洞（npm 官方 registry）。
 
 - [x] 建立 CI 质量门禁（后端单元测试 + 前端/管理端构建）。
   - `.github/workflows/ci.yml`：安装最小依赖、compileall、`pytest tests/unit`。
-  - `frontend-build` / `admin-build`：Node 20、`npm ci`、`vite build`；`npm audit` 仅作信息、不阻断。
-  - 前端 type-check/lint 全绿、Compose 冒烟仍属后续。
+  - `frontend-build` / `admin-build`：Node 20、`npm ci`、type-check、`vite build` 与阻断式 `npm audit`。
+  - 两端 type-check 与 Hooks 调用规则 lint 全绿；Compose 配置、容器健康状态与 HTTP 冒烟已验证。
+  - `react-hooks/exhaustive-deps` 历史警告仍需按页面审查，避免机械补依赖导致重复请求或渲染循环。
 
 - [x] 清理生产仓库中的一次性修复脚本、备份和调试资产（基线）。
   - 已删除未鉴权的 WPS 模板 `debug/test-create`、`debug/test` 与 WPS `debug/token`。
@@ -120,7 +121,7 @@
   - 管理端共享库已改走 `apiService.authGet/authPost`；登录页 `fetch` 保留。401 并发刷新与自动化测试未补齐。
 
 - [x] 优化前端包体和首屏加载（基线）。
-  - 路由级懒加载已有；Vite 5 构建按 react/antd/echarts/editor/vendor 分包，生产不输出 sourcemap。
+  - 路由级懒加载已有；Vite 8 构建按 react/antd/echarts/editor/vendor 分包，生产不输出 sourcemap。
   - 尚未引入 bundle analyzer 报告与体积预算；Ant Design / TipTap 仍为整包引入。
 
 - [x] 补齐可观测性（基线）。
@@ -149,4 +150,4 @@
 2. 修复干净构建和前端发布链路，确保每次发布的是确定产物。
 3. 修复 pytest/依赖/迁移，建立 CI 门禁，获得可靠回归基线。
 4. P1 占位功能、邮箱验证、同步端点与导出限流已落地。
-5. P2 基线已补：脚本清理、企业模块拆分、审批权限批量加载、管理端统一响应、Vite 5 分包。剩余：React Router v7、welder_service 拆分、API 响应全量迁移、Compose 冒烟。
+5. P2 基线已补：脚本清理、企业模块拆分、审批权限批量加载、管理端统一响应、Vite 8 分包。剩余：welder_service 拆分、API 响应全量迁移、完整业务流程联调。

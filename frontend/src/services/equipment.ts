@@ -305,6 +305,16 @@ class EquipmentService {
   }
 
   /**
+   * 将后端业务包装解开，同时保留前端统一 ApiResponse 元数据。
+   */
+  private normalizeResponse<T>(response: ApiResponse<unknown>): ApiResponse<T> {
+    return {
+      ...response,
+      data: this.unwrapPayload<T>(response),
+    }
+  }
+
+  /**
    * 获取设备列表
    */
   async getEquipmentList(params?: EquipmentListParams): Promise<PaginatedResponse<Equipment>> {
@@ -328,7 +338,34 @@ class EquipmentService {
       page: payload?.page ?? 1,
       page_size: payload?.page_size ?? params?.limit ?? 20,
       total_pages: payload?.total_pages ?? 0,
+      has_next: payload?.has_next ?? (payload?.page ?? 1) < (payload?.total_pages ?? 0),
+      has_prev: payload?.has_prev ?? (payload?.page ?? 1) > 1,
     }
+  }
+
+  /**
+   * 创建设备
+   */
+  async createEquipment(data: CreateEquipmentData): Promise<ApiResponse<Equipment>> {
+    const currentWorkspace = this.getCurrentWorkspace()
+    const workspaceType = currentWorkspace?.type === 'enterprise' ? 'company' : 'personal'
+    const response = await apiService.post<Equipment>(
+      `/equipment/?workspace_type=${workspaceType}`,
+      data
+    )
+    return this.normalizeResponse<Equipment>(response)
+  }
+
+  /**
+   * 获取设备详情
+   */
+  async getEquipmentDetail(equipmentId: string): Promise<ApiResponse<Equipment>> {
+    const currentWorkspace = this.getCurrentWorkspace()
+    const workspaceType = currentWorkspace?.type === 'enterprise' ? 'company' : 'personal'
+    const response = await apiService.get<Equipment>(
+      `/equipment/${equipmentId}?workspace_type=${workspaceType}`
+    )
+    return this.normalizeResponse<Equipment>(response)
   }
 
   /**
@@ -386,6 +423,7 @@ class EquipmentService {
     return {
       success: true,
       data: this.unwrapPayload<EquipmentStatistics>(response),
+      timestamp: response.timestamp,
     }
   }
 
@@ -401,6 +439,7 @@ class EquipmentService {
         items: Array.isArray(payload?.items) ? payload.items : [],
         total: payload?.total ?? 0,
       },
+      timestamp: response.timestamp,
     }
   }
 
@@ -425,6 +464,7 @@ class EquipmentService {
         items: Array.isArray(payload?.items) ? payload.items : [],
         total: payload?.total ?? 0,
       },
+      timestamp: response.timestamp,
     }
   }
 
@@ -461,6 +501,7 @@ class EquipmentService {
         items: Array.isArray(payload?.items) ? payload.items : [],
         total: payload?.total ?? 0,
       },
+      timestamp: response.timestamp,
     }
   }
 

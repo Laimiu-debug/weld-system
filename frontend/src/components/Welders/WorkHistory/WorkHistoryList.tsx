@@ -47,7 +47,6 @@ const WorkHistoryList: React.FC<WorkHistoryListProps> = ({ welderId }) => {
     if (welderId && currentWorkspace) {
       loadHistories();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [welderId]);
 
   const handleAddSuccess = () => {

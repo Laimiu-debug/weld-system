@@ -309,8 +309,8 @@ class ApiService {
     return this.api.get('/enterprises', { params });
   }
 
-  async getEnterpriseDetail(companyId: string) {
-    return this.api.get(`/enterprises/${companyId}`);
+  async getEnterpriseDetail<T = any>(companyId: string): Promise<T> {
+    return this.api.get(`/enterprises/${companyId}`) as unknown as Promise<T>;
   }
 
   async getSubscriptions(params: any) {

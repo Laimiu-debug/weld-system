@@ -96,7 +96,7 @@ const AppShellPreview: React.FC = () => (
         {SIDE_MENUS.map((item) => (
           <div
             key={item.label}
-            className={`welcome-shell__menu-item${item.active ? ' is-active' : ''}`}
+            className={`welcome-shell__menu-item${'active' in item && item.active ? ' is-active' : ''}`}
           >
             <span className="welcome-shell__menu-icon">{item.icon}</span>
             <span>{item.label}</span>

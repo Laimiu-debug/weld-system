@@ -64,9 +64,9 @@ const EnterpriseDetail: React.FC = () => {
 
     setLoading(true);
     try {
-      const enterprise = await apiService.getEnterpriseDetail(enterpriseId);
+      const enterprise = await apiService.getEnterpriseDetail<EnterpriseDetailData>(enterpriseId);
       if (enterprise) {
-        setEnterpriseData(enterprise as EnterpriseDetailData);
+        setEnterpriseData(enterprise);
       } else {
         message.error('未找到企业信息');
         navigate('/enterprises');
