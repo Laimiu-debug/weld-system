@@ -39,6 +39,9 @@ from app.models.approval import (
     DocumentType
 )
 from app.models.equipment import Equipment, EquipmentMaintenance, EquipmentUsage
+from app.models.production import ProductionTask, ProductionRecord, ProductionPlan
+from app.models.quality import QualityInspection, QualityStandard
+from app.models.business_extensions import EmployeePerformance, ReportTemplate
 
 __all__ = [
     "User",
@@ -82,4 +85,11 @@ __all__ = [
     "Equipment",
     "EquipmentMaintenance",
     "EquipmentUsage",
+    "ProductionTask",
+    "ProductionRecord",
+    "ProductionPlan",
+    "QualityInspection",
+    "QualityStandard",
+    "EmployeePerformance",
+    "ReportTemplate",
 ]

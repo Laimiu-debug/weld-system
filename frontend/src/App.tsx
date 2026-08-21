@@ -61,18 +61,22 @@ const ProductionList = React.lazy(() => import('@/pages/Production/ProductionLis
 const ProductionCreate = React.lazy(() => import('@/pages/Production/ProductionCreate'))
 const ProductionEdit = React.lazy(() => import('@/pages/Production/ProductionEdit'))
 const ProductionDetail = React.lazy(() => import('@/pages/Production/ProductionDetail'))
+const ProductionPlanManagement = React.lazy(() => import('@/pages/Production/ProductionPlanManagement'))
 
 const QualityList = React.lazy(() => import('@/pages/Quality/QualityList'))
 const QualityCreate = React.lazy(() => import('@/pages/Quality/QualityCreate'))
 const QualityEdit = React.lazy(() => import('@/pages/Quality/QualityEdit'))
 const QualityDetail = React.lazy(() => import('@/pages/Quality/QualityDetail'))
+const QualityStandardManagement = React.lazy(() => import('@/pages/Quality/QualityStandardManagement'))
 
 const ReportsDashboard = React.lazy(() => import('@/pages/Reports/ReportsDashboard'))
 const WPSReport = React.lazy(() => import('@/pages/Reports/WPSReport'))
 const PQRReport = React.lazy(() => import('@/pages/Reports/PQRReport'))
 const UsageReport = React.lazy(() => import('@/pages/Reports/UsageReport'))
+const CustomReportBuilder = React.lazy(() => import('@/pages/Reports/CustomReportBuilder'))
 
 const EmployeeManagement = React.lazy(() => import('@/pages/Employees/EmployeeManagement'))
+const PerformanceManagement = React.lazy(() => import('@/pages/Employees/PerformanceManagement'))
 
 // 企业管理页面
 const EnterpriseEmployees = React.lazy(() => import('@/pages/Enterprise/Employees'))
@@ -491,6 +495,14 @@ const App: React.FC = () => {
             }
           />
           <Route
+            path="production/plans"
+            element={
+              <ProtectedRoute requiredPermission="production.read">
+                <ProductionPlanManagement />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="production/create"
             element={
               <ProtectedRoute requiredPermission="production.create">
@@ -521,6 +533,14 @@ const App: React.FC = () => {
             element={
               <ProtectedRoute requiredPermission="quality.read">
                 <QualityList />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="quality/standards"
+            element={
+              <ProtectedRoute requiredPermission="quality.read">
+                <QualityStandardManagement />
               </ProtectedRoute>
             }
           />
@@ -582,6 +602,14 @@ const App: React.FC = () => {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="reports/custom"
+            element={
+              <ProtectedRoute requiredPermission="reports.read">
+                <CustomReportBuilder />
+              </ProtectedRoute>
+            }
+          />
 
           {/* 企业管理 */}
           <Route
@@ -639,6 +667,14 @@ const App: React.FC = () => {
             element={
               <ProtectedRoute requiredPermission="employees.read">
                 <EmployeeManagement />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="employees/performance"
+            element={
+              <ProtectedRoute requiredPermission="employees.read">
+                <PerformanceManagement />
               </ProtectedRoute>
             }
           />

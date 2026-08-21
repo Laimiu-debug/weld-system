@@ -39,6 +39,7 @@ from app.api.v1.endpoints import (
     payments,
     notifications,
     approvals,
+    business_mvp,
 )
 
 api_router = APIRouter()
@@ -137,6 +138,9 @@ api_router.include_router(workspace.router, prefix="/workspace", tags=["工作�
 
 # 审批管理路由
 api_router.include_router(approvals.router, prefix="/approvals", tags=["审批管理"])
+
+# 业务扩展 MVP
+api_router.include_router(business_mvp.router, tags=["业务扩展"])
 
 # 系统管理路由
 api_router.include_router(system.router, prefix="/system", tags=["系统管理"])

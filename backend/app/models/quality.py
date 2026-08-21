@@ -421,3 +421,37 @@ class QualityMetric(Base):
 
     def __repr__(self):
         return f"<QualityMetric(id={self.id}, name={self.metric_name})>"
+
+class QualityStandard(Base):
+    """质量标准主数据"""
+
+    __tablename__ = "quality_standards"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    workspace_type = Column(String(20), nullable=False, default="personal", index=True)
+    company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=True, index=True)
+    factory_id = Column(Integer, ForeignKey("factories.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    standard_code = Column(String(100), nullable=False, index=True, comment="标准编号")
+    standard_name = Column(String(255), nullable=False, comment="标准名称")
+    category = Column(String(100), comment="类别")
+    version = Column(String(50), comment="版本")
+    level = Column(String(50), comment="等级/级别")
+    status = Column(String(50), default="active", comment="状态")
+    description = Column(Text, comment="描述")
+    effective_date = Column(Date, comment="生效日期")
+    expiry_date = Column(Date, comment="失效日期")
+    test_methods = Column(Text, comment="检验方法JSON")
+    acceptance_criteria = Column(Text, comment="验收准则JSON")
+    is_active = Column(Boolean, default=True)
+
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    updated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f"<QualityStandard(id={self.id}, code={self.standard_code})>"
+

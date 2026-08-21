@@ -256,9 +256,10 @@ class ProductionPlan(Base):
     factory_id = Column(Integer, ForeignKey("factories.id", ondelete="SET NULL"), nullable=True, index=True, comment="工厂ID")
     
     # ==================== 计划信息 ====================
-    plan_number = Column(String(100), nullable=False, unique=True, index=True, comment="计划编号")
+    plan_number = Column(String(100), nullable=False, index=True, comment="计划编号")
     plan_name = Column(String(255), nullable=False, comment="计划名称")
     plan_type = Column(String(100), comment="计划类型")
+    priority = Column(String(50), default="normal", comment="优先级")
     
     # ==================== 时间信息 ====================
     plan_start_date = Column(Date, nullable=False, comment="计划开始日期")
@@ -266,7 +267,14 @@ class ProductionPlan(Base):
     
     # ==================== 状态信息 ====================
     status = Column(String(50), default="draft", comment="状态")
+    progress_percentage = Column(Float, default=0, comment="进度百分比")
     is_active = Column(Boolean, default=True, comment="是否启用")
+    
+    # ==================== 数量与团队 ====================
+    planned_quantity = Column(Float, comment="计划数量")
+    unit = Column(String(50), comment="单位")
+    assigned_team = Column(String(255), comment="负责团队")
+    quality_standards = Column(Text, comment="关联质量标准")
     
     # ==================== 内容信息 ====================
     description = Column(Text, comment="描述")

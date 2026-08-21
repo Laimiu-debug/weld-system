@@ -332,16 +332,24 @@ const Layout: React.FC<LayoutProps> = () => {
       hidden: isGuestMode ? true : !checkPermission('equipment.read'),
     },
     {
-      key: '/production',
+      key: 'production-group',
       icon: <SafetyCertificateOutlined />,
       label: '生产管理',
       hidden: isGuestMode ? true : !checkPermission('production.read'),
+      children: [
+        { key: '/production', label: '生产任务' },
+        { key: '/production/plans', label: '生产计划' },
+      ],
     },
     {
-      key: '/quality',
+      key: 'quality-group',
       icon: <PartitionOutlined />,
       label: '质量管理',
       hidden: isGuestMode ? true : !checkPermission('quality.read'),
+      children: [
+        { key: '/quality', label: '质量检验' },
+        { key: '/quality/standards', label: '质量标准' },
+      ],
     },
     {
       key: 'reports-group',
@@ -364,6 +372,10 @@ const Layout: React.FC<LayoutProps> = () => {
           key: '/reports/usage',
           label: '使用统计',
         },
+        {
+          key: '/reports/custom',
+          label: '自定义报表',
+        },
       ],
       hidden: isGuestMode ? true : !checkPermission('reports.read'),
     },
@@ -376,6 +388,11 @@ const Layout: React.FC<LayoutProps> = () => {
           key: '/enterprise/employees',
           label: '员工管理',
           hidden: !checkPermission('enterprise.employees'),
+        },
+        {
+          key: '/employees/performance',
+          label: '员工绩效',
+          hidden: !(checkPermission('employees.read') || checkPermission('enterprise.employees')),
         },
         {
           key: '/enterprise/factories',
@@ -413,10 +430,14 @@ const Layout: React.FC<LayoutProps> = () => {
     },
 
     {
-      key: '/employees',
+      key: 'employees-group',
       icon: <TeamOutlined />,
-      label: '员工管理',
+      label: '员工中心',
       hidden: isGuestMode ? true : (!checkPermission('employees.read') || isEnterpriseUser()),
+      children: [
+        { key: '/employees', label: '员工管理' },
+        { key: '/employees/performance', label: '员工绩效' },
+      ],
     },
     {
       key: 'membership-group',
@@ -504,8 +525,14 @@ const Layout: React.FC<LayoutProps> = () => {
     ]
     for (const base of candidates) {
       if (pathname === base || pathname.startsWith(`${base}/`)) {
-        // 报表子路由保留精确选中
-        if (base === '/reports' && pathname !== '/reports') {
+        // 报表 / 计划 / 标准 / 绩效子路由保留精确选中
+        if (
+          (base === '/reports' ||
+            base === '/production' ||
+            base === '/quality' ||
+            base === '/employees') &&
+          pathname !== base
+        ) {
           return [pathname]
         }
         // 创建页保留精确选中
