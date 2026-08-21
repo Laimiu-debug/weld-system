@@ -112,42 +112,58 @@ class AuthService {
   // 验证码登录
   async loginWithVerificationCode(loginData: VerificationCodeLoginRequest): Promise<boolean> {
     try {
-      console.log('🔐 开始验证码登录流程，账号:', loginData.account)
-
-      // 调用验证码登录API
       const response = await apiService.post<AuthResponse>('/auth/login-with-verification-code', loginData)
 
-      console.log('📦 验证码登录API响应:', response)
-
-      // 提取认证数据
       let authData: AuthResponse | null = null
-
-      if (response.success && response.data) {
-        if ((response.data as any).access_token) {
-          authData = response.data as AuthResponse
-        }
+      if (response.success && response.data && (response.data as any).access_token) {
+        authData = response.data as AuthResponse
       } else if ((response as any).access_token) {
         authData = response as any as AuthResponse
       }
 
-      if (authData && authData.access_token) {
-        console.log('✅ 验证码登录成功，保存认证信息')
-        const { access_token, refresh_token, user } = authData
-
-        // 存储token和用户信息
-        localStorage.setItem(this.TOKEN_KEY, access_token)
-        localStorage.setItem(this.REFRESH_TOKEN_KEY, refresh_token)
-        localStorage.setItem(this.USER_KEY, JSON.stringify(user))
-
-        console.log('✅ 认证信息已保存到localStorage')
+      if (authData?.access_token) {
+        localStorage.setItem(this.TOKEN_KEY, authData.access_token)
+        localStorage.setItem(this.REFRESH_TOKEN_KEY, authData.refresh_token)
+        if (authData.user) {
+          localStorage.setItem(this.USER_KEY, JSON.stringify(authData.user))
+        } else {
+          await this.getCurrentUser()
+        }
         return true
       }
-
-      console.error('❌ 验证码登录失败：响应数据格式不正确', response)
       return false
     } catch (error) {
-      console.error('❌ 验证码登录异常:', error)
+      console.error('验证码登录异常:', error)
       return false
+    }
+  }
+
+  async sendVerificationCode(data: {
+    account: string
+    account_type: 'email' | 'phone'
+    purpose: 'login' | 'register' | 'reset_password' | 'bind_phone'
+  }): Promise<boolean> {
+    try {
+      const response = await apiService.post('/auth/send-verification-code', data)
+      return !!response.success || !!response.data
+    } catch (error) {
+      console.error('发送验证码失败:', error)
+      throw error
+    }
+  }
+
+  async resetPasswordWithCode(data: {
+    email: string
+    verification_code: string
+    new_password: string
+    confirm_password: string
+  }): Promise<boolean> {
+    try {
+      const response = await apiService.post('/auth/reset-password-with-code', data)
+      return !!response.success || String(response.data?.message || '').includes('成功')
+    } catch (error) {
+      console.error('验证码重置密码失败:', error)
+      throw error
     }
   }
 

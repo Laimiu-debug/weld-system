@@ -52,7 +52,7 @@ const Login: React.FC = () => {
   const [resendOpen, setResendOpen] = useState(false)
   const [resendLoading, setResendLoading] = useState(false)
   const navigate = useNavigate()
-  const { login } = useAuthStore()
+  const { login, loginWithCode } = useAuthStore()
 
   // 判断输入的是邮箱还是手机号
   const detectAccountType = (account: string) => {
@@ -105,54 +105,45 @@ const Login: React.FC = () => {
     }
   }
 
-  // 发送验证码
+  // 发送验证码（登录用，优先邮箱）
   const sendVerificationCode = async (account: string) => {
     if (!account) {
-      message.error('请输入邮箱或手机号')
+      message.error('请输入邮箱')
       return
     }
 
     const { isEmail, isPhone } = detectAccountType(account)
 
     if (!isEmail && !isPhone) {
-      message.error('请输入有效的邮箱地址或手机号')
+      message.error('请输入有效的邮箱地址')
+      return
+    }
+    if (!isEmail) {
+      message.error('当前登录验证码仅支持邮箱，请使用注册邮箱')
       return
     }
 
     setSendingCode(true)
     try {
-      // 这里需要调用发送验证码的API
-      const response = await fetch('/api/v1/auth/send-verification-code', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          account: account,
-          account_type: isEmail ? 'email' : 'phone'
-        })
+      await authService.sendVerificationCode({
+        account,
+        account_type: 'email',
+        purpose: 'login',
       })
-
-      if (response.ok) {
-        message.success(isEmail ? '验证码已发送到邮箱' : '验证码已发送到手机')
-
-        // 开始倒计时
-        setCountdown(60)
-        const timer = setInterval(() => {
-          setCountdown((prev) => {
-            if (prev <= 1) {
-              clearInterval(timer)
-              return 0
-            }
-            return prev - 1
-          })
-        }, 1000)
-      } else {
-        const errorData = await response.json()
-        message.error(errorData.detail || '发送验证码失败')
-      }
-    } catch (error) {
-      message.error('网络错误，请稍后重试')
+      message.success('验证码已发送到邮箱')
+      setCountdown(60)
+      const timer = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer)
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail
+      message.error(typeof detail === 'string' ? detail : detail?.message || '发送验证码失败')
     } finally {
       setSendingCode(false)
     }
@@ -160,45 +151,28 @@ const Login: React.FC = () => {
 
   // 验证码登录
   const handleVerificationLogin = async (values: VerificationForm) => {
-    console.log('🚀 开始处理验证码登录请求')
     setLoading(true)
     setError('')
 
     try {
-      const { isEmail, isPhone } = detectAccountType(values.account)
-
-      if (!isEmail && !isPhone) {
-        setError('请输入有效的邮箱地址或手机号')
+      const { isEmail } = detectAccountType(values.account)
+      if (!isEmail) {
+        setError('请输入有效的邮箱地址')
         setLoading(false)
         return
       }
 
-      // 使用 authService 的验证码登录方法
-      console.log('📞 调用 authService.loginWithVerificationCode')
-      const success = await authService.loginWithVerificationCode({
-        account: values.account,
-        verification_code: values.verificationCode,
-        account_type: isEmail ? 'email' : 'phone'
-      })
-
-      console.log('📊 验证码登录结果:', success)
+      const success = await loginWithCode(values.account, values.verificationCode, 'email')
 
       if (success) {
-        console.log('✅ 验证码登录成功，准备跳转到 /dashboard')
         message.success('登录成功！')
-
-        // 使用 setTimeout 确保状态更新完成后再跳转
         setTimeout(() => {
-          console.log('🔄 执行页面跳转')
           navigate('/dashboard', { replace: true })
         }, 100)
       } else {
-        console.error('❌ 验证码登录失败')
-        // toast 由 api 拦截器展示；此处只保留页面内 Alert
         setError('验证码错误或已过期，请重新获取')
       }
     } catch (error: any) {
-      console.error('❌ 验证码登录异常:', error)
       const detail = error?.response?.data?.detail
       const tip =
         typeof detail === 'string'
@@ -207,9 +181,6 @@ const Login: React.FC = () => {
             ? detail.message
             : '登录失败，请稍后重试'
       setError(tip)
-      if (!error?.response) {
-        message.error(tip)
-      }
     } finally {
       setLoading(false)
     }
@@ -332,8 +303,8 @@ const Login: React.FC = () => {
                 key: 'verification',
                 label: (
                   <span>
-                    <SafetyOutlined />
-                    验证码登录
+                    <MailOutlined />
+                    邮箱验证码登录
                   </span>
                 ),
                 children: (
@@ -347,31 +318,22 @@ const Login: React.FC = () => {
                   >
                     <Form.Item
                       name="account"
-                      label="账号"
+                      label="邮箱"
                       rules={[
-                        { required: true, message: '请输入邮箱或手机号' },
-                        {
-                          validator: (_, value) => {
-                            if (!value) return Promise.resolve()
-                            const { isEmail, isPhone } = detectAccountType(value)
-                            if (!isEmail && !isPhone) {
-                              return Promise.reject(new Error('请输入有效的邮箱地址或手机号'))
-                            }
-                            return Promise.resolve()
-                          }
-                        }
+                        { required: true, message: '请输入邮箱' },
+                        { type: 'email', message: '请输入有效邮箱' },
                       ]}
                     >
                       <Input
-                        prefix={<UserOutlined />}
-                        placeholder="请输入邮箱地址或手机号码"
+                        prefix={<MailOutlined />}
+                        placeholder="请输入注册邮箱"
                         autoComplete="username"
                       />
                     </Form.Item>
 
                     <Form.Item
                       name="verificationCode"
-                      label="验证码"
+                      label="邮箱验证码"
                       rules={[
                         { required: true, message: '请输入验证码' },
                         { len: 6, message: '验证码为6位数字' },

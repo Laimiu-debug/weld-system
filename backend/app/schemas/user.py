@@ -88,6 +88,14 @@ class ResetPasswordRequest(BaseModel):
     confirm_password: Optional[str] = None
 
 
+class ResetPasswordWithCodeRequest(BaseModel):
+    """用邮箱 6 位验证码重置密码."""
+    email: EmailStr
+    verification_code: str
+    new_password: str
+    confirm_password: Optional[str] = None
+
+
 class EmailTokenRequest(BaseModel):
     token: str
 

@@ -3,6 +3,7 @@ Authentication endpoints for the welding system backend.
 """
 from datetime import datetime, timedelta
 from typing import Any, Optional, Dict
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
@@ -33,6 +34,7 @@ from app.schemas.user import (
     ChangePasswordRequest,
     ForgotPasswordRequest,
     ResetPasswordRequest,
+    ResetPasswordWithCodeRequest,
     EmailTokenRequest,
     ResendVerificationRequest,
 )
@@ -46,6 +48,8 @@ from app.services.verification_service import verification_service
 from app.services.email_service import email_service
 from app.services.sms_service import sms_service
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 class RegisterResponse(BaseModel):
     """Register response model."""
@@ -169,6 +173,7 @@ def login_for_access_token(
         "refresh_token": refresh_token,
         "token_type": "bearer",
         "expires_in": _access_token_ttl_minutes() * 60,
+        "user": UserResponse.model_validate(user).model_dump(),
     }
 
 
@@ -456,7 +461,7 @@ def forgot_password(
     request: Request,
     db: Session = Depends(deps.get_db)
 ) -> Any:
-    """忘记密码. 无论邮箱是否存在都返回同一消息，避免账号枚举."""
+    """忘记密码（兼容旧链接流程）。正式推荐使用邮箱验证码重置。"""
     enforce_rate_limit(f"forgot:{client_ip(request)}", limit=5, window_seconds=60)
     user = user_service.get_by_email(db, email=payload.email)
     if user:
@@ -470,12 +475,58 @@ def forgot_password(
                 html_content=(
                     f"<p>请点击以下链接重置密码：</p>"
                     f"<p><a href=\"{reset_url}\">{reset_url}</a></p>"
+                    "<p>也可在网站「忘记密码」页使用邮箱验证码重置。</p>"
                 ),
                 text_content=f"请打开以下链接重置密码：{reset_url}",
             )
         except Exception:
-            pass
+            logger.exception("forgot-password email failed for %s", payload.email)
     return {"message": "如果该邮箱已注册，将收到密码重置邮件"}
+
+
+@router.post("/reset-password-with-code")
+def reset_password_with_code(
+    payload: ResetPasswordWithCodeRequest,
+    request: Request,
+    db: Session = Depends(deps.get_db),
+) -> Any:
+    """使用邮箱 6 位验证码重置密码."""
+    enforce_rate_limit(f"reset-code:{client_ip(request)}", limit=10, window_seconds=60)
+    if payload.confirm_password and payload.confirm_password != payload.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "PASSWORD_MISMATCH", "message": "两次输入的新密码不一致"},
+        )
+    if len(payload.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "WEAK_PASSWORD", "message": "密码至少 8 位"},
+        )
+
+    email = str(payload.email).strip().lower()
+    verified = verification_service.verify_code(
+        db=db,
+        account=email,
+        code=payload.verification_code,
+        account_type="email",
+        purpose="reset_password",
+    )
+    if not verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "INVALID_CODE", "message": "验证码错误或已过期"},
+        )
+
+    user = user_service.get_by_email(db, email=email)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "USER_NOT_FOUND", "message": "用户不存在"},
+        )
+
+    user.hashed_password = get_password_hash(payload.new_password)
+    db.commit()
+    return {"message": "密码重置成功"}
 
 
 @router.post("/reset-password")
@@ -553,17 +604,24 @@ def _send_verification_email(email: str) -> None:
     frontend = getattr(settings, "FRONTEND_URL", "http://localhost:3000").rstrip("/")
     verify_url = f"{frontend}/verify-email?token={token}"
     try:
-        email_service.send_email(
+        ok = email_service.send_email(
             to_email=email,
             subject="【焊序】请验证您的邮箱",
             html_content=(
-                f"<p>请点击以下链接完成邮箱验证（48小时内有效）：</p>"
-                f"<p><a href=\"{verify_url}\">{verify_url}</a></p>"
+                "<div style='font-family:sans-serif;line-height:1.6'>"
+                "<h2>欢迎注册焊序</h2>"
+                "<p>请点击下方按钮完成邮箱验证（48小时内有效）：</p>"
+                f"<p><a href=\"{verify_url}\" style=\"display:inline-block;padding:10px 18px;"
+                "background:#1f5eff;color:#fff;text-decoration:none;border-radius:6px\">验证邮箱</a></p>"
+                f"<p style='color:#666;font-size:13px'>若按钮无法点击，请复制链接到浏览器打开：<br/>{verify_url}</p>"
+                "</div>"
             ),
             text_content=f"请打开以下链接完成邮箱验证：{verify_url}",
         )
+        if not ok:
+            logger.error("verification email send returned false for %s", email)
     except Exception:
-        pass
+        logger.exception("verification email send failed for %s", email)
 
 
 @router.post("/send-verification-code", response_model=VerificationCodeResponse)
@@ -583,7 +641,7 @@ def send_verification_code(
             detail="账号格式与类型不匹配"
         )
 
-    # 检查用户是否存在（对于登录）
+    # 检查用户是否存在（登录必须已注册；重置密码不暴露是否存在）
     if payload.purpose == "login":
         user = user_service.get_by_contact(db, contact=payload.account)
         if not user:
@@ -591,6 +649,19 @@ def send_verification_code(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="该账号未注册"
             )
+    elif payload.purpose == "reset_password":
+        # 仅邮箱重置：账号不存在时仍返回成功文案，避免枚举
+        if payload.account_type != "email":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="密码重置目前仅支持邮箱验证码",
+            )
+        user = user_service.get_by_email(db, email=payload.account)
+        if not user:
+            return {
+                "message": "如果该邮箱已注册，将收到验证码",
+                "expires_in": 600,
+            }
 
     # 检查发送频率限制
     if not verification_service.can_send_code(
@@ -651,7 +722,7 @@ def send_verification_code(
         )
 
 
-@router.post("/login-with-verification-code", response_model=Token)
+@router.post("/login-with-verification-code", response_model=TokenWithUser)
 def login_with_verification_code(
     request: Request,
     login_data: LoginWithVerificationCode,
@@ -743,9 +814,15 @@ def login_with_verification_code(
         expires_delta=refresh_token_expires
     )
 
+    from app.core.module_permissions import serialize_permissions_for_user
+
+    user_payload = UserResponse.model_validate(user).model_dump()
+    user_payload["permissions"] = serialize_permissions_for_user(db, user)
+
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
         "expires_in": _access_token_ttl_minutes() * 60,
+        "user": user_payload,
     }

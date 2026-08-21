@@ -163,13 +163,17 @@ class EmailService:
     ) -> bool:
         """Send email via SMTP."""
         try:
+            from email.header import Header
+            from email.utils import formataddr
+
             from_email = from_email or settings.EMAILS_FROM_EMAIL
             from_name = from_name or settings.EMAILS_FROM_NAME
             
             # Create message
             msg = MIMEMultipart('alternative')
-            msg['Subject'] = subject
-            msg['From'] = f"{from_name} <{from_email}>"
+            msg['Subject'] = str(Header(subject, 'utf-8'))
+            # QQ SMTP requires a standards-compliant From header
+            msg['From'] = formataddr((str(Header(from_name or '焊序', 'utf-8')), from_email))
             msg['To'] = to_email
             
             # Add text and HTML parts
@@ -182,9 +186,12 @@ class EmailService:
             
             # Send email
             with smtplib.SMTP(settings.SMTP_SERVER, settings.SMTP_PORT) as server:
-                server.starttls()
-                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-                server.send_message(msg)
+                # Mailpit / local relays often have no TLS or auth
+                use_auth = bool(settings.SMTP_USER and settings.SMTP_PASSWORD)
+                if use_auth:
+                    server.starttls()
+                    server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                server.send_message(msg, from_addr=from_email, to_addrs=[to_email])
             
             logger.info(f"Email sent successfully to {to_email} via SMTP")
             return True

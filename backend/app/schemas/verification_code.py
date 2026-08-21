@@ -47,6 +47,13 @@ class VerificationCodeRequest(BaseModel):
             raise ValueError('account_type 必须是 email 或 phone')
         return v
 
+    @field_validator('purpose')
+    @classmethod
+    def validate_purpose(cls, v):
+        if v not in ['login', 'register', 'reset_password', 'bind_phone']:
+            raise ValueError('purpose 必须是 login, register, reset_password 或 bind_phone')
+        return v
+
 
 class VerificationCodeVerify(BaseModel):
     """Schema for verifying verification code."""

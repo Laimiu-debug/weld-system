@@ -8,6 +8,7 @@ interface AuthState {
   isAuthenticated: boolean
   loading: boolean
   login: (email: string, password: string) => Promise<boolean>
+  loginWithCode: (account: string, code: string, accountType: 'email' | 'phone') => Promise<boolean>
   register: (data: {
     email: string
     username: string
@@ -78,6 +79,39 @@ export const useAuthStore = create<AuthState>()(
           return false
         } catch (error) {
           console.error('❌ Login error:', error)
+          set({ loading: false })
+          return false
+        }
+      },
+
+      loginWithCode: async (account: string, code: string, accountType: 'email' | 'phone') => {
+        set({ loading: true })
+        try {
+          const success = await authService.loginWithVerificationCode({
+            account,
+            verification_code: code,
+            account_type: accountType,
+          })
+          if (!success) {
+            set({ loading: false })
+            return false
+          }
+          let user = authService.getCurrentUserFromStorage()
+          if (!user) {
+            user = await authService.getCurrentUser()
+          }
+          set({ user, isAuthenticated: true, loading: false })
+          try {
+            const { workspaceService } = await import('@/services/workspace')
+            const workspaceResponse = await workspaceService.getDefaultWorkspace()
+            if (workspaceResponse?.data) {
+              workspaceService.saveCurrentWorkspaceToStorage(workspaceResponse.data)
+            }
+          } catch {
+            // ignore
+          }
+          return true
+        } catch {
           set({ loading: false })
           return false
         }
