@@ -34,10 +34,10 @@ const WorkspaceSwitcher: React.FC<WorkspaceSwitcherProps> = ({
 
   // 加载工作区数据
   useEffect(() => {
-    if (user) {
+    if (user?.id) {
       loadWorkspaces()
     }
-  }, [user])
+  }, [user?.id])
 
   const loadWorkspaces = async () => {
     setLoading(true)

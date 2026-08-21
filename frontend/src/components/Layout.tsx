@@ -61,6 +61,15 @@ import GlobalSearch from '@/components/GlobalSearch'
 const { Header, Sider, Content } = AntLayout
 const { Text } = Typography
 
+/** 统一会员等级别名，避免 free/personal_free 被当成等级变更。 */
+function normalizeMembershipTier(tier?: string | null): string {
+  const value = (tier || 'personal_free').trim().toLowerCase()
+  if (value === 'free' || value === 'personal' || value === 'basic') {
+    return 'personal_free'
+  }
+  return value
+}
+
 interface LayoutProps {
   children?: React.ReactNode
 }
@@ -90,40 +99,35 @@ const Layout: React.FC<LayoutProps> = () => {
 
   // 判断是否为企业用户
   const isEnterpriseUser = () => {
-    const userTier = user?.membership_tier || user?.member_tier || 'free'
+    const userTier = normalizeMembershipTier(user?.membership_tier || user?.member_tier)
     return ['enterprise', 'enterprise_pro', 'enterprise_pro_max'].includes(userTier)
   }
 
-  // 刷新用户信息和会员信息
+  // 刷新用户信息和会员信息（不整页 reload，避免 free/personal_free 别名误触发循环刷新）
   useEffect(() => {
+    if (isGuestMode) return
+
     const refreshData = async () => {
-      if (!user || isGuestMode) return
+      const { user: latestUser } = useAuthStore.getState()
+      if (!latestUser) return
 
       try {
-        // 保存当前的会员等级
-        const oldTier = user?.member_tier || user?.membership_tier || 'free'
+        const oldTier = normalizeMembershipTier(
+          latestUser.member_tier || latestUser.membership_tier
+        )
 
-        // 刷新用户信息以获取最新的会员等级
-        // 这样可以确保在支付升级后,前端能获取到最新的会员信息
         const refreshed = await refreshUserInfo()
-
         if (refreshed) {
-          // 获取刷新后的用户信息
           const { user: newUser } = useAuthStore.getState()
-          const newTier = newUser?.member_tier || newUser?.membership_tier || 'free'
-
-          // 如果会员等级发生变化,刷新页面以更新菜单
+          const newTier = normalizeMembershipTier(
+            newUser?.member_tier || newUser?.membership_tier
+          )
           if (oldTier !== newTier) {
-            console.log(`[Layout] 检测到会员等级变化: ${oldTier} -> ${newTier}, 刷新页面...`)
-            message.success(`会员等级已更新, 页面即将刷新...`)
-            setTimeout(() => {
-              window.location.reload()
-            }, 1500)
-            return
+            console.log(`[Layout] 会员等级变化: ${oldTier} -> ${newTier}`)
+            message.success('会员等级已更新')
           }
         }
 
-        // 获取会员信息
         const { membershipService } = await import('@/services/membership')
         const info = await membershipService.getUserMembershipInfo()
         setMembershipInfo(info)
@@ -133,12 +137,9 @@ const Layout: React.FC<LayoutProps> = () => {
     }
 
     refreshData()
-
-    // 每30秒检查一次会员等级是否变化
     const interval = setInterval(refreshData, 30000)
-
     return () => clearInterval(interval)
-  }, [isGuestMode]) // 只在组件挂载时执行一次
+  }, [isGuestMode, refreshUserInfo])
 
   useEffect(() => {
     const handleResize = () => {
@@ -156,7 +157,7 @@ const Layout: React.FC<LayoutProps> = () => {
 
   // 加载当前工作区信息
   useEffect(() => {
-    if (user && !isGuestMode) {
+    if (user?.id && !isGuestMode) {
       const loadCurrentWorkspace = async () => {
         try {
           // 优先使用本地存储，避免覆盖用户手动切换的工作区
@@ -191,11 +192,11 @@ const Layout: React.FC<LayoutProps> = () => {
 
       loadCurrentWorkspace()
     }
-  }, [user, isGuestMode])
+  }, [user?.id, isGuestMode])
 
   // 在用户登录后，定期刷新用户信息以更新权限
   useEffect(() => {
-    if (user && !isGuestMode) {
+    if (user?.id && !isGuestMode) {
       // 页面获得焦点时刷新用户信息
       const handleVisibilityChange = () => {
         if (!document.hidden) {
@@ -222,7 +223,7 @@ const Layout: React.FC<LayoutProps> = () => {
         clearInterval(intervalId)
       }
     }
-  }, [user, isGuestMode, refreshUserInfo])
+  }, [user?.id, isGuestMode, refreshUserInfo])
 
   // 菜单项配置
   const menuItems = [

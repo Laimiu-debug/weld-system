@@ -98,9 +98,9 @@ export const MembershipProvider: React.FC<{ children: ReactNode }> = ({ children
     }
   }
 
-  // 监听用户变化
+  // 监听用户变化（仅用户 id，避免 refreshUserInfo 更新对象引用后反复拉取）
   useEffect(() => {
-    if (user) {
+    if (user?.id) {
       // 从本地存储恢复会员信息
       const storedMembership = localStorage.getItem('current_membership')
       if (storedMembership) {
@@ -122,7 +122,7 @@ export const MembershipProvider: React.FC<{ children: ReactNode }> = ({ children
       setMembershipInfo(null)
       localStorage.removeItem('current_membership')
     }
-  }, [user])
+  }, [user?.id])
 
   // 监听工作区切换事件
   useEffect(() => {
