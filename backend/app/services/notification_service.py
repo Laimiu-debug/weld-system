@@ -351,12 +351,13 @@ class NotificationService:
 
         audience_conditions = [
             SystemAnnouncement.target_audience == "all",
-            SystemAnnouncement.created_by == user_id,
+            and_(
+                SystemAnnouncement.target_audience == "user",
+                SystemAnnouncement.created_by == user_id,
+            ),
         ]
         if getattr(user, "membership_type", None) == "enterprise":
             audience_conditions.append(SystemAnnouncement.target_audience == "enterprise")
-        else:
-            audience_conditions.append(SystemAnnouncement.target_audience == "user")
 
         query = self.db.query(SystemAnnouncement).filter(
             or_(*audience_conditions),

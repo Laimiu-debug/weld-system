@@ -22,15 +22,22 @@ router = APIRouter()
 
 
 def _audience_filter(user):
-    """按目标受众过滤：all / user(个人) / enterprise(企业会员)。"""
+    """按目标受众过滤。
+
+    - all: 全员广播
+    - enterprise: 仅企业会员
+    - user: 个人专属通知，必须 created_by == 当前用户
+      （deliver_user_notification 用 created_by 存目标用户 id）
+    """
     conditions = [
         SystemAnnouncement.target_audience == "all",
-        SystemAnnouncement.created_by == user.id,
+        and_(
+            SystemAnnouncement.target_audience == "user",
+            SystemAnnouncement.created_by == user.id,
+        ),
     ]
     if getattr(user, "membership_type", None) == "enterprise":
         conditions.append(SystemAnnouncement.target_audience == "enterprise")
-    else:
-        conditions.append(SystemAnnouncement.target_audience == "user")
     return or_(*conditions)
 
 
