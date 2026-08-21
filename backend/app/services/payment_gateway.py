@@ -273,6 +273,39 @@ class MockPaymentGateway(PaymentGatewayInterface):
             self.payments[charge_id]['paid_at'] = datetime.utcnow().isoformat()
 
 
+class ManualPaymentGateway(PaymentGatewayInterface):
+    """手动收款码网关：前端展示站内收款码，用户提交凭证后由管理员确认。"""
+
+    def create_payment(self, order_data: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "success": True,
+            "charge_id": f"manual_{uuid.uuid4().hex[:16]}",
+            "order_id": order_data["order_id"],
+            "amount": order_data["amount"],
+            "use_manual_qr": True,
+            "credential": {},
+            "created_at": datetime.utcnow().isoformat(),
+        }
+
+    def query_payment(self, charge_id: str) -> Dict[str, Any]:
+        return {
+            "success": True,
+            "charge_id": charge_id,
+            "status": "pending",
+            "paid": False,
+        }
+
+    def verify_callback(self, data: Dict[str, Any], signature: str) -> bool:
+        return False
+
+    def create_refund(self, transaction_id: str, amount: float, reason: str) -> Dict[str, Any]:
+        return {
+            "success": False,
+            "error": "MANUAL_REFUND_REQUIRED",
+            "message": "手动收款请线下退款",
+        }
+
+
 class PaymentGatewayFactory:
     """支付网关工厂"""
 
@@ -282,7 +315,7 @@ class PaymentGatewayFactory:
         创建支付网关实例
 
         Args:
-            provider: 支付服务商 (pingpp, xunhu, mock)
+            provider: 支付服务商 (pingpp, xunhu, manual, mock)
         """
         if provider is None:
             provider = getattr(settings, 'PAYMENT_PROVIDER', 'mock')
@@ -293,6 +326,8 @@ class PaymentGatewayFactory:
             # 延迟导入避免循环依赖
             from app.services.payment_gateway_xunhu import XunhuPaymentGateway
             return XunhuPaymentGateway()
+        elif provider == 'manual':
+            return ManualPaymentGateway()
         elif provider == 'mock':
             return MockPaymentGateway()
         else:

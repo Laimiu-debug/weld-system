@@ -160,7 +160,7 @@ class Settings(BaseSettings):
     LOCALE: str = "zh_CN"
 
     # 支付配置
-    PAYMENT_PROVIDER: str = "mock"  # mock, xunhu, pingpp
+    PAYMENT_PROVIDER: str = "mock"  # mock, manual, xunhu, pingpp
 
     # 虎皮椒支付配置（个人开发者推荐）
     XUNHU_APPID: Optional[str] = None
@@ -313,19 +313,21 @@ class Settings(BaseSettings):
         provider = self.PAYMENT_PROVIDER.strip().lower()
         if provider == "mock":
             raise ValueError("Production PAYMENT_PROVIDER must not be mock")
-        if provider not in {"xunhu", "pingpp"}:
+        if provider not in {"xunhu", "pingpp", "manual"}:
             raise ValueError("Production PAYMENT_PROVIDER is unsupported")
         if provider == "xunhu" and (not self.XUNHU_APPID or not self.XUNHU_APPSECRET):
             raise ValueError("Production Xunhu payment credentials must be configured")
         if provider == "pingpp" and (not self.PAYMENT_APP_ID or not self.PAYMENT_API_KEY):
             raise ValueError("Production Ping++ payment credentials must be configured")
 
-        for name, url in (
-            ("PAYMENT_NOTIFY_URL", self.PAYMENT_NOTIFY_URL),
-            ("PAYMENT_RETURN_URL", self.PAYMENT_RETURN_URL),
-        ):
-            if not url or not url.lower().startswith("https://"):
-                raise ValueError(f"Production {name} must use HTTPS")
+        # 手动收款码模式不依赖第三方回调；虎皮椒/Ping++ 必须 HTTPS 回调
+        if provider in {"xunhu", "pingpp"}:
+            for name, url in (
+                ("PAYMENT_NOTIFY_URL", self.PAYMENT_NOTIFY_URL),
+                ("PAYMENT_RETURN_URL", self.PAYMENT_RETURN_URL),
+            ):
+                if not url or not url.lower().startswith("https://"):
+                    raise ValueError(f"Production {name} must use HTTPS")
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:

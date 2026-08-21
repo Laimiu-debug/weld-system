@@ -799,7 +799,18 @@ const MembershipUpgrade: React.FC = () => {
         setCurrentPlanName(selectedPlanInfo?.name || selectedPlan)
         setCurrentQrCode(paymentData.qr_code || paymentData.payment_url || '')
 
-        if ((paymentMethod === 'alipay' || paymentMethod === 'wechat') && (paymentData.qr_code || paymentData.payment_url)) {
+        const gatewayQr = paymentData.qr_code || paymentData.payment_url || ''
+        const isMockOrEmpty =
+          !gatewayQr ||
+          String(gatewayQr).startsWith('mock://') ||
+          String(gatewayQr).includes('api.qrserver.com')
+
+        // 虎皮椒/Ping++ 有真实支付链时走在线码；否则展示站内收款码并提交凭证
+        if (
+          (paymentMethod === 'alipay' || paymentMethod === 'wechat') &&
+          gatewayQr &&
+          !isMockOrEmpty
+        ) {
           setQrPaymentVisible(true)
         } else {
           setManualPaymentVisible(true)

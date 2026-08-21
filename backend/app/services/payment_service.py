@@ -196,6 +196,21 @@ class PaymentService:
                 created_at=datetime.now()
             )
 
+        # 手动收款码：不走第三方，前端展示站内支付宝/微信码
+        provider = str(getattr(settings, "PAYMENT_PROVIDER", "mock") or "mock").strip().lower()
+        if provider == "manual" and payment_method in {"alipay", "wechat"}:
+            return PaymentResponse(
+                success=True,
+                payment_url=None,
+                qr_code=None,
+                order_id=transaction.transaction_id,
+                transaction_id=transaction.transaction_id,
+                message="请扫码支付并提交凭证，等待管理员确认",
+                amount=transaction.amount,
+                payment_method=payment_method,
+                created_at=datetime.now()
+            )
+
         channel_map = {
             'alipay': 'alipay_qr',
             'wechat': 'wx_pub_qr',

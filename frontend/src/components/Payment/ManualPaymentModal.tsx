@@ -129,7 +129,7 @@ const ManualPaymentModal: React.FC<ManualPaymentModalProps> = ({
               src={qrCodePath} 
               width={280} 
               preview={false}
-              fallback="/qrcode/placeholder.png"
+              fallback="/qrcode/placeholder.svg"
             />
           </div>
 

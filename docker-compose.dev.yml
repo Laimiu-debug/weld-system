@@ -23,6 +23,8 @@ services:
       DEBUG: "true"
       # 本地点开验证链接用；上线服务器请用 .env.production 里的 https://sdhaohan.cn
       FRONTEND_URL: "http://127.0.0.1:3100"
+      # 虎皮椒未开通前：手动收款码（支付宝/微信二维码 + 管理员确认）
+      PAYMENT_PROVIDER: "manual"
       # 单企业内网部署示例：取消注释并改成企业名
       # ORG_NAME: "某某焊接有限公司"
       # BRAND_NAME: "焊序"
