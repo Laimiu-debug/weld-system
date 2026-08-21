@@ -165,6 +165,7 @@ class Settings(BaseSettings):
     # 虎皮椒支付配置（个人开发者推荐）
     XUNHU_APPID: Optional[str] = None
     XUNHU_APPSECRET: Optional[str] = None
+    XUNHU_API_URL: Optional[str] = "https://api.xunhupay.com"
 
     # Ping++支付配置（企业用户）
     PAYMENT_APP_ID: Optional[str] = None

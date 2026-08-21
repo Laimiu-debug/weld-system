@@ -221,6 +221,7 @@ const MembershipUpgrade: React.FC = () => {
   const [manualPaymentVisible, setManualPaymentVisible] = useState(false)
   const [qrPaymentVisible, setQrPaymentVisible] = useState(false)
   const [currentQrCode, setCurrentQrCode] = useState('')
+  const [currentQrCodeImage, setCurrentQrCodeImage] = useState(false)
   const [currentOrderId, setCurrentOrderId] = useState('')
   const [currentAmount, setCurrentAmount] = useState(0)
   const [currentPlanName, setCurrentPlanName] = useState('')
@@ -797,6 +798,7 @@ const MembershipUpgrade: React.FC = () => {
         setCurrentAmount(paymentData.amount)
         setCurrentPlanName(selectedPlanInfo?.name || selectedPlan)
         setCurrentQrCode(paymentData.qr_code || paymentData.payment_url || '')
+        setCurrentQrCodeImage(Boolean(paymentData.qr_code_image))
 
         const gatewayQr = paymentData.qr_code || paymentData.payment_url || ''
         const isMockOrEmpty =
@@ -1403,6 +1405,7 @@ const MembershipUpgrade: React.FC = () => {
         planName={currentPlanName}
         paymentMethod={paymentMethod as 'alipay' | 'wechat'}
         qrCode={currentQrCode}
+        qrCodeImage={currentQrCodeImage}
         onSuccess={() => {
           setQrPaymentVisible(false)
           setUpgradeModalVisible(false)

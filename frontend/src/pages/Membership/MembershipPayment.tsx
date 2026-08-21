@@ -36,6 +36,7 @@ interface CreatedOrder {
   payment_method: PaymentMethod
   qr_code?: string | null
   payment_url?: string | null
+  qr_code_image?: boolean
 }
 
 const MembershipPayment: React.FC = () => {
@@ -105,6 +106,7 @@ const MembershipPayment: React.FC = () => {
         payment_method: (paymentData.payment_method || paymentMethod) as PaymentMethod,
         qr_code: paymentData.qr_code,
         payment_url: paymentData.payment_url,
+        qr_code_image: Boolean(paymentData.qr_code_image),
       }
       setOrder(created)
       if (!created.qr_code) {
@@ -245,6 +247,7 @@ const MembershipPayment: React.FC = () => {
         planName={order.plan_name}
         paymentMethod={order.payment_method}
         qrCode={order.qr_code || undefined}
+        qrCodeImage={Boolean(order.qr_code_image)}
         onSuccess={handlePaid}
         onCancel={() => setQrModalVisible(false)}
       />

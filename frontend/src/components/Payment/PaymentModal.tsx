@@ -32,6 +32,7 @@ interface PaymentModalProps {
   planName: string
   paymentMethod: 'alipay' | 'wechat'
   qrCode?: string
+  qrCodeImage?: boolean
   onSuccess: () => void
   onCancel: () => void
 }
@@ -45,6 +46,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
   planName,
   paymentMethod,
   qrCode,
+  qrCodeImage = false,
   onSuccess,
   onCancel
 }) => {
@@ -189,7 +191,17 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
               <div>{getPaymentIcon()}</div>
               <Card className="inline-block">
                 {qrCodeUrl ? (
-                  <QRCode value={qrCodeUrl} size={256} />
+                  qrCodeImage || /xunhupay|dpweixin|url_qrcode/i.test(qrCodeUrl) ? (
+                    <img
+                      src={qrCodeUrl}
+                      alt="支付二维码"
+                      width={256}
+                      height={256}
+                      style={{ display: 'block', objectFit: 'contain' }}
+                    />
+                  ) : (
+                    <QRCode value={qrCodeUrl} size={256} />
+                  )
                 ) : (
                   <div style={{ width: 256, height: 256 }} className="flex items-center justify-center">
                     <Spin />

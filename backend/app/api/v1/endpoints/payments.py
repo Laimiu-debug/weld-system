@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Form, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -174,6 +174,7 @@ def create_payment(
                 "purpose": order_data.get("purpose"),
                 "payment_url": payment_response.payment_url,
                 "qr_code": payment_response.qr_code,
+                "qr_code_image": getattr(payment_response, "qr_code_image", False),
                 "start_date": order_data["start_date"],
                 "end_date": order_data["end_date"],
                 "auto_renew": order_data.get("auto_renew", payment_data.auto_renew),
@@ -261,6 +262,50 @@ def mock_complete_payment(
         "message": "模拟支付已完成",
         "data": result,
     }
+
+
+@router.post("/callback/xunhu")
+async def xunhu_payment_callback(
+    request: Request,
+    db: Session = Depends(deps.get_db),
+) -> Response:
+    """虎皮椒异步通知：验签通过后激活订阅，必须返回纯文本 success。"""
+    enforce_rate_limit(f"pay-callback:{client_ip(request)}", limit=60, window_seconds=60)
+    payment_service = PaymentService(db)
+
+    form = await request.form()
+    callback_dict = {str(k): str(v) for k, v in form.items()}
+    trade_order_id = callback_dict.get("trade_order_id", "")
+    status_code = str(callback_dict.get("status", "")).upper()
+    # 文档：OD=已支付，CD=已退款
+    pay_ok = status_code in {"OD", "SUCCESS"}
+
+    callback = PaymentCallback(
+        order_id=trade_order_id,
+        transaction_id=callback_dict.get("transaction_id") or trade_order_id,
+        amount=float(callback_dict.get("total_fee") or 0),
+        currency="CNY",
+        payment_method="xunhu",
+        status="success" if pay_ok else "failed",
+        paid_at=datetime.now(),
+        signature=callback_dict.get("hash", ""),
+        extra_data=callback_dict,
+    )
+
+    try:
+        payment_service.handle_payment_callback(callback)
+    except HTTPException as exc:
+        logger.error("Xunhu callback rejected: %s detail=%s", exc.status_code, exc.detail)
+        # 仍返回 success 避免对签名错误以外的重复轰炸；签名失败返回 fail 以便排查
+        if exc.status_code == status.HTTP_400_BAD_REQUEST and "签名" in str(exc.detail):
+            return Response(content="fail", media_type="text/plain")
+        # 订单不存在等：返回 success 防止无限重试（需人工排查日志）
+        return Response(content="success", media_type="text/plain")
+    except Exception as exc:
+        logger.error("Xunhu callback error: %s", exc, exc_info=True)
+        return Response(content="fail", media_type="text/plain")
+
+    return Response(content="success", media_type="text/plain")
 
 
 @router.post("/callback/{payment_method}", response_model=Dict[str, Any])

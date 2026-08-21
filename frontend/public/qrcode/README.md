@@ -1,16 +1,14 @@
 # 收款码上传说明
 
-请将收款码图片放在此目录：
+请将收款码图片放在此目录（仅 `PAYMENT_PROVIDER=manual` 时使用）：
 
 | 文件 | 说明 |
 |------|------|
-| `alipay.JPG` | 支付宝收款码（前端读取此路径） |
+| `alipay.JPG` | 支付宝收款码 |
 | `wechat.JPG` | 微信收款码 |
 
-当前模式：`PAYMENT_PROVIDER=manual`（虎皮椒审核通过前）
+当前生产模式：`PAYMENT_PROVIDER=xunhu`（虎皮椒自动到账）。
 
-1. 用户升级会员 → 扫码按金额支付，备注填订单号  
-2. 用户提交支付凭证（流水号/订单号）  
-3. 管理员在 `/admin/pending-payments` 确认后开通会员  
-
-虎皮椒签约成功后，把 `PAYMENT_PROVIDER` 改为 `xunhu` 并配置 APPID/SECRET 即可切自动到账。
+- 回调地址：`https://api.sdhaohan.cn/api/v1/payments/callback/xunhu`
+- 配置项：`XUNHU_APPID` / `XUNHU_APPSECRET` / `XUNHU_API_URL` / `PAYMENT_NOTIFY_URL` / `PAYMENT_RETURN_URL`
+- 一个虎皮椒 APPID 通常对应一个渠道（微信或支付宝）；两种都要时需在后台分别开通渠道

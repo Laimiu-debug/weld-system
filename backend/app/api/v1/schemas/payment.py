@@ -23,6 +23,7 @@ class PaymentResponse(BaseModel):
     success: bool = Field(..., description="支付是否成功")
     payment_url: Optional[str] = Field(None, description="支付页面URL")
     qr_code: Optional[str] = Field(None, description="支付二维码")
+    qr_code_image: bool = Field(False, description="qr_code 是否为图片 URL（虎皮椒 url_qrcode）")
     order_id: str = Field(..., description="订单ID")
     transaction_id: Optional[str] = Field(None, description="交易ID")
     message: str = Field(..., description="响应消息")

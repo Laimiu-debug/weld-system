@@ -341,9 +341,15 @@ _gateway_instance = None
 def get_payment_gateway() -> PaymentGatewayInterface:
     """获取支付网关实例（单例模式）"""
     global _gateway_instance
-    
+
     if _gateway_instance is None:
         _gateway_instance = PaymentGatewayFactory.create_gateway()
-    
+
     return _gateway_instance
+
+
+def reset_payment_gateway() -> None:
+    """重置网关单例（切换 PAYMENT_PROVIDER / 热更新配置后调用）"""
+    global _gateway_instance
+    _gateway_instance = None
 

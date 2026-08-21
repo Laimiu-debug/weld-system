@@ -236,6 +236,11 @@ class PaymentService:
                 'client_ip': client_ip
             })
         except Exception as exc:
+            if provider == "xunhu":
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"虎皮椒下单失败: {exc}",
+                ) from exc
             return PaymentResponse(
                 success=True,
                 payment_url=None,
@@ -249,6 +254,11 @@ class PaymentService:
             )
 
         if not result.get('success'):
+            if provider == "xunhu":
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=result.get("error") or result.get("message") or "虎皮椒下单失败",
+                )
             return PaymentResponse(
                 success=True,
                 payment_url=None,
@@ -271,8 +281,9 @@ class PaymentService:
 
         return PaymentResponse(
             success=True,
-            payment_url=qr_code_url,
+            payment_url=result.get('payment_url') or qr_code_url,
             qr_code=qr_code_url,
+            qr_code_image=bool(result.get("qr_code_image")),
             order_id=transaction.transaction_id,
             transaction_id=transaction.transaction_id,
             message="支付订单创建成功",
