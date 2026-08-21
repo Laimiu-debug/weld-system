@@ -85,6 +85,7 @@ GitHub Actions（`.github/workflows/ci.yml`）：后端 compileall + pytest；�
 ## 文档
 
 - [运维手册](docs/OPERATIONS.md)（本地开发、测试、迁移、备份、密钥轮换、故障排查）
+- [主链路冒烟清单](docs/SMOKE_CHECKLIST.md)
 - [用户端](frontend/README.md) / [管理端](admin-portal/README.md)
 - 支付、审批等专项说明在 `docs/`；历史实现纪要在 `md/`、`modules/`，不作为部署依据
 - 工程缺口跟踪：[`CODE_REVIEW_TODO.md`](CODE_REVIEW_TODO.md)

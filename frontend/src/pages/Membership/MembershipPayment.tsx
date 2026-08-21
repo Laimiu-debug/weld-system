@@ -47,7 +47,7 @@ const MembershipPayment: React.FC = () => {
   const [error, setError] = useState<string | null>(null)
   const [manualVisible, setManualVisible] = useState(false)
   const [qrModalVisible, setQrModalVisible] = useState(false)
-  const [mockAvailable, setMockAvailable] = useState(true)
+  const [mockAvailable, setMockAvailable] = useState(import.meta.env.DEV)
   const createdKeyRef = useRef('')
 
   const planId = searchParams.get('plan_id') || ''

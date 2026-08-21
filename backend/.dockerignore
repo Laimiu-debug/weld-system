@@ -18,3 +18,4 @@ test_*.py
 *_IMPLEMENTATION*.md
 openapi*.json
 tests
+legacy_tests

@@ -157,4 +157,6 @@
 2. 修复干净构建和前端发布链路，确保每次发布的是确定产物。
 3. 修复 pytest/依赖/迁移，建立 CI 门禁，获得可靠回归基线。
 4. P1 占位功能、邮箱验证、同步端点与导出限流已落地。
-5. P2 基线已补：脚本清理、企业模块拆分、审批权限批量加载、管理端统一响应、Vite 8 分包。剩余：welder_service 拆分、API 响应全量迁移、完整业务流程联调。
+5. P2 基线已补：脚本清理、企业模块拆分、审批权限批量加载、管理端统一响应、Vite 8 分包。
+   - 2026-08-21：删除 9 个未路由 mock 页；管理端移除 `useMockData`/`mockData`；下线未挂载 `*_old`/`admin_simple|complete`；`welder_service` 履历段拆到 `welder_career_mixin`；根目录手工 `test_*.py` 迁入 `legacy_tests/`；主链路见 `docs/SMOKE_CHECKLIST.md`。
+   - 剩余：API 响应全量迁移、证书段再拆分、按冒烟清单完成联调勾选。

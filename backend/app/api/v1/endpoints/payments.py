@@ -227,8 +227,8 @@ def mock_complete_payment(
     db: Session = Depends(deps.get_db),
     current_user = Depends(deps.get_current_user)
 ) -> Any:
-    """仅 mock 支付网关下模拟支付成功，便于本地联调。"""
-    if getattr(settings, "PAYMENT_PROVIDER", "mock") != "mock":
+    """仅开发环境且 mock 支付网关下模拟支付成功，便于本地联调。"""
+    if not settings.DEVELOPMENT or getattr(settings, "PAYMENT_PROVIDER", "mock") != "mock":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="当前支付环境不支持模拟完成",

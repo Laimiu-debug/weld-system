@@ -121,7 +121,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
-norecursedirs = ["scripts", "migrations", ".git", "venv", ".venv"]
+norecursedirs = ["scripts", "migrations", "legacy_tests", ".git", "venv", ".venv"]
 addopts = "-v --tb=short"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",

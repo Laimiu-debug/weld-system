@@ -4,7 +4,6 @@ import { ApiResponse, PaginatedResponse } from '@/types'
 
 class ApiService {
   private api: AxiosInstance
-  private useMockData = import.meta.env.VITE_ENABLE_MOCK_DATA === 'true'
 
   constructor() {
     this.api = axios.create({
