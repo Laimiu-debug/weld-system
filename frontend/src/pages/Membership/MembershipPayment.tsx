@@ -12,7 +12,6 @@ import {
   message,
 } from 'antd'
 import {
-  AlipayOutlined,
   ArrowLeftOutlined,
   LoadingOutlined,
   WechatOutlined,
@@ -53,7 +52,7 @@ const MembershipPayment: React.FC = () => {
 
   const planId = searchParams.get('plan_id') || ''
   const billingCycle = searchParams.get('billing_cycle') || 'monthly'
-  const paymentMethod = (searchParams.get('payment_method') || 'alipay') as PaymentMethod
+  const paymentMethod = (searchParams.get('payment_method') || 'wechat') as PaymentMethod
   const subscriptionId = searchParams.get('subscription_id')
 
   useEffect(() => {
@@ -87,7 +86,7 @@ const MembershipPayment: React.FC = () => {
       const response = await apiService.post('/payments/create', {
         plan_id: resolvedPlanId,
         billing_cycle: resolvedCycle,
-        payment_method: paymentMethod,
+        payment_method: 'wechat',
         auto_renew: false,
         purpose: subscriptionId ? 'renew' : 'upgrade',
         existing_subscription_id: subscriptionId ? Number(subscriptionId) : undefined,
@@ -149,18 +148,9 @@ const MembershipPayment: React.FC = () => {
     navigate(`/membership/result?order_id=${order.transaction_id}&status=success`)
   }
 
-  const paymentIcon = () => {
-    switch (paymentMethod) {
-      case 'alipay':
-        return <AlipayOutlined style={{ fontSize: 32, color: '#1677ff' }} />
-      case 'wechat':
-        return <WechatOutlined style={{ fontSize: 32, color: '#07c160' }} />
-      default: {
-        const _exhaustive: never = paymentMethod
-        return _exhaustive
-      }
-    }
-  }
+  const paymentIcon = () => (
+    <WechatOutlined style={{ fontSize: 32, color: '#07c160' }} />
+  )
 
   if (loading || creating) {
     return (
@@ -245,7 +235,7 @@ const MembershipPayment: React.FC = () => {
         orderId={order.transaction_id}
         amount={order.amount}
         planName={order.plan_name}
-        paymentMethod={order.payment_method}
+        paymentMethod={order.payment_method === 'alipay' ? 'alipay' : 'wechat'}
         qrCode={order.qr_code || undefined}
         qrCodeImage={Boolean(order.qr_code_image)}
         onSuccess={handlePaid}
@@ -256,7 +246,7 @@ const MembershipPayment: React.FC = () => {
         orderId={order.transaction_id}
         amount={order.amount}
         planName={order.plan_name}
-        paymentMethod={order.payment_method === 'wechat' ? 'wechat' : 'alipay'}
+        paymentMethod="wechat"
         onSuccess={() => {
           setManualVisible(false)
           message.success('支付凭证已提交，请等待管理员确认')

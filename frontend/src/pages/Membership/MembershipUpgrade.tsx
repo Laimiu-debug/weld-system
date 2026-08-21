@@ -41,7 +41,6 @@ import {
   QuestionCircleOutlined,
   RightOutlined,
   UserOutlined,
-  CreditCardOutlined,
   WechatOutlined,
   ReloadOutlined,
 } from '@ant-design/icons'
@@ -213,7 +212,7 @@ const MembershipUpgrade: React.FC = () => {
   const [upgradeModalVisible, setUpgradeModalVisible] = useState(false)
   const [paymentModalVisible, setPaymentModalVisible] = useState(false)
   const [currentStep, setCurrentStep] = useState(0)
-  const [paymentMethod, setPaymentMethod] = useState<string>('alipay')
+  const [paymentMethod, setPaymentMethod] = useState<string>('wechat')
   const [agreeTerms, setAgreeTerms] = useState(false)
   const [loading, setLoading] = useState(false)
 
@@ -777,7 +776,7 @@ const MembershipUpgrade: React.FC = () => {
       const response = await apiService.post('/payments/create', {
         plan_id: selectedPlan,
         billing_cycle: billingCycle,
-        payment_method: paymentMethod,
+        payment_method: 'wechat',
         auto_renew: false
       })
 
@@ -1216,46 +1215,6 @@ const MembershipUpgrade: React.FC = () => {
             <Title level={4}>选择支付方式</Title>
             <Radio.Group value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full">
               <Space direction="vertical" className="w-full" size="middle">
-                <Radio value="alipay" className="w-full">
-                  <Card
-                    className={`w-full cursor-pointer transition-all ${paymentMethod === 'alipay' ? 'border-blue-500 shadow-md' : 'hover:shadow-md'}`}
-                    style={{
-                      borderRadius: '12px',
-                      border: paymentMethod === 'alipay' ? '2px solid #1677ff' : '1px solid #d9d9d9'
-                    }}
-                  >
-                    <Row align="middle" gutter={16}>
-                      <Col>
-                        <div style={{
-                          width: '48px',
-                          height: '48px',
-                          borderRadius: '12px',
-                          background: 'linear-gradient(135deg, #1677ff, #40a9ff)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: 'white',
-                          fontSize: '20px',
-                          fontWeight: 'bold'
-                        }}>
-                          支
-                        </div>
-                      </Col>
-                      <Col flex="auto">
-                        <div>
-                          <Text strong style={{ fontSize: '16px', color: '#262626' }}>支付宝</Text>
-                          <div>
-                            <Text type="secondary" style={{ fontSize: '12px' }}>使用支付宝快捷支付</Text>
-                          </div>
-                        </div>
-                      </Col>
-                      <Col>
-                        <CreditCardOutlined style={{ fontSize: '20px', color: '#1677ff' }} />
-                      </Col>
-                    </Row>
-                  </Card>
-                </Radio>
-
                 <Radio value="wechat" className="w-full">
                   <Card
                     className={`w-full cursor-pointer transition-all ${paymentMethod === 'wechat' ? 'border-green-500 shadow-md' : 'hover:shadow-md'}`}
@@ -1285,7 +1244,7 @@ const MembershipUpgrade: React.FC = () => {
                         <div>
                           <Text strong style={{ fontSize: '16px', color: '#262626' }}>微信支付</Text>
                           <div>
-                            <Text type="secondary" style={{ fontSize: '12px' }}>使用微信扫码支付</Text>
+                            <Text type="secondary" style={{ fontSize: '12px' }}>使用微信扫码支付（虎皮椒）</Text>
                           </div>
                         </div>
                       </Col>
@@ -1362,7 +1321,7 @@ const MembershipUpgrade: React.FC = () => {
                 <div>
                   <div>套餐：{membershipPlans.find(p => p.id === selectedPlan)?.name}</div>
                   <div>计费周期：{billingCycle === 'monthly' ? '月付' : billingCycle === 'quarterly' ? '季付' : '年付'}</div>
-                  <div>支付方式：{paymentMethod === 'wechat' ? '微信支付' : '支付宝'}</div>
+                  <div>支付方式：微信支付</div>
                   <div className="mt-2" style={{ borderTop: '1px dashed #d9d9d9', paddingTop: '8px' }}>
                     <div>套餐原价：¥{pricePreview.original_price.toLocaleString()}</div>
                     <div style={{ color: '#52c41a' }}>剩余价值抵扣：-¥{pricePreview.discount.toLocaleString()}</div>
@@ -1388,7 +1347,7 @@ const MembershipUpgrade: React.FC = () => {
               <div>
                 <div>套餐：{membershipPlans.find(p => p.id === selectedPlan)?.name}</div>
                 <div>金额：¥{pricePreview ? pricePreview.actual_price.toLocaleString() : membershipPlans.find(p => p.id === selectedPlan)?.prices[billingCycle].toLocaleString()}/{billingCycle === 'monthly' ? '月' : billingCycle === 'quarterly' ? '季' : '年'}</div>
-                <div>支付方式：{paymentMethod === 'wechat' ? '微信支付' : '支付宝'}</div>
+                <div>支付方式：微信支付</div>
               </div>
             }
             type="warning"
@@ -1403,7 +1362,7 @@ const MembershipUpgrade: React.FC = () => {
         orderId={currentOrderId}
         amount={currentAmount}
         planName={currentPlanName}
-        paymentMethod={paymentMethod as 'alipay' | 'wechat'}
+        paymentMethod="wechat"
         qrCode={currentQrCode}
         qrCodeImage={currentQrCodeImage}
         onSuccess={() => {
@@ -1418,7 +1377,7 @@ const MembershipUpgrade: React.FC = () => {
         orderId={currentOrderId}
         amount={currentAmount}
         planName={currentPlanName}
-        paymentMethod={paymentMethod as 'alipay' | 'wechat'}
+        paymentMethod="wechat"
         onSuccess={() => {
           setManualPaymentVisible(false)
           setUpgradeModalVisible(false)
