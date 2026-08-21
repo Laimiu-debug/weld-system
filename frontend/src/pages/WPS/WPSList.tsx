@@ -40,7 +40,7 @@ import {
   FileWordOutlined,
   FilePdfOutlined,
 } from '@ant-design/icons'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import { WPSRecord, WPSStatus, PaginatedResponse } from '@/types'
@@ -59,9 +59,10 @@ const { Option } = Select
 
 const WPSList: React.FC = () => {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { checkPermission, canCreateMore, user } = useAuthStore()
   const defaultPageSize = usePreferencesStore((s) => s.preferences.pageSize) || 20
-  const [searchText, setSearchText] = useState('')
+  const [searchText, setSearchText] = useState(() => searchParams.get('q') || '')
   const [statusFilter, setStatusFilter] = useState<WPSStatus | ''>('')
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>(null)
   const [pagination, setPagination] = useState({
@@ -69,6 +70,14 @@ const WPSList: React.FC = () => {
     pageSize: defaultPageSize,
     total: 0,
   })
+
+  useEffect(() => {
+    const q = searchParams.get('q')
+    if (q !== null) {
+      setSearchText(q)
+      setPagination((prev) => ({ ...prev, current: 1 }))
+    }
+  }, [searchParams])
 
   useEffect(() => {
     setPagination((prev) => ({ ...prev, pageSize: defaultPageSize, current: 1 }))
@@ -536,8 +545,20 @@ const WPSList: React.FC = () => {
 
   // 处理搜索
   const handleSearch = (value: string) => {
-    setSearchText(value)
+    const next = value.trim()
+    setSearchText(next)
     setPagination(prev => ({ ...prev, current: 1 }))
+    if (next) {
+      setSearchParams({ q: next })
+    } else {
+      setSearchParams({})
+    }
+  }
+
+  const clearSearchFilter = () => {
+    setSearchText('')
+    setPagination(prev => ({ ...prev, current: 1 }))
+    setSearchParams({})
   }
 
   // 处理状态筛选
@@ -928,6 +949,21 @@ const WPSList: React.FC = () => {
         </Row>
       )}
 
+      {searchText ? (
+        <Alert
+          type="info"
+          showIcon
+          className="mb-4"
+          message={`当前按关键词筛选：${searchText}`}
+          description="若看不到刚创建的记录，可能是关键词未匹配到编号/标题。可清除筛选查看全部。"
+          action={
+            <Button size="small" onClick={clearSearchFilter}>
+              清除筛选
+            </Button>
+          }
+        />
+      ) : null}
+
       {/* 配额提醒 */}
       {(() => {
         const tier = (user as any)?.member_tier || user?.membership_tier || 'personal_free'
@@ -958,8 +994,10 @@ const WPSList: React.FC = () => {
             <Search
               placeholder="搜索WPS编号或标题"
               allowClear
+              value={searchText}
               enterButton={<SearchOutlined />}
               size="large"
+              onChange={(e) => setSearchText(e.target.value)}
               onSearch={handleSearch}
               style={{ width: '100%' }}
             />

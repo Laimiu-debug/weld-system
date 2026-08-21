@@ -168,8 +168,22 @@ class WPSService {
     status?: string
     search_term?: string
   }): Promise<WPSSummary[]> {
-    const response = await api.get('/wps/', { params })
-    return response.data
+    const query: Record<string, unknown> = {
+      skip: params?.skip,
+      limit: params?.limit,
+      owner_id: params?.owner_id,
+      search_term: params?.search_term,
+    }
+    // 后端参数名是 status_filter，不是 status
+    if (params?.status) {
+      query.status_filter = params.status
+    }
+    const response = await api.get('/wps/', { params: query })
+    const body = response?.data
+    if (Array.isArray(body)) return body
+    if (Array.isArray(body?.items)) return body.items
+    if (Array.isArray(body?.data)) return body.data
+    return []
   }
 
   /**

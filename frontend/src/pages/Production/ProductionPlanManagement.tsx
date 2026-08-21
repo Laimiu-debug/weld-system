@@ -114,6 +114,8 @@ const ProductionPlanManagement: React.FC = () => {
   return (
     <Card
       title="生产计划"
+      bordered={false}
+      styles={{ body: { paddingTop: 12 } }}
       extra={
         <Space>
           <Input.Search

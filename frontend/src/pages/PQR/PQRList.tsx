@@ -38,7 +38,7 @@ import {
   ClockCircleOutlined,
   SendOutlined,
 } from '@ant-design/icons'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import { useAuthStore } from '@/store/authStore'
@@ -54,10 +54,11 @@ const { Option } = Select
 
 const PQRList: React.FC = () => {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const queryClient = useQueryClient()
   const { checkPermission, canCreateMore, user } = useAuthStore()
   const defaultPageSize = usePreferencesStore((s) => s.preferences.pageSize) || 20
-  const [searchText, setSearchText] = useState('')
+  const [searchText, setSearchText] = useState(() => searchParams.get('q') || '')
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [qualificationFilter, setQualificationFilter] = useState<string>('')
   const [pagination, setPagination] = useState({
@@ -65,6 +66,14 @@ const PQRList: React.FC = () => {
     pageSize: defaultPageSize,
     total: 0,
   })
+
+  useEffect(() => {
+    const q = searchParams.get('q')
+    if (q !== null) {
+      setSearchText(q)
+      setPagination((prev) => ({ ...prev, current: 1 }))
+    }
+  }, [searchParams])
 
   useEffect(() => {
     setPagination((prev) => ({ ...prev, pageSize: defaultPageSize, current: 1 }))

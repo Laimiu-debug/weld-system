@@ -4,7 +4,6 @@
  */
 import React, { useState, useEffect } from 'react'
 import {
-  Card,
   Table,
   Button,
   Space,
@@ -31,8 +30,9 @@ import wpsTemplateService, { WPSTemplateSummary, WPSTemplate } from '@/services/
 import { SharedLibraryService } from '@/services/sharedLibrary'
 import { useAuthStore } from '@/store/authStore'
 import TemplateBuilder from '@/components/WPS/TemplateBuilder'
+import '@/styles/ResourceLibrary.css'
 
-const { Title, Text } = Typography
+const { Text } = Typography
 
 const TemplateManagement: React.FC = () => {
   const navigate = useNavigate()
@@ -372,43 +372,37 @@ const TemplateManagement: React.FC = () => {
   }
 
   return (
-    <div style={{ padding: '24px' }}>
-      <Card>
-        <Space direction="vertical" size="large" style={{ width: '100%' }}>
-          {/* 页面标题和操作 */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Title level={2}>模板管理</Title>
-            <Space>
-              <Button
-                icon={<BlockOutlined />}
-                onClick={() => navigate('/modules')}
-              >
-                模块管理
-              </Button>
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() => setBuilderVisible(true)}
-              >
-                使用模块创建模板
-              </Button>
-            </Space>
-          </div>
+    <div className="resource-page">
+      <div className="resource-page__header">
+        <h1 className="resource-page__title">
+          <FileTextOutlined />
+          模板管理
+        </h1>
+        <div className="resource-page__actions">
+          <Button icon={<BlockOutlined />} onClick={() => navigate('/modules')}>
+            模块管理
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setBuilderVisible(true)}
+          >
+            使用模块创建模板
+          </Button>
+        </div>
+      </div>
 
-          {/* 模板列表 */}
-          <Table
-            columns={columns}
-            dataSource={templates}
-            rowKey="id"
-            loading={loading}
-            pagination={{
-              pageSize: 10,
-              showSizeChanger: true,
-              showTotal: (total) => `共 ${total} 个模板`
-            }}
-          />
-        </Space>
-      </Card>
+      <Table
+        columns={columns}
+        dataSource={templates}
+        rowKey="id"
+        loading={loading}
+        pagination={{
+          pageSize: 10,
+          showSizeChanger: true,
+          showTotal: (total) => `共 ${total} 个模板`
+        }}
+      />
 
       {/* 预览模态框 */}
       <Modal

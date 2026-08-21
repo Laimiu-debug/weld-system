@@ -1,72 +1,72 @@
 .shared-library-list {
-  padding: 24px;
-  background: #f5f5f5;
-  min-height: 100vh;
+  /* 与 Layout Content 对齐，不再额外铺满灰底 */
 }
 
 .shared-library-list .page-header {
-  background: linear-gradient(135deg, #1a2744 0%, #1f5eff 100%);
-  color: white;
-  padding: 40px 0;
-  margin-bottom: 24px;
-  border-radius: 12px;
-  text-align: center;
+  margin-bottom: 16px;
+  padding: 0;
+  background: none;
+  color: inherit;
+  border-radius: 0;
+  text-align: left;
 }
 
 .shared-library-list .header-content h1 {
-  font-size: 2.5rem;
-  font-weight: 700;
-  margin-bottom: 8px;
-  color: #fff;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 6px;
+  color: #14181f;
+  text-shadow: none;
 }
 
 .shared-library-list .header-content p {
-  font-size: 1.1rem;
-  opacity: 0.9;
-  max-width: 600px;
-  margin: 0 auto;
-  color: rgba(255, 255, 255, 0.92);
+  font-size: 14px;
+  opacity: 1;
+  max-width: none;
+  margin: 0;
+  color: #6b7385;
 }
 
 .shared-library-list .search-section {
-  background: white;
-  padding: 24px;
-  border-radius: 12px;
-  margin-bottom: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: #f7f8fa;
+  padding: 12px 14px;
+  border-radius: 8px;
+  margin-bottom: 14px;
+  box-shadow: none;
+  border: 1px solid rgba(20, 24, 31, 0.08);
 }
 
 .shared-library-list .filters-panel {
-  margin-top: 16px;
-  padding: 16px;
-  background: #fafafa;
+  margin-top: 12px;
+  padding: 12px;
+  background: #fff;
   border-radius: 8px;
-  border: 1px solid #f0f0f0;
+  border: 1px solid rgba(20, 24, 31, 0.08);
 }
 
 .shared-library-list .content-section {
-  background: white;
-  padding: 24px;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .shared-library-list .shared-item-card {
   height: 100%;
-  transition: all 0.3s ease;
-  border-radius: 12px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  border-radius: 8px;
   overflow: hidden;
-  animation: sharedLibFadeIn 0.5s ease-out;
+  border: 1px solid rgba(20, 24, 31, 0.08);
 }
 
 .shared-library-list .shared-item-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  transform: none;
+  border-color: rgba(31, 94, 255, 0.35);
+  box-shadow: 0 8px 20px -16px rgba(20, 24, 31, 0.35);
 }
 
 .shared-library-list .card-cover {
-  height: 120px;
+  height: 88px;
   background: linear-gradient(135deg, #1a2744 0%, #1f5eff 100%);
   display: flex;
   align-items: center;

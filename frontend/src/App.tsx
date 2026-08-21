@@ -31,6 +31,7 @@ const WPSEdit = React.lazy(() => import('@/pages/WPS/WPSEdit'))
 const WPSDetail = React.lazy(() => import('@/pages/WPS/WPSDetail'))
 const TemplateManagement = React.lazy(() => import('@/pages/WPS/TemplateManagement'))
 const ModuleManagement = React.lazy(() => import('@/pages/WPS/ModuleManagement'))
+const SearchResultsPage = React.lazy(() => import('@/pages/Search/SearchResultsPage'))
 
 const PQRList = React.lazy(() => import('@/pages/PQR/PQRList'))
 const PQRCreate = React.lazy(() => import('@/pages/PQR/PQRCreate'))
@@ -282,6 +283,14 @@ const App: React.FC = () => {
 
 
           {/* WPS管理 */}
+          <Route
+            path="search"
+            element={
+              <ProtectedRoute>
+                <SearchResultsPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="wps"
             element={

@@ -10,7 +10,6 @@ import {
   Space,
   Typography,
   Drawer,
-  Input,
   theme,
   message,
 } from 'antd'
@@ -38,7 +37,6 @@ import {
   HistoryOutlined,
   NotificationOutlined,
   SecurityScanOutlined,
-  SearchOutlined,
   GlobalOutlined,
   QuestionCircleOutlined,
   FullscreenOutlined,
@@ -58,6 +56,7 @@ import WorkspaceSwitcher from '@/components/WorkspaceSwitcher'
 import NotificationCenter from '@/components/NotificationCenter'
 import Footer from '@/components/Footer'
 import { useBranding } from '@/hooks/useBranding'
+import GlobalSearch from '@/components/GlobalSearch'
 
 const { Header, Sider, Content } = AntLayout
 const { Text } = Typography
@@ -72,7 +71,6 @@ const Layout: React.FC<LayoutProps> = () => {
   const [collapsed, setCollapsed] = useState(sidebarCollapsedPref)
   const [mobileDrawerVisible, setMobileDrawerVisible] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
-  const [searchValue, setSearchValue] = useState('')
   const [membershipInfo, setMembershipInfo] = useState<any>(null)
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null)
   const location = useLocation()
@@ -763,22 +761,7 @@ const Layout: React.FC<LayoutProps> = () => {
             </div>
 
             {/* 全局搜索栏 */}
-            {!isMobile && (
-              <div className="global-search">
-                <Input
-                  placeholder="搜索WPS、PQR、焊工..."
-                  prefix={<SearchOutlined />}
-                  value={searchValue}
-                  onChange={(e) => setSearchValue(e.target.value)}
-                  onPressEnter={(e) => {
-                    if (searchValue.trim()) {
-                      // 这里可以实现搜索逻辑
-                    }
-                  }}
-                  className="search-input"
-                />
-              </div>
-            )}
+            {!isMobile && <GlobalSearch />}
           </div>
 
           <div className="header-right" style={{

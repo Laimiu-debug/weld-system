@@ -78,6 +78,11 @@ const WeldersList: React.FC = () => {
     if (fromQuery === 'expiring_soon' || fromQuery === 'expired' || fromQuery === 'valid') {
       setCertStatusFilter(fromQuery)
     }
+    const q = searchParams.get('q')
+    if (q !== null) {
+      setSearchText(q)
+      setCurrentPage(1)
+    }
   }, [searchParams])
 
   const fetchWelders = async () => {
