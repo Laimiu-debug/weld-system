@@ -25,6 +25,7 @@ from app.schemas.pqr import (
 )
 from app.services.document_export_service import DocumentExportService
 from app.services.pqr_service import PQRService
+from app.core.module_permissions import ensure_module_permission
 from app.services.user_service import user_service
 from app.services.workspace_service import WorkspaceService
 from app.services.approval_service import ApprovalService
@@ -209,12 +210,7 @@ def create_pqr(
     workspace_context = get_workspace_context(db, current_user, workspace_id)
 
     # Check permission (enterprise members have access by default)
-    if current_user.membership_type != "enterprise":
-        if not user_service.has_permission(db, current_user.id, "pqr", "create"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="没有足够的权限"
-            )
+    ensure_module_permission(db, current_user, "pqr", "create")
 
     try:
         # 检查会员配额 (only for personal workspace)
@@ -268,12 +264,7 @@ def read_pqr_by_id(
     workspace_context = get_workspace_context(db, current_user, workspace_id)
 
     # Check permission
-    if current_user.membership_type != "enterprise":
-        if not user_service.has_permission(db, current_user.id, "pqr", "read"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="没有足够的权限"
-            )
+    ensure_module_permission(db, current_user, "pqr", "read")
 
     pqr = require_document_access(db, PQR, id, current_user, "PQR不存在")
     pqr_service_instance = PQRService(db)
@@ -327,12 +318,7 @@ def update_pqr(
     workspace_context = get_workspace_context(db, current_user, workspace_id)
 
     # Check permission
-    if current_user.membership_type != "enterprise":
-        if not user_service.has_permission(db, current_user.id, "pqr", "update"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="没有足够的权限"
-            )
+    ensure_module_permission(db, current_user, "pqr", "update")
 
     pqr = require_document_access(
         db, PQR, id, current_user, "PQR不存在", action=DataAccessAction.EDIT
@@ -384,12 +370,7 @@ def delete_pqr(
     workspace_context = get_workspace_context(db, current_user, workspace_id)
 
     # Check permission
-    if current_user.membership_type != "enterprise":
-        if not user_service.has_permission(db, current_user.id, "pqr", "delete"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="没有足够的权限"
-            )
+    ensure_module_permission(db, current_user, "pqr", "delete")
 
     pqr = require_document_access(
         db, PQR, id, current_user, "PQR不存在", action=DataAccessAction.DELETE

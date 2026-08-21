@@ -98,6 +98,24 @@ class DataAccessMiddleware:
         # 检查资源是否有必需的数据隔离字段
         if not hasattr(resource, 'workspace_type'):
             raise ValueError(f"资源 {type(resource).__name__} 缺少 workspace_type 字段")
+
+        # 若提供了当前工作区上下文，资源必须属于该工作区
+        if workspace_context is not None:
+            if workspace_context.is_personal():
+                if resource.workspace_type != WorkspaceType.PERSONAL or getattr(resource, "user_id", None) != user.id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="权限不足：资源不属于当前个人工作区",
+                    )
+            elif workspace_context.is_enterprise():
+                if (
+                    resource.workspace_type != WorkspaceType.ENTERPRISE
+                    or getattr(resource, "company_id", None) != workspace_context.company_id
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="权限不足：资源不属于当前企业工作区",
+                    )
         
         # 1. 个人工作区数据：仅创建者可访问
         if resource.workspace_type == WorkspaceType.PERSONAL:
@@ -481,7 +499,11 @@ class DataAccessMiddleware:
                 print(f"[数据隔离] factory级别,只能查看工厂{employee.factory_id}的数据")
                 conditions.append(model.factory_id == employee.factory_id)
             else:
-                print(f"[数据隔离] factory级别但没有factory_id或模型不含factory_id列,可查看所有企业数据")
+                # Fail closed: factory-scope without factory assignment must not see all company data
+                print(
+                    f"[数据隔离] factory级别但缺少factory_id或模型无工厂列,返回空结果"
+                )
+                return query.filter(model.id == -1)
 
             if conditions:
                 query = query.filter(and_(*conditions))

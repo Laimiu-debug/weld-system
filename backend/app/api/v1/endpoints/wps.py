@@ -20,6 +20,7 @@ from app.schemas.wps import (
     WPSSearchParams, WPSExportRequest
 )
 from app.services.wps_service import WPSService
+from app.core.module_permissions import ensure_module_permission
 from app.services.user_service import user_service
 from app.services.workspace_service import WorkspaceService
 from app.services.approval_service import ApprovalService
@@ -173,12 +174,7 @@ def create_wps(
     workspace_context = get_workspace_context(db, current_user, workspace_id)
 
     # Check permission (enterprise members have access by default)
-    if current_user.membership_type != "enterprise":
-        if not user_service.has_permission(db, current_user.id, "wps", "create"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="没有足够的权限"
-            )
+    ensure_module_permission(db, current_user, "wps", "create")
 
     # Check membership quota (only for personal workspace)
     if workspace_context.workspace_type == WorkspaceType.PERSONAL:
@@ -231,12 +227,7 @@ def read_wps_by_id(
     workspace_context = get_workspace_context(db, current_user, workspace_id)
 
     # Check permission
-    if current_user.membership_type != "enterprise":
-        if not user_service.has_permission(db, current_user.id, "wps", "read"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="没有足够的权限"
-            )
+    ensure_module_permission(db, current_user, "wps", "read")
 
     # Get WPS with workspace filtering
     wps_service_instance = WPSService(db)
@@ -299,12 +290,7 @@ def update_wps(
     workspace_context = get_workspace_context(db, current_user, workspace_id)
 
     # Check permission
-    if current_user.membership_type != "enterprise":
-        if not user_service.has_permission(db, current_user.id, "wps", "update"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="没有足够的权限"
-            )
+    ensure_module_permission(db, current_user, "wps", "update")
 
     # Get WPS with workspace filtering
     wps_service_instance = WPSService(db)
@@ -349,12 +335,7 @@ def delete_wps(
     workspace_context = get_workspace_context(db, current_user, workspace_id)
 
     # Check permission
-    if current_user.membership_type != "enterprise":
-        if not user_service.has_permission(db, current_user.id, "wps", "delete"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="没有足够的权限"
-            )
+    ensure_module_permission(db, current_user, "wps", "delete")
 
     try:
         # Delete with permission check (handled in service)
@@ -392,12 +373,7 @@ def create_wps_revision(
     workspace_context = get_workspace_context(db, current_user, workspace_id)
 
     # Check permission
-    if current_user.membership_type != "enterprise":
-        if not user_service.has_permission(db, current_user.id, "wps", "update"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="没有足够的权限"
-            )
+    ensure_module_permission(db, current_user, "wps", "update")
 
     # Get WPS with workspace filtering
     wps_service_instance = WPSService(db)
@@ -433,12 +409,7 @@ def read_wps_revisions(
     workspace_context = get_workspace_context(db, current_user, workspace_id)
 
     # Check permission
-    if current_user.membership_type != "enterprise":
-        if not user_service.has_permission(db, current_user.id, "wps", "read"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="没有足够的权限"
-            )
+    ensure_module_permission(db, current_user, "wps", "read")
 
     # Get WPS with workspace filtering
     wps_service_instance = WPSService(db)
@@ -469,12 +440,7 @@ def update_wps_status(
     workspace_context = get_workspace_context(db, current_user, workspace_id)
 
     # Check permission
-    if current_user.membership_type != "enterprise":
-        if not user_service.has_permission(db, current_user.id, "wps", "update"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="没有足够的权限"
-            )
+    ensure_module_permission(db, current_user, "wps", "update")
 
     # Get WPS with workspace filtering
     wps_service_instance = WPSService(db)
@@ -518,12 +484,7 @@ def search_wps(
     workspace_context = get_workspace_context(db, current_user, workspace_id)
 
     # Check permission
-    if current_user.membership_type != "enterprise":
-        if not user_service.has_permission(db, current_user.id, "wps", "read"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="没有足够的权限"
-            )
+    ensure_module_permission(db, current_user, "wps", "read")
 
     wps_service_instance = WPSService(db)
     params = (
@@ -577,12 +538,7 @@ def get_wps_statistics(
     workspace_context = get_workspace_context(db, current_user, workspace_id)
 
     # Check permission
-    if current_user.membership_type != "enterprise":
-        if not user_service.has_permission(db, current_user.id, "wps", "read"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="没有足够的权限"
-            )
+    ensure_module_permission(db, current_user, "wps", "read")
 
     # Get statistics using service
     wps_service_instance = WPSService(db)
@@ -605,12 +561,7 @@ def get_wps_count_by_status(
     workspace_context = get_workspace_context(db, current_user, workspace_id)
 
     # Check permission
-    if current_user.membership_type != "enterprise":
-        if not user_service.has_permission(db, current_user.id, "wps", "read"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="没有足够的权限"
-            )
+    ensure_module_permission(db, current_user, "wps", "read")
 
     # Get count using service
     wps_service_instance = WPSService(db)
@@ -629,12 +580,7 @@ def export_wps(
     enforce_export_limit(current_user.id)
     workspace_context = get_workspace_context(db, current_user, workspace_id)
 
-    if current_user.membership_type != "enterprise":
-        if not user_service.has_permission(db, current_user.id, "wps", "export"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="没有足够的权限"
-            )
+    ensure_module_permission(db, current_user, "wps", "export")
 
     wps_service_instance = WPSService(db)
     rows = []

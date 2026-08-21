@@ -101,7 +101,10 @@ class WorkspaceEntityService:
         current_user: User,
         workspace_context: WorkspaceContext,
     ) -> Dict[str, Any]:
+        from app.services.workspace_service import WorkspaceService
+
         workspace_context.validate()
+        WorkspaceService(self.db).validate_workspace_access(current_user, workspace_context)
         valid = {c.name for c in self.model.__table__.columns}
         data = {k: v for k, v in payload.items() if k in valid and k not in {
             "id", "user_id", "workspace_type", "company_id", "factory_id",

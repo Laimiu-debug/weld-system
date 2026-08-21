@@ -367,7 +367,21 @@ class WorkspaceService:
         # 企业工作区
         elif workspace_type == "enterprise":
             company_id = int(workspace_identifier)
-            
+
+            # Owner can access without a CompanyEmployee row
+            from app.models.company import Company
+
+            company = self.db.query(Company).filter(
+                Company.id == company_id,
+                Company.owner_id == user.id,
+            ).first()
+            if company:
+                return WorkspaceContext(
+                    user_id=user.id,
+                    workspace_type=WorkspaceType.ENTERPRISE,
+                    company_id=company_id,
+                )
+
             # 验证用户是否是企业成员
             employee = self.db.query(CompanyEmployee).filter(
                 CompanyEmployee.user_id == user.id,
@@ -421,8 +435,17 @@ class WorkspaceService:
                 )
             return True
         
-        # 企业工作区：必须是企业成员
+        # 企业工作区：必须是企业所有者或企业成员
         if workspace_context.is_enterprise():
+            from app.models.company import Company
+
+            company = self.db.query(Company).filter(
+                Company.id == workspace_context.company_id,
+                Company.owner_id == user.id,
+            ).first()
+            if company:
+                return True
+
             employee = self.db.query(CompanyEmployee).filter(
                 CompanyEmployee.user_id == user.id,
                 CompanyEmployee.company_id == workspace_context.company_id,

@@ -89,29 +89,12 @@ class PQRService:
 
         # Apply workspace filter - CRITICAL for data isolation
         if current_user and workspace_context:
-            if workspace_context.workspace_type == WorkspaceType.PERSONAL:
-                # Personal workspace: only user's own PQR
-                query = query.filter(
-                    PQR.workspace_type == WorkspaceType.PERSONAL,
-                    PQR.user_id == current_user.id
-                )
-            elif workspace_context.workspace_type == WorkspaceType.ENTERPRISE:
-                # Enterprise workspace: only company's PQR
-                if workspace_context.company_id:
-                    query = query.filter(
-                        PQR.workspace_type == WorkspaceType.ENTERPRISE,
-                        PQR.company_id == workspace_context.company_id
-                    )
-
-                    # Apply factory filter if specified
-                    if workspace_context.factory_id:
-                        query = query.filter(PQR.factory_id == workspace_context.factory_id)
-                else:
-                    # No company_id, return empty result
-                    query = query.filter(PQR.id == -1)
-            else:
-                # Unknown workspace type, return empty result
-                query = query.filter(PQR.id == -1)
+            query = self.data_access.apply_workspace_filter(
+                query=query,
+                model=PQR,
+                user=current_user,
+                workspace_context=workspace_context,
+            )
 
         # Apply additional filters
         if owner_id:
@@ -167,29 +150,12 @@ class PQRService:
 
         # Apply workspace filter - CRITICAL for data isolation
         if current_user and workspace_context:
-            if workspace_context.workspace_type == WorkspaceType.PERSONAL:
-                # Personal workspace: only user's own PQR
-                query = query.filter(
-                    PQR.workspace_type == WorkspaceType.PERSONAL,
-                    PQR.user_id == current_user.id
-                )
-            elif workspace_context.workspace_type == WorkspaceType.ENTERPRISE:
-                # Enterprise workspace: only company's PQR
-                if workspace_context.company_id:
-                    query = query.filter(
-                        PQR.workspace_type == WorkspaceType.ENTERPRISE,
-                        PQR.company_id == workspace_context.company_id
-                    )
-
-                    # Apply factory filter if specified
-                    if workspace_context.factory_id:
-                        query = query.filter(PQR.factory_id == workspace_context.factory_id)
-                else:
-                    # No company_id, return empty result
-                    query = query.filter(PQR.id == -1)
-            else:
-                # Unknown workspace type, return empty result
-                query = query.filter(PQR.id == -1)
+            query = self.data_access.apply_workspace_filter(
+                query=query,
+                model=PQR,
+                user=current_user,
+                workspace_context=workspace_context,
+            )
 
         # Apply additional filters
         if owner_id:

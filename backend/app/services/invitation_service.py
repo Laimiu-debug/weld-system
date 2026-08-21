@@ -10,6 +10,13 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.module_permissions import (
+    ALLOWED_INVITE_ROLES,
+    ensure_can_manage_invitations,
+    serialize_permissions_for_user,
+    validate_invite_role,
+    validate_invite_targets,
+)
 from app.models.company import Company, CompanyEmployee, CompanyInvitation, Factory
 from app.models.user import User
 from app.services.email_service import email_service
@@ -54,10 +61,18 @@ class InvitationService:
         )
 
     def create_invitation(self, current_user: User, payload: Dict[str, Any]) -> Dict[str, Any]:
-        company = self.get_company_for_user(current_user)
+        company = ensure_can_manage_invitations(self.db, current_user)
         email = str(payload.get("email") or "").strip().lower()
         if not email:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请填写邮箱")
+
+        role = validate_invite_role(payload.get("role"))
+        company_role_id, factory_id = validate_invite_targets(
+            self.db,
+            company,
+            company_role_id=_parse_optional_int(payload.get("company_role_id")),
+            factory_id=_parse_optional_int(payload.get("factory_id")),
+        )
 
         current_employee_count = (
             self.db.query(CompanyEmployee)
@@ -121,7 +136,6 @@ class InvitationService:
         if not isinstance(expires_at, datetime):
             expires_at = datetime.utcnow() + timedelta(days=7)
 
-        factory_id = _parse_optional_int(payload.get("factory_id"))
         department = payload.get("department") or payload.get("department_id") or payload.get("department_name")
         token = secrets.token_urlsafe(32)
         invitation_code = f"INV-{secrets.token_hex(4).upper()}"
@@ -131,8 +145,8 @@ class InvitationService:
             email=email,
             token=token,
             invitation_code=invitation_code,
-            role=payload.get("role") or "employee",
-            company_role_id=_parse_optional_int(payload.get("company_role_id")),
+            role=role,
+            company_role_id=company_role_id,
             factory_id=factory_id,
             department=str(department) if department else None,
             permissions=payload.get("permissions") or {},
@@ -167,7 +181,7 @@ class InvitationService:
         page: int = 1,
         page_size: int = 20,
     ) -> Tuple[List[Dict[str, Any]], int]:
-        company = self.get_company_for_user(current_user)
+        company = ensure_can_manage_invitations(self.db, current_user)
         self._expire_stale(company.id)
         query = self.db.query(CompanyInvitation).filter(CompanyInvitation.company_id == company.id)
         if status_filter:
@@ -259,10 +273,13 @@ class InvitationService:
             return self.serialize(invitation)
 
         company = self.enterprise.get_company_by_id(invitation.company_id)
+        # Never elevate invitees to admin via invitation payload
+        safe_role = invitation.role if invitation.role in ALLOWED_INVITE_ROLES else "employee"
+
         employee = CompanyEmployee(
             company_id=invitation.company_id,
             user_id=user.id,
-            role=invitation.role or "employee",
+            role=safe_role,
             company_role_id=invitation.company_role_id,
             factory_id=invitation.factory_id,
             department=invitation.department,
@@ -278,7 +295,10 @@ class InvitationService:
         invitation.accepted_user_id = user.id
         if company:
             user.membership_type = "enterprise"
+            # Keep company tier for quota/billing display; UI permissions come from CompanyRole.
             user.member_tier = company.membership_tier
+            self.db.flush()
+            user.permissions = serialize_permissions_for_user(self.db, user)
         self.db.commit()
         return self.serialize(invitation)
 
@@ -305,7 +325,7 @@ class InvitationService:
         }
 
     def _owned_invitation(self, current_user: User, invitation_id: int) -> CompanyInvitation:
-        company = self.get_company_for_user(current_user)
+        company = ensure_can_manage_invitations(self.db, current_user)
         invitation = (
             self.db.query(CompanyInvitation)
             .filter(

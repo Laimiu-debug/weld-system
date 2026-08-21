@@ -113,29 +113,12 @@ class WPSService:
         query = db.query(WPS).filter(WPS.is_active == True)
 
         # Apply workspace filter - CRITICAL for data isolation
-        if workspace_context.workspace_type == WorkspaceType.PERSONAL:
-            # Personal workspace: only user's own WPS
-            query = query.filter(
-                WPS.workspace_type == WorkspaceType.PERSONAL,
-                WPS.user_id == current_user.id
-            )
-        elif workspace_context.workspace_type == WorkspaceType.ENTERPRISE:
-            # Enterprise workspace: only company's WPS
-            if workspace_context.company_id:
-                query = query.filter(
-                    WPS.workspace_type == WorkspaceType.ENTERPRISE,
-                    WPS.company_id == workspace_context.company_id
-                )
-
-                # Apply factory filter if specified
-                if workspace_context.factory_id:
-                    query = query.filter(WPS.factory_id == workspace_context.factory_id)
-            else:
-                # No company_id, return empty result
-                query = query.filter(WPS.id == -1)
-        else:
-            # Unknown workspace type, return empty result
-            query = query.filter(WPS.id == -1)
+        query = self.data_access.apply_workspace_filter(
+            query=query,
+            model=WPS,
+            user=current_user,
+            workspace_context=workspace_context,
+        )
 
         # Apply additional filters
         if owner_id:

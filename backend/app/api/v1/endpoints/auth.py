@@ -270,12 +270,17 @@ def login_with_json(  # Updated to support phone/email login
         expires_delta=refresh_token_expires
     )
 
+    from app.core.module_permissions import serialize_permissions_for_user
+
+    user_payload = UserResponse.model_validate(user).model_dump()
+    user_payload["permissions"] = serialize_permissions_for_user(db, user)
+
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
         "expires_in": _access_token_ttl_minutes() * 60,
-        "user": UserResponse.model_validate(user)
+        "user": user_payload,
     }
 
 

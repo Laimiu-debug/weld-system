@@ -367,6 +367,8 @@ class AuthService {
     localStorage.removeItem(this.TOKEN_KEY)
     localStorage.removeItem(this.REFRESH_TOKEN_KEY)
     localStorage.removeItem(this.USER_KEY)
+    // Prevent workspace context leaking across accounts in the same browser
+    localStorage.removeItem('current_workspace')
   }
 
   // 检查用户权限
@@ -467,6 +469,10 @@ class AuthService {
 
       // 检查解析后的permissions对象是否为空
       if (Object.keys(permissions).length === 0) {
+        const membershipType = (user as any).membership_type
+        if (membershipType === 'enterprise') {
+          return false
+        }
         // 如果permissions为空对象，使用会员等级权限
         const membershipTier = (user as any).member_tier || user.membership_tier || 'personal_free'
         return this.checkMembershipPermission(membershipTier, permission)
@@ -522,7 +528,30 @@ class AuthService {
       }
 
       const field = permissionFieldMap[permission]
-      return field ? !!permissions[field] : false
+      if (!field) return false
+      const modulePerm = permissions[field]
+      if (modulePerm === true) return true
+      if (modulePerm === false || modulePerm == null) return false
+      if (typeof modulePerm === 'object') {
+        const action = permission.split('.')[1] || 'view'
+        const actionMap: Record<string, string> = {
+          read: 'view',
+          create: 'create',
+          update: 'edit',
+          delete: 'delete',
+          view: 'view',
+          edit: 'edit',
+        }
+        const key = actionMap[action] || action
+        return modulePerm[key] === true
+      }
+      return false
+    }
+
+    // 企业员工若无显式权限对象，不得回退到企业付费档「全开」
+    const membershipType = (user as any).membership_type
+    if (membershipType === 'enterprise') {
+      return false
     }
 
     // 如果没有权限字段，根据会员等级检查权限（平台等级权限）

@@ -78,13 +78,18 @@ def read_user_me(
     db: Session = Depends(deps.get_db)
 ) -> Any:
     """获取当前用户信息."""
+    from app.core.module_permissions import serialize_permissions_for_user
+    from app.schemas.user import UserResponse
+
     updated_user = user_service.get(db, id=current_user.id)
     if not updated_user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="用户不存在"
         )
-    return updated_user
+    payload = UserResponse.model_validate(updated_user).model_dump()
+    payload["permissions"] = serialize_permissions_for_user(db, updated_user)
+    return payload
 
 
 @router.put("/me", response_model=UserResponse)
