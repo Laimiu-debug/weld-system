@@ -5,7 +5,7 @@ import uuid
 import json
 from typing import Optional, List, Dict, Any, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, desc, asc, func, text
+from sqlalchemy import and_, or_, desc, asc, func, text, case
 from fastapi import HTTPException, status
 
 from app.models.shared_library import (
@@ -828,14 +828,14 @@ class SharedLibraryService:
         """获取共享库统计信息"""
         module_stats = self.db.query(
             func.count(SharedModule.id).label('total'),
-            func.sum(func.case([(SharedModule.status == 'approved', 1)], else_=0)).label('approved'),
-            func.sum(func.case([(SharedModule.status == 'pending', 1)], else_=0)).label('pending')
+            func.sum(case((SharedModule.status == 'approved', 1), else_=0)).label('approved'),
+            func.sum(case((SharedModule.status == 'pending', 1), else_=0)).label('pending')
         ).filter(SharedModule.status != 'removed').first()
 
         template_stats = self.db.query(
             func.count(SharedTemplate.id).label('total'),
-            func.sum(func.case([(SharedTemplate.status == 'approved', 1)], else_=0)).label('approved'),
-            func.sum(func.case([(SharedTemplate.status == 'pending', 1)], else_=0)).label('pending')
+            func.sum(case((SharedTemplate.status == 'approved', 1), else_=0)).label('approved'),
+            func.sum(case((SharedTemplate.status == 'pending', 1), else_=0)).label('pending')
         ).filter(SharedTemplate.status != 'removed').first()
 
         download_stats = self.db.query(func.count(SharedDownload.id)).scalar()

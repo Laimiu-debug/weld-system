@@ -453,19 +453,7 @@ const MembershipCurrent: React.FC = () => {
                   </div>
                   <div>
                     <Text strong>自动续费: </Text>
-                    <Tag color={
-                      (membershipInfo?.auto_renewal !== undefined
-                        ? membershipInfo.auto_renewal
-                        : (user as any)?.auto_renewal)
-                      ? 'success'
-                      : 'default'
-                    }>
-                      {(membershipInfo?.auto_renewal !== undefined
-                        ? membershipInfo.auto_renewal
-                        : (user as any)?.auto_renewal)
-                      ? '已开启'
-                      : '已关闭'}
-                    </Tag>
+                    <Tag color="default">暂不支持</Tag>
                   </div>
                 </Space>
               </Col>

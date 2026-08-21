@@ -639,16 +639,6 @@ def _payment_stats(db: Session) -> Dict[str, Any]:
     }
 
 
-def _billing_delta(billing_cycle: Optional[str]):
-    from dateutil.relativedelta import relativedelta
-
-    if billing_cycle == "quarterly":
-        return relativedelta(months=3)
-    if billing_cycle == "yearly":
-        return relativedelta(years=1)
-    return relativedelta(months=1)
-
-
 def _extract_user_transaction_id(description: Optional[str]) -> str:
     if description and "用户提交交易号:" in description:
         return description.split("用户提交交易号:")[1].strip()
@@ -714,9 +704,9 @@ def confirm_manual_payment_admin(
     db: Session = Depends(get_db),
     current_admin: Admin = Depends(get_current_active_admin)
 ) -> Any:
-    """管理员确认手动支付（剩余时长可叠加）"""
-    from app.models.subscription import SubscriptionTransaction, Subscription, SubscriptionPlan
-    from app.models.user import User
+    """管理员确认手动支付（走统一激活逻辑，避免到期日被重复叠加）"""
+    from app.models.subscription import SubscriptionTransaction
+    from app.services.payment_service import PaymentService
 
     transaction = db.query(SubscriptionTransaction).filter(
         SubscriptionTransaction.transaction_id == request.order_id
@@ -728,93 +718,26 @@ def confirm_manual_payment_admin(
             detail="订单不存在"
         )
 
-    if transaction.status != 'pending_confirm':
+    if transaction.status not in ('pending_confirm', 'pending'):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"订单状态不正确，当前状态: {transaction.status}"
         )
 
-    transaction.status = 'success'
-    transaction.transaction_date = datetime.utcnow()
-    transaction.updated_at = datetime.utcnow()
-
-    subscription = db.query(Subscription).filter(
-        Subscription.id == transaction.subscription_id
-    ).first()
-
-    if not subscription:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="订阅不存在"
-        )
-
-    plan = db.query(SubscriptionPlan).filter(
-        SubscriptionPlan.id == subscription.plan_id
-    ).first()
-
-    if not plan:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="套餐不存在"
-        )
-
-    now = datetime.utcnow()
-    user = db.query(User).filter(User.id == subscription.user_id).first()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="用户不存在"
-        )
-
-    # 续费叠加：从「现在」与「当前有效到期」中取较晚者再加一个计费周期
-    period_base = now
-    if subscription.end_date and subscription.end_date > now:
-        period_base = subscription.end_date
-    else:
-        other_active = (
-            db.query(Subscription)
-            .filter(
-                Subscription.user_id == user.id,
-                Subscription.id != subscription.id,
-                Subscription.plan_id == subscription.plan_id,
-                Subscription.status == "active",
-                Subscription.end_date > now,
-            )
-            .order_by(Subscription.end_date.desc())
-            .first()
-        )
-        if other_active and other_active.end_date:
-            period_base = other_active.end_date
-
-    end_date = period_base + _billing_delta(subscription.billing_cycle)
-    start_date = (
-        subscription.start_date
-        if subscription.start_date and subscription.status == "active"
-        else now
-    )
-
-    subscription.status = 'active'
-    subscription.start_date = start_date
-    subscription.end_date = end_date
-    subscription.last_payment_date = now
-    subscription.updated_at = now
-
-    db.commit()
-
-    from app.services.membership_tier_service import MembershipTierService
-    tier_service = MembershipTierService(db)
-    tier_result = tier_service.update_user_tier(user.id)
+    payment_service = PaymentService(db)
+    result = payment_service.activate_paid_transaction(transaction)
+    subscription = transaction.subscription
+    end_date = subscription.end_date if subscription else None
 
     return {
         "success": True,
         "message": "支付已确认，会员已开通",
         "data": {
-            "user_id": user.id if user else None,
-            "member_tier": tier_result['new_tier'],
-            "old_tier": tier_result['old_tier'],
-            "subscription_end_date": end_date.isoformat(),
-            "period_base": period_base.isoformat(),
-            "has_next_subscription": tier_result['next_subscription'] is not None
+            "user_id": subscription.user_id if subscription else None,
+            "subscription_id": result.get("subscription_id"),
+            "transaction_id": result.get("transaction_id"),
+            "subscription_end_date": end_date.isoformat() if end_date else None,
+            "tier": result.get("tier"),
         }
     }
 

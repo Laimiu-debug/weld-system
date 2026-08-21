@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Any
 
+from dateutil.relativedelta import relativedelta
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status, Depends
 
@@ -18,6 +19,11 @@ from app.services.payment_gateway import get_payment_gateway
 from app.services.membership_tier_service import MembershipTierService
 from app.services.notification_service import NotificationService
 from app.api import deps
+
+
+def _billing_period_delta(duration_months: int) -> relativedelta:
+    """按自然月计算订阅时长（1 月 = 日历月，不是 30 天）。"""
+    return relativedelta(months=max(1, int(duration_months or 1)))
 
 
 class PaymentService:
@@ -81,8 +87,15 @@ class PaymentService:
                 duration_months=duration_months
             )
 
+        if payment_method not in {"alipay", "wechat"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="仅支持支付宝或微信支付",
+            )
+
         start_date = datetime.utcnow()
-        end_date = start_date + timedelta(days=duration_months * 30)
+        # 仅预估展示用；续费真正延期在支付成功 activate 时一次性叠加，避免重复加时长
+        end_date = start_date + _billing_period_delta(duration_months)
         action_label = "续费" if purpose == "renew" else "升级到"
 
         if purpose == "renew":
@@ -101,8 +114,9 @@ class PaymentService:
                     detail="订阅不存在",
                 )
             if subscription.end_date and subscription.end_date > start_date:
-                end_date = subscription.end_date + timedelta(days=duration_months * 30)
-            subscription.auto_renew = auto_renew
+                end_date = subscription.end_date + _billing_period_delta(duration_months)
+            # 支付前不改写 subscription.end_date，避免与激活逻辑双重延期
+            subscription.auto_renew = bool(auto_renew)
             subscription.payment_method = payment_method
             subscription.updated_at = datetime.utcnow()
         else:
@@ -184,16 +198,9 @@ class PaymentService:
         ).first()
 
         if payment_method == "bank":
-            return PaymentResponse(
-                success=True,
-                payment_url=None,
-                qr_code=None,
-                order_id=transaction.transaction_id,
-                transaction_id=transaction.transaction_id,
-                message="请按对公账户完成转账后提交凭证",
-                amount=transaction.amount,
-                payment_method=payment_method,
-                created_at=datetime.now()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="已不再支持银行转账，请使用支付宝或微信支付",
             )
 
         # 手动收款码：不走第三方，前端展示站内支付宝/微信码
@@ -377,9 +384,10 @@ class PaymentService:
 
         if is_renewal:
             base = subscription.end_date if subscription.end_date and subscription.end_date > datetime.utcnow() else datetime.utcnow()
-            subscription.end_date = base + timedelta(days=duration_months * 30)
+            subscription.end_date = base + _billing_period_delta(duration_months)
             subscription.status = "active"
         else:
+            # 升级：沿用创单时写入的 end_date，不再叠加，避免管理员确认时被加两次
             subscription.status = "active"
 
         subscription.last_payment_date = datetime.utcnow()
@@ -388,7 +396,9 @@ class PaymentService:
 
         user = self.db.query(User).filter(User.id == subscription.user_id).first()
         if user:
-            user.auto_renewal = bool(subscription.auto_renew)
+            # 当前无自动扣款能力，统一关闭自动续费标志
+            user.auto_renewal = False
+            subscription.auto_renew = False
             user.subscription_status = "active"
             user.subscription_start_date = subscription.start_date
             user.subscription_end_date = subscription.end_date
@@ -437,7 +447,7 @@ class PaymentService:
             plan_id=subscription.plan_id,
             billing_cycle=subscription.billing_cycle or "monthly",
             payment_method=subscription.payment_method or "alipay",
-            auto_renew=True,
+            auto_renew=False,
             purpose="renew",
             existing_subscription_id=subscription.id,
         )
@@ -450,6 +460,48 @@ class PaymentService:
                 "warning",
             )
         return order
+
+    def delete_unpaid_order(self, user_id: int, order_id: str) -> Dict[str, Any]:
+        """用户删除未支付/已拒绝的订单；若对应订阅仍为 pending 且无成功交易，一并删除订阅。"""
+        transaction = self._find_transaction(order_id)
+        if not transaction:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="订单不存在",
+            )
+
+        subscription = transaction.subscription
+        if not subscription or subscription.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="无权删除此订单",
+            )
+
+        if transaction.status not in {"pending", "pending_confirm", "failed", "rejected"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="仅可删除未支付或未通过的订单",
+            )
+
+        subscription_id = subscription.id
+        deleted_subscription = False
+        self.db.delete(transaction)
+        self.db.flush()
+
+        remaining = self.db.query(SubscriptionTransaction).filter(
+            SubscriptionTransaction.subscription_id == subscription_id
+        ).all()
+        has_success = any(t.status == "success" for t in remaining)
+        if subscription.status == "pending" and not has_success:
+            self.db.delete(subscription)
+            deleted_subscription = True
+
+        self.db.commit()
+        return {
+            "order_id": order_id,
+            "deleted_subscription": deleted_subscription,
+            "subscription_id": subscription_id,
+        }
 
     def _notify_user(self, user_id: int, title: str, content: str, announcement_type: str = "info") -> None:
         try:

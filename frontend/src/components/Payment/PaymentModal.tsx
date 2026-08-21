@@ -30,7 +30,7 @@ interface PaymentModalProps {
   orderId: string
   amount: number
   planName: string
-  paymentMethod: 'alipay' | 'wechat' | 'bank'
+  paymentMethod: 'alipay' | 'wechat'
   qrCode?: string
   onSuccess: () => void
   onCancel: () => void
@@ -147,8 +147,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         return <AlipayOutlined style={{ fontSize: 48, color: '#1677ff' }} />
       case 'wechat':
         return <WechatOutlined style={{ fontSize: 48, color: '#07c160' }} />
-      case 'bank':
-        return null
       default: {
         const _exhaustive: never = paymentMethod
         return _exhaustive
@@ -162,8 +160,6 @@ const PaymentModal: React.FC<PaymentModalProps> = ({
         return '支付宝'
       case 'wechat':
         return '微信支付'
-      case 'bank':
-        return '银行转账'
       default: {
         const _exhaustive: never = paymentMethod
         return _exhaustive

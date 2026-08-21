@@ -25,7 +25,7 @@ import PaymentModal from '@/components/Payment/PaymentModal'
 
 const { Title, Text, Paragraph } = Typography
 
-type PaymentMethod = 'alipay' | 'wechat' | 'bank'
+type PaymentMethod = 'alipay' | 'wechat'
 
 interface CreatedOrder {
   order_id: string
@@ -54,7 +54,6 @@ const MembershipPayment: React.FC = () => {
   const billingCycle = searchParams.get('billing_cycle') || 'monthly'
   const paymentMethod = (searchParams.get('payment_method') || 'alipay') as PaymentMethod
   const subscriptionId = searchParams.get('subscription_id')
-  const autoRenew = searchParams.get('auto_renew') !== 'false'
 
   useEffect(() => {
     const key = `${planId}|${billingCycle}|${paymentMethod}|${subscriptionId || ''}`
@@ -88,7 +87,7 @@ const MembershipPayment: React.FC = () => {
         plan_id: resolvedPlanId,
         billing_cycle: resolvedCycle,
         payment_method: paymentMethod,
-        auto_renew: autoRenew,
+        auto_renew: false,
         purpose: subscriptionId ? 'renew' : 'upgrade',
         existing_subscription_id: subscriptionId ? Number(subscriptionId) : undefined,
       })
@@ -108,8 +107,8 @@ const MembershipPayment: React.FC = () => {
         payment_url: paymentData.payment_url,
       }
       setOrder(created)
-      if (created.payment_method === 'bank' || !created.qr_code) {
-        setManualVisible(created.payment_method !== 'bank')
+      if (!created.qr_code) {
+        setManualVisible(true)
       } else {
         setQrModalVisible(true)
       }
@@ -154,8 +153,6 @@ const MembershipPayment: React.FC = () => {
         return <AlipayOutlined style={{ fontSize: 32, color: '#1677ff' }} />
       case 'wechat':
         return <WechatOutlined style={{ fontSize: 32, color: '#07c160' }} />
-      case 'bank':
-        return null
       default: {
         const _exhaustive: never = paymentMethod
         return _exhaustive

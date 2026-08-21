@@ -523,12 +523,27 @@ const Layout: React.FC<LayoutProps> = () => {
     ]
     for (const base of candidates) {
       if (pathname === base || pathname.startsWith(`${base}/`)) {
-        // 报表 / 计划 / 标准 / 绩效子路由保留精确选中
+        // 会员中心子页：精确高亮对应入口
+        if (base === '/membership' && pathname !== base) {
+          if (
+            pathname.startsWith('/membership/upgrade') ||
+            pathname.startsWith('/membership/payment') ||
+            pathname.startsWith('/membership/result')
+          ) {
+            return ['/membership/upgrade']
+          }
+          if (pathname.startsWith('/membership/history')) {
+            return ['/membership/history']
+          }
+          return [pathname]
+        }
+        // 我的 / 报表 / 计划 / 标准 / 绩效子路由保留精确选中
         if (
           (base === '/reports' ||
             base === '/production' ||
             base === '/quality' ||
-            base === '/employees') &&
+            base === '/employees' ||
+            base === '/profile') &&
           pathname !== base
         ) {
           return [pathname]

@@ -34,7 +34,7 @@ class PaymentCreateRequest(BaseModel):
     """支付创建请求"""
     plan_id: str
     billing_cycle: str  # monthly, quarterly, yearly
-    payment_method: str  # alipay, wechat, bank
+    payment_method: str  # alipay, wechat
     auto_renew: bool = False
     purpose: str = "upgrade"
     existing_subscription_id: Optional[int] = None
@@ -219,6 +219,22 @@ def get_payment_status(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"获取支付状态失败: {str(e)}"
         )
+
+
+@router.delete("/orders/{order_id}", response_model=Dict[str, Any])
+def delete_unpaid_order(
+    order_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user = Depends(deps.get_current_user)
+) -> Any:
+    """删除未支付订单（及仍待激活的空订阅）"""
+    payment_service = PaymentService(db)
+    result = payment_service.delete_unpaid_order(current_user.id, order_id)
+    return {
+        "success": True,
+        "message": "订单已删除",
+        "data": result,
+    }
 
 
 @router.post("/mock-complete/{order_id}", response_model=Dict[str, Any])

@@ -156,7 +156,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - VITE_API_BASE_URL=https://api.sdhaohan.cn/api/v1
+        - VITE_API_BASE_URL=/api/v1
     container_name: weld_frontend
     restart: always
     networks:
@@ -168,7 +168,7 @@ services:
       context: ./admin-portal
       dockerfile: Dockerfile.prod
       args:
-        - VITE_API_BASE_URL=https://api.sdhaohan.cn/api/v1
+        - VITE_API_BASE_URL=/api/v1
     container_name: weld_admin
     restart: always
     networks:

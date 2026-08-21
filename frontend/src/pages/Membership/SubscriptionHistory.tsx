@@ -25,6 +25,7 @@ import { apiService } from '@/services/api'
 import {
   DownloadOutlined,
   EyeOutlined,
+  DeleteOutlined,
   FileTextOutlined,
   CalendarOutlined,
   CheckCircleOutlined,
@@ -32,7 +33,6 @@ import {
   ClockCircleOutlined,
   ExclamationCircleOutlined,
   CreditCardOutlined,
-  BankOutlined,
   WechatOutlined,
   AlipayOutlined,
   FilterOutlined,
@@ -55,7 +55,7 @@ interface SubscriptionRecord {
   amount: number
   currency: string
   status: 'paid' | 'pending' | 'failed' | 'cancelled' | 'refunded'
-  paymentMethod: 'alipay' | 'wechat' | 'bank' | 'credit_card'
+  paymentMethod: 'alipay' | 'wechat' | 'bank' | 'credit_card' | string
   startDate: string
   endDate: string
   createdAt: string
@@ -66,6 +66,7 @@ interface SubscriptionRecord {
   discountAmount?: number
   originalAmount?: number
   features: string[]
+  transactionStatus?: string
 }
 
 interface TransactionLog {
@@ -95,92 +96,108 @@ const SubscriptionHistory: React.FC = () => {
   const [searchText, setSearchText] = useState('')
 
   // 获取真实的订阅数据
-  useEffect(() => {
-    const fetchSubscriptionHistory = async () => {
-      setLoading(true)
-      try {
-        // 使用统一的API服务获取订阅历史
-        const response = await apiService.get('/members/history')
+  const fetchSubscriptionHistory = async () => {
+    setLoading(true)
+    try {
+      const response = await apiService.get('/members/history')
 
-        console.log('订阅历史API响应:', response)
+      if (response.success && response.data && Array.isArray(response.data.data)) {
+        const data = response.data.data
 
-        // API返回的数据结构是嵌套的: response.data.data 才是真正的数组
-        if (response.success && response.data && Array.isArray(response.data.data)) {
-          const data = response.data.data
-          console.log('订阅数据:', data)
+        const formattedSubscriptions = data.map((item: any) => {
+          const firstTransaction = item.transactions && item.transactions.length > 0 ? item.transactions[0] : null
+          const unpaidTx = (item.transactions || []).find((tx: any) =>
+            ['pending', 'pending_confirm', 'failed', 'rejected'].includes(tx.status)
+          )
 
-          // 将API返回的数据转换为组件需要的格式
-          const formattedSubscriptions = data.map((item: any) => {
-            // 获取第一个交易记录作为订单信息
-            const firstTransaction = item.transactions && item.transactions.length > 0 ? item.transactions[0] : null
+          return {
+            id: item.id?.toString() || Date.now().toString(),
+            orderId: unpaidTx?.transaction_id || firstTransaction?.transaction_id || `SUB-${item.id}`,
+            planName: getPlanDisplayName(item.plan_id) || '未知套餐',
+            planType: getPlanTypeFromId(item.plan_id),
+            amount: unpaidTx?.amount ?? item.price ?? 0,
+            currency: item.currency || 'CNY',
+            status: item.status === 'active' ? 'paid' :
+                   item.status === 'cancelled' ? 'cancelled' :
+                   item.status === 'expired' ? 'failed' :
+                   item.status === 'pending' ? 'pending' : 'pending',
+            paymentMethod: unpaidTx?.payment_method || item.payment_method || 'unknown',
+            startDate: item.start_date || '',
+            endDate: item.end_date || '',
+            createdAt: item.created_at || '',
+            paidAt: item.last_payment_date || '',
+            invoiceUrl: undefined,
+            description: `${getPlanDisplayName(item.plan_id) || '未知套餐'} - ${getBillingCycleName(item.billing_cycle) || 'unknown'}`,
+            autoRenew: false,
+            features: [],
+            transactionStatus: unpaidTx?.status || firstTransaction?.status,
+          }
+        })
 
-            return {
-              id: item.id?.toString() || Date.now().toString(),
-              orderId: firstTransaction?.transaction_id || `SUB-${item.id}`,
-              planName: getPlanDisplayName(item.plan_id) || '未知套餐',
-              planType: getPlanTypeFromId(item.plan_id),
-              amount: item.price || 0,
-              currency: item.currency || 'CNY',
-              status: item.status === 'active' ? 'paid' :
-                     item.status === 'cancelled' ? 'cancelled' :
-                     item.status === 'expired' ? 'failed' :
-                     item.status === 'pending' ? 'pending' : 'pending',
-              paymentMethod: item.payment_method || 'unknown',
-              // 保留原始的ISO字符串,不要在这里格式化
-              startDate: item.start_date || '',
-              endDate: item.end_date || '',
-              createdAt: item.created_at || '',
-              paidAt: item.last_payment_date || '',
-              invoiceUrl: null, // API暂时不支持发票
-              description: `${getPlanDisplayName(item.plan_id) || '未知套餐'} - ${getBillingCycleName(item.billing_cycle) || 'unknown'}`,
-              autoRenew: item.auto_renew || false,
-              features: [], // 可以从其他API获取功能列表
-            }
-          })
+        setSubscriptions(formattedSubscriptions)
 
-          setSubscriptions(formattedSubscriptions)
-
-          // 处理交易记录
-          const allTransactions: TransactionLog[] = []
-          data.forEach((item: any) => {
-            if (item.transactions && Array.isArray(item.transactions)) {
-              item.transactions.forEach((tx: any) => {
-                allTransactions.push({
-                  id: tx.id?.toString() || Date.now().toString(),
-                  subscriptionId: item.id?.toString() || '',
-                  action: tx.status === 'success' ? '支付成功' :
-                         tx.status === 'pending' ? '待支付' :
-                         tx.status === 'pending_confirm' ? '待确认' :
-                         tx.status === 'failed' ? '支付失败' : '未知状态',
-                  description: tx.description || `${tx.payment_method} 支付 ¥${tx.amount}`,
-                  timestamp: tx.transaction_date || tx.created_at || '',
-                  operator: '系统',
-                  ip: '-',
-                  amount: tx.amount || 0,  // 保存原始金额
-                  status: tx.status || 'unknown',  // 保存原始状态
-                })
+        const allTransactions: TransactionLog[] = []
+        data.forEach((item: any) => {
+          if (item.transactions && Array.isArray(item.transactions)) {
+            item.transactions.forEach((tx: any) => {
+              allTransactions.push({
+                id: tx.id?.toString() || Date.now().toString(),
+                subscriptionId: item.id?.toString() || '',
+                action: tx.status === 'success' ? '支付成功' :
+                       tx.status === 'pending' ? '待支付' :
+                       tx.status === 'pending_confirm' ? '待确认' :
+                       tx.status === 'failed' ? '支付失败' :
+                       tx.status === 'rejected' ? '已拒绝' : '未知状态',
+                description: tx.description || `${tx.payment_method} 支付 ¥${tx.amount}`,
+                timestamp: tx.transaction_date || tx.created_at || '',
+                operator: '系统',
+                ip: '-',
+                amount: tx.amount || 0,
+                status: tx.status || 'unknown',
               })
-            }
-          })
-          setTransactions(allTransactions)
-        } else {
-          // API调用失败或数据格式不正确
-          console.log('获取订阅历史失败或数据为空')
-          setSubscriptions([])
-          setTransactions([])
-        }
-      } catch (error) {
-        console.error('获取订阅历史失败:', error)
-        // 不要显示错误消息，直接显示空状态
+            })
+          }
+        })
+        setTransactions(allTransactions)
+      } else {
         setSubscriptions([])
         setTransactions([])
-      } finally {
-        setLoading(false)
       }
+    } catch (error) {
+      console.error('获取订阅历史失败:', error)
+      setSubscriptions([])
+      setTransactions([])
+    } finally {
+      setLoading(false)
     }
+  }
 
-    fetchSubscriptionHistory()
+  useEffect(() => {
+    void fetchSubscriptionHistory()
   }, [])
+
+  const handleDeleteUnpaid = (record: SubscriptionRecord) => {
+    Modal.confirm({
+      title: '删除未支付订单',
+      content: `确定删除订单 ${record.orderId} 吗？删除后不可恢复。`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          const response = await apiService.delete(`/payments/orders/${record.orderId}`)
+          if (!response.success) {
+            throw new Error(response.message || '删除失败')
+          }
+          message.success('订单已删除')
+          await fetchSubscriptionHistory()
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : '删除失败'
+          message.error(detail)
+        }
+      },
+    })
+  }
 
   // 辅助函数：根据plan_id获取planType
   const getPlanTypeFromId = (planId: string) => {
@@ -271,13 +288,12 @@ const SubscriptionHistory: React.FC = () => {
 
   // 获取支付方式配置
   const getPaymentMethodConfig = (method: string) => {
-    const methodMap = {
+    const methodMap: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
       alipay: { color: 'blue', text: '支付宝', icon: <AlipayOutlined /> },
       wechat: { color: 'green', text: '微信支付', icon: <WechatOutlined /> },
-      bank: { color: 'orange', text: '银行转账', icon: <BankOutlined /> },
       credit_card: { color: 'purple', text: '信用卡', icon: <CreditCardOutlined /> },
     }
-    return methodMap[method as keyof typeof methodMap] || { color: 'default', text: method, icon: null }
+    return methodMap[method] || { color: 'default', text: method || '未知', icon: null }
   }
 
   // 获取套餐配置
@@ -407,35 +423,48 @@ const SubscriptionHistory: React.FC = () => {
       title: '自动续费',
       dataIndex: 'autoRenew',
       key: 'autoRenew',
-      render: (autoRenew) => (
-        <Tag color={autoRenew ? 'green' : 'default'}>
-          {autoRenew ? '已开启' : '已关闭'}
-        </Tag>
+      render: () => (
+        <Tag color="default">暂不支持</Tag>
       ),
     },
     {
       title: '操作',
       key: 'actions',
-      render: (_, record) => (
-        <Space>
-          <Button
-            type="text"
-            icon={<EyeOutlined />}
-            onClick={() => handleViewDetail(record)}
-          >
-            查看
-          </Button>
-          {record.invoiceUrl && record.status === 'paid' && (
+      render: (_, record) => {
+        const canDelete =
+          record.status === 'pending' ||
+          ['pending', 'pending_confirm', 'failed', 'rejected'].includes(record.transactionStatus || '')
+        return (
+          <Space>
             <Button
               type="text"
-              icon={<DownloadOutlined />}
-              onClick={() => console.log('下载发票', record.invoiceUrl)}
+              icon={<EyeOutlined />}
+              onClick={() => handleViewDetail(record)}
             >
-              发票
+              查看
             </Button>
-          )}
-        </Space>
-      ),
+            {canDelete && (
+              <Button
+                type="text"
+                danger
+                icon={<DeleteOutlined />}
+                onClick={() => handleDeleteUnpaid(record)}
+              >
+                删除
+              </Button>
+            )}
+            {record.invoiceUrl && record.status === 'paid' && (
+              <Button
+                type="text"
+                icon={<DownloadOutlined />}
+                onClick={() => console.log('下载发票', record.invoiceUrl)}
+              >
+                发票
+              </Button>
+            )}
+          </Space>
+        )
+      },
     },
   ]
 

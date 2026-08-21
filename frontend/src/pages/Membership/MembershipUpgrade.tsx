@@ -43,7 +43,6 @@ import {
   UserOutlined,
   CreditCardOutlined,
   WechatOutlined,
-  BankOutlined,
   ReloadOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -778,7 +777,7 @@ const MembershipUpgrade: React.FC = () => {
         plan_id: selectedPlan,
         billing_cycle: billingCycle,
         payment_method: paymentMethod,
-        auto_renew: true
+        auto_renew: false
       })
 
       console.log('Payment create response:', response)
@@ -1294,46 +1293,6 @@ const MembershipUpgrade: React.FC = () => {
                     </Row>
                   </Card>
                 </Radio>
-
-                <Radio value="bank" className="w-full">
-                  <Card
-                    className={`w-full cursor-pointer transition-all ${paymentMethod === 'bank' ? 'border-orange-500 shadow-md' : 'hover:shadow-md'}`}
-                    style={{
-                      borderRadius: '12px',
-                      border: paymentMethod === 'bank' ? '2px solid #ff6a00' : '1px solid #d9d9d9'
-                    }}
-                  >
-                    <Row align="middle" gutter={16}>
-                      <Col>
-                        <div style={{
-                          width: '48px',
-                          height: '48px',
-                          borderRadius: '12px',
-                          background: 'linear-gradient(135deg, #ff6a00, #ff9500)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: 'white',
-                          fontSize: '20px',
-                          fontWeight: 'bold'
-                        }}>
-                          银
-                        </div>
-                      </Col>
-                      <Col flex="auto">
-                        <div>
-                          <Text strong style={{ fontSize: '16px', color: '#262626' }}>银行转账</Text>
-                          <div>
-                            <Text type="secondary" style={{ fontSize: '12px' }}>对公账户转账支付</Text>
-                          </div>
-                        </div>
-                      </Col>
-                      <Col>
-                        <BankOutlined style={{ fontSize: '20px', color: '#ff6a00' }} />
-                      </Col>
-                    </Row>
-                  </Card>
-                </Radio>
               </Space>
             </Radio.Group>
 
@@ -1401,7 +1360,7 @@ const MembershipUpgrade: React.FC = () => {
                 <div>
                   <div>套餐：{membershipPlans.find(p => p.id === selectedPlan)?.name}</div>
                   <div>计费周期：{billingCycle === 'monthly' ? '月付' : billingCycle === 'quarterly' ? '季付' : '年付'}</div>
-                  <div>支付方式：{paymentMethod === 'alipay' ? '支付宝' : paymentMethod === 'wechat' ? '微信支付' : '银行转账'}</div>
+                  <div>支付方式：{paymentMethod === 'wechat' ? '微信支付' : '支付宝'}</div>
                   <div className="mt-2" style={{ borderTop: '1px dashed #d9d9d9', paddingTop: '8px' }}>
                     <div>套餐原价：¥{pricePreview.original_price.toLocaleString()}</div>
                     <div style={{ color: '#52c41a' }}>剩余价值抵扣：-¥{pricePreview.discount.toLocaleString()}</div>
@@ -1427,7 +1386,7 @@ const MembershipUpgrade: React.FC = () => {
               <div>
                 <div>套餐：{membershipPlans.find(p => p.id === selectedPlan)?.name}</div>
                 <div>金额：¥{pricePreview ? pricePreview.actual_price.toLocaleString() : membershipPlans.find(p => p.id === selectedPlan)?.prices[billingCycle].toLocaleString()}/{billingCycle === 'monthly' ? '月' : billingCycle === 'quarterly' ? '季' : '年'}</div>
-                <div>支付方式：{paymentMethod === 'alipay' ? '支付宝' : paymentMethod === 'wechat' ? '微信支付' : '银行转账'}</div>
+                <div>支付方式：{paymentMethod === 'wechat' ? '微信支付' : '支付宝'}</div>
               </div>
             }
             type="warning"
@@ -1442,7 +1401,7 @@ const MembershipUpgrade: React.FC = () => {
         orderId={currentOrderId}
         amount={currentAmount}
         planName={currentPlanName}
-        paymentMethod={paymentMethod as 'alipay' | 'wechat' | 'bank'}
+        paymentMethod={paymentMethod as 'alipay' | 'wechat'}
         qrCode={currentQrCode}
         onSuccess={() => {
           setQrPaymentVisible(false)
