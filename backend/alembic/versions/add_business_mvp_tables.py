@@ -48,6 +48,13 @@ def upgrade() -> None:
     op.execute("CREATE INDEX IF NOT EXISTS ix_production_plans_company_id ON production_plans (company_id)")
     op.execute("CREATE INDEX IF NOT EXISTS ix_production_plans_plan_number ON production_plans (plan_number)")
     op.execute("CREATE INDEX IF NOT EXISTS ix_production_plans_workspace_type ON production_plans (workspace_type)")
+    # 兼容早期已存在、但缺字段的 production_plans 表
+    op.execute("ALTER TABLE production_plans ADD COLUMN IF NOT EXISTS priority VARCHAR(50) DEFAULT 'normal'")
+    op.execute("ALTER TABLE production_plans ADD COLUMN IF NOT EXISTS progress_percentage FLOAT DEFAULT 0")
+    op.execute("ALTER TABLE production_plans ADD COLUMN IF NOT EXISTS planned_quantity FLOAT")
+    op.execute("ALTER TABLE production_plans ADD COLUMN IF NOT EXISTS unit VARCHAR(50)")
+    op.execute("ALTER TABLE production_plans ADD COLUMN IF NOT EXISTS assigned_team VARCHAR(255)")
+    op.execute("ALTER TABLE production_plans ADD COLUMN IF NOT EXISTS quality_standards TEXT")
 
     op.execute(
         """
