@@ -423,36 +423,52 @@ class ApprovalService:
         page: int = 1,
         page_size: int = 20
     ) -> Tuple[List[ApprovalInstance], int]:
-        """获取待我审批的列表"""
-        # 获取用户的角色
+        """获取待我审批的列表（按当前步骤审批人配置过滤）"""
         employee = self.db.query(CompanyEmployee).filter(
             CompanyEmployee.user_id == current_user.id,
             CompanyEmployee.company_id == workspace_context.company_id,
             CompanyEmployee.status == "active"
         ).first()
 
-        if not employee or not employee.company_role_id:
+        if not employee:
             return [], 0
 
-        # 查询待审批的实例
-        query = self.db.query(ApprovalInstance).filter(
-            ApprovalInstance.company_id == workspace_context.company_id,
-            ApprovalInstance.status.in_([
-                ApprovalStatus.PENDING,
-                ApprovalStatus.IN_PROGRESS
-            ])
+        rows = (
+            self.db.query(ApprovalInstance, ApprovalWorkflowDefinition)
+            .outerjoin(
+                ApprovalWorkflowDefinition,
+                ApprovalWorkflowDefinition.id == ApprovalInstance.workflow_id,
+            )
+            .filter(
+                ApprovalInstance.company_id == workspace_context.company_id,
+                ApprovalInstance.status.in_([
+                    ApprovalStatus.PENDING,
+                    ApprovalStatus.IN_PROGRESS,
+                ]),
+            )
+            .order_by(
+                ApprovalInstance.priority.desc(),
+                ApprovalInstance.submitted_at.asc(),
+            )
+            .all()
         )
 
-        # TODO: 根据工作流步骤配置过滤出当前用户可以审批的
-        # 这里需要检查workflow.steps中当前步骤的approver_ids是否包含当前用户的角色
+        matched: List[ApprovalInstance] = []
+        for instance, workflow in rows:
+            step = self._current_step_config(instance, workflow)
+            if step is None:
+                # 无步骤配置时，回退为具备模块审批权限的人可见
+                if self._can_approve(instance, current_user, enforce_step=False):
+                    matched.append(instance)
+                continue
+            if self._is_current_step_approver(
+                step, user=current_user, employee=employee
+            ):
+                matched.append(instance)
 
-        total = query.count()
-        instances = query.order_by(
-            ApprovalInstance.priority.desc(),
-            ApprovalInstance.submitted_at.asc()
-        ).offset((page - 1) * page_size).limit(page_size).all()
-
-        return instances, total
+        total = len(matched)
+        start = max(0, (page - 1) * page_size)
+        return matched[start:start + page_size], total
 
     def get_my_submissions(
         self,
@@ -525,6 +541,15 @@ class ApprovalService:
             ApprovalInstance.status == ApprovalStatus.REJECTED
         ).count()
 
+        # 待我审批
+        _, my_pending_total = self.get_pending_approvals(
+            current_user=current_user,
+            workspace_context=workspace_context,
+            page=1,
+            page_size=1,
+        )
+        stats["my_pending"] = my_pending_total
+
         # 我提交的
         stats["my_submitted"] = self.db.query(ApprovalInstance).filter(
             ApprovalInstance.submitter_id == current_user.id,
@@ -561,8 +586,8 @@ class ApprovalService:
                 detail="当前状态不允许审批"
             )
 
-        # 检查权限：是否有审批权限
-        if not self._can_approve(instance, current_user):
+        # 检查权限：模块审批权限 + 当前步骤审批人
+        if not self._can_approve(instance, current_user, enforce_step=True):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="您没有权限审批此文档"
@@ -657,13 +682,77 @@ class ApprovalService:
             permissions_by_company[employee.company_id] = (role.permissions or {}) if role else {}
         return permissions_by_company
 
+    def _current_step_config(
+        self,
+        instance: ApprovalInstance,
+        workflow: Optional[ApprovalWorkflowDefinition] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """读取实例当前步骤配置（current_step 为 1-based）。"""
+        wf = workflow
+        if wf is None:
+            wf = getattr(instance, "workflow_definition", None)
+        if wf is None and getattr(instance, "workflow_id", None):
+            wf = (
+                self.db.query(ApprovalWorkflowDefinition)
+                .filter(ApprovalWorkflowDefinition.id == instance.workflow_id)
+                .first()
+            )
+        steps = getattr(wf, "steps", None) if wf is not None else None
+        if not steps:
+            return None
+        idx = (getattr(instance, "current_step", None) or 0) - 1
+        if idx < 0 or idx >= len(steps):
+            return None
+        step = steps[idx]
+        return step if isinstance(step, dict) else None
+
+    def _step_approver_ids(self, step: Dict[str, Any]) -> set:
+        ids = set(step.get("approver_ids") or [])
+        if not ids and step.get("approver_id") is not None:
+            ids = {step["approver_id"]}
+        return ids
+
+    def _is_current_step_approver(
+        self,
+        step: Optional[Dict[str, Any]],
+        *,
+        user: User,
+        employee: CompanyEmployee,
+    ) -> bool:
+        """判断员工是否为当前步骤配置的审批人。"""
+        if not step:
+            return False
+        approver_type = step.get("approver_type")
+        ids = self._step_approver_ids(step)
+        if not ids:
+            return False
+
+        if approver_type == "role":
+            return employee.company_role_id in ids
+        if approver_type == "user":
+            return user.id in ids
+        if approver_type == "department":
+            # 模型无 department_id：按工厂 ID 或部门名称匹配
+            if employee.factory_id is not None and employee.factory_id in ids:
+                return True
+            dept = (employee.department or "").strip()
+            if not dept:
+                return False
+            return dept in ids or dept in {str(item) for item in ids}
+        return False
+
     def _can_approve(
         self,
         instance: ApprovalInstance,
         user: User,
         permissions_by_company: Optional[Dict[int, Dict[str, Any]]] = None,
+        *,
+        enforce_step: bool = False,
     ) -> bool:
-        """检查用户是否有权限审批"""
+        """检查用户是否有权限审批。
+
+        enforce_step=True 时，在模块 approve 权限之外还要求匹配当前步骤审批人。
+        """
         if user.is_admin:
             return True
 
@@ -677,7 +766,24 @@ class ApprovalService:
         permissions = permissions_by_company.get(company_id) or {}
         module_key = f"{instance.document_type}_management"
         module_perms = permissions.get(module_key, {}) or {}
-        return bool(module_perms.get("approve", False))
+        if not bool(module_perms.get("approve", False)):
+            return False
+
+        if not enforce_step:
+            return True
+
+        step = self._current_step_config(instance)
+        if step is None:
+            return True
+
+        employee = self.db.query(CompanyEmployee).filter(
+            CompanyEmployee.user_id == user.id,
+            CompanyEmployee.company_id == company_id,
+            CompanyEmployee.status == "active",
+        ).first()
+        if not employee:
+            return False
+        return self._is_current_step_approver(step, user=user, employee=employee)
 
     def _add_history(
         self,
@@ -733,13 +839,22 @@ class ApprovalService:
             user_ids = approver_ids
 
         elif approver_type == 'department':
-            # 根据部门ID查找用户
-            for dept_id in approver_ids:
-                employees = self.db.query(CompanyEmployee).filter(
-                    CompanyEmployee.department_id == dept_id,
+            # 按工厂 ID 或部门名称匹配（无独立 department_id 字段）
+            for dept_key in approver_ids:
+                filters = [
                     CompanyEmployee.company_id == instance.company_id,
-                    CompanyEmployee.status == "active"
-                ).all()
+                    CompanyEmployee.status == "active",
+                ]
+                if isinstance(dept_key, int):
+                    filters.append(
+                        or_(
+                            CompanyEmployee.factory_id == dept_key,
+                            CompanyEmployee.department == str(dept_key),
+                        )
+                    )
+                else:
+                    filters.append(CompanyEmployee.department == str(dept_key))
+                employees = self.db.query(CompanyEmployee).filter(*filters).all()
                 user_ids.extend([emp.user_id for emp in employees])
 
         # 去重

@@ -525,17 +525,17 @@ def search_wps(
                 detail="没有足够的权限"
             )
 
-    # Use get_multi with search parameters for now
-    # TODO: Update search_wps service method to support workspace context
     wps_service_instance = WPSService(db)
-    wps_list = wps_service_instance.get_multi(
+    params = (
+        search_params.model_dump(exclude_none=True)
+        if hasattr(search_params, "model_dump")
+        else search_params.dict(exclude_none=True)
+    )
+    wps_list = wps_service_instance.search_wps(
         db,
-        skip=0,
-        limit=1000,  # Large limit for search
+        search_params=params,
         current_user=current_user,
         workspace_context=workspace_context,
-        status=search_params.status if hasattr(search_params, 'status') else None,
-        search_term=search_params.search_term if hasattr(search_params, 'search_term') else None
     )
 
     # Convert to summary format

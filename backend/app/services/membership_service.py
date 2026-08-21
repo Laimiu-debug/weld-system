@@ -370,6 +370,9 @@ class MembershipService:
 
     def upgrade_membership(self, user_id: int, new_tier: str, admin_id: Optional[int] = None, reason: str = "") -> bool:
         """升级用户会员等级"""
+        from app.services.notification_service import NotificationService
+        from app.services.system_service import SystemService
+
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user:
             return False
@@ -397,8 +400,40 @@ class MembershipService:
         if is_enterprise_tier and old_membership_type != "enterprise":
             self._create_enterprise_for_user(user, new_tier)
 
-        # TODO: 记录操作日志
-        # TODO: 发送通知
+        try:
+            SystemService(self.db).create_system_log(
+                log_level="info",
+                log_type="admin",
+                message=(
+                    f"会员升级: user_id={user_id} {old_tier or 'none'}->{new_tier}"
+                    + (f" reason={reason}" if reason else "")
+                ),
+                user_id=admin_id,
+                details={
+                    "target_user_id": user_id,
+                    "target_user_email": user.email,
+                    "old_tier": old_tier,
+                    "new_tier": new_tier,
+                    "reason": reason,
+                    "admin_id": admin_id,
+                },
+            )
+        except Exception:
+            # 日志失败不影响主流程
+            pass
+
+        try:
+            reason_text = f" 原因：{reason}" if reason else ""
+            NotificationService(self.db).deliver_user_notification(
+                user,
+                title="会员等级已更新",
+                content=f"您的会员等级已从 {old_tier or '未设置'} 调整为 {new_tier}。{reason_text}".strip(),
+                category="membership",
+                announcement_type="success",
+                priority="normal",
+            )
+        except Exception:
+            pass
 
         return True
 

@@ -516,6 +516,7 @@ def upgrade_user_membership_admin(
     membership_service = MembershipService(db)
     new_tier = upgrade_data.get("membership_tier")
     reason = upgrade_data.get("reason", "")
+    old_tier = user.member_tier
 
     if not new_tier:
         raise HTTPException(
@@ -536,28 +537,16 @@ def upgrade_user_membership_admin(
             detail="会员等级升级失败"
         )
 
-    # 记录操作日志
-    system_service = SystemService(db)
-    system_service.create_system_log(
-        log_level="info",
-        log_type="admin",
-        message=f"管理员 {current_admin.email} 将用户 {user.email} 会员等级升级为 {new_tier}",
-        user_id=current_admin.user_id if current_admin.user_id else None,
-        details={
-            "target_user_id": user_id,
-            "old_tier": user.member_tier,
-            "new_tier": new_tier,
-            "reason": reason
-        }
-    )
+    db.refresh(user)
 
     return {
         "success": True,
         "message": f"用户 {user.email} 会员等级已升级为 {new_tier}",
         "data": {
             "user_id": user_id,
-            "old_tier": user.member_tier,
-            "new_tier": new_tier
+            "old_tier": old_tier,
+            "new_tier": new_tier,
+            "reason": reason,
         }
     }
 

@@ -412,10 +412,31 @@ class WPSService:
         self,
         db: Session,
         *,
-        search_params: dict
+        search_params: dict,
+        current_user: User,
+        workspace_context: WorkspaceContext,
     ) -> List[WPS]:
-        """Advanced WPS search."""
+        """Advanced WPS search with workspace isolation."""
         query = db.query(WPS).filter(WPS.is_active == True)
+
+        # Workspace isolation — same rules as get_multi
+        if workspace_context.workspace_type == WorkspaceType.PERSONAL:
+            query = query.filter(
+                WPS.workspace_type == WorkspaceType.PERSONAL,
+                WPS.user_id == current_user.id,
+            )
+        elif workspace_context.workspace_type == WorkspaceType.ENTERPRISE:
+            if workspace_context.company_id:
+                query = query.filter(
+                    WPS.workspace_type == WorkspaceType.ENTERPRISE,
+                    WPS.company_id == workspace_context.company_id,
+                )
+                if workspace_context.factory_id:
+                    query = query.filter(WPS.factory_id == workspace_context.factory_id)
+            else:
+                query = query.filter(WPS.id == -1)
+        else:
+            query = query.filter(WPS.id == -1)
 
         # Search term
         if search_params.get("search_term"):
@@ -427,51 +448,48 @@ class WPSService:
                 WPS.project_name.ilike(f"%{search_term}%"),
                 WPS.welding_process.ilike(f"%{search_term}%"),
                 WPS.base_material_spec.ilike(f"%{search_term}%"),
-                WPS.filler_material_classification.ilike(f"%{search_term}%")
+                WPS.filler_material_classification.ilike(f"%{search_term}%"),
             )
             query = query.filter(search_filter)
 
-        # Status filter
         if search_params.get("status"):
             query = query.filter(WPS.status == search_params["status"])
 
-        # Welding process filter
         if search_params.get("welding_process"):
             query = query.filter(WPS.welding_process == search_params["welding_process"])
 
-        # Base material group filter
         if search_params.get("base_material_group"):
-            query = query.filter(WPS.base_material_group == search_params["base_material_group"])
+            query = query.filter(
+                WPS.base_material_group == search_params["base_material_group"]
+            )
 
-        # Company filter
         if search_params.get("company"):
             query = query.filter(WPS.company.ilike(f"%{search_params['company']}%"))
 
-        # Date range filter
         if search_params.get("date_from"):
             query = query.filter(WPS.created_at >= search_params["date_from"])
 
         if search_params.get("date_to"):
             query = query.filter(WPS.created_at <= search_params["date_to"])
 
-        # Owner filter
         if search_params.get("owner_id"):
-            query = query.filter(WPS.owner_id == search_params["owner_id"])
+            owner_id = search_params["owner_id"]
+            query = query.filter(
+                or_(WPS.user_id == owner_id, WPS.owner_id == owner_id)
+            )
 
-        # Sorting
         sort_by = search_params.get("sort_by", "created_at")
         sort_order = search_params.get("sort_order", "desc")
-
         if hasattr(WPS, sort_by):
-            if sort_order.lower() == "desc":
-                query = query.order_by(getattr(WPS, sort_by).desc())
-            else:
-                query = query.order_by(getattr(WPS, sort_by).asc())
+            column = getattr(WPS, sort_by)
+            query = query.order_by(
+                column.desc() if str(sort_order).lower() == "desc" else column.asc()
+            )
+        else:
+            query = query.order_by(desc(WPS.created_at))
 
-        # Pagination
         skip = search_params.get("skip", 0)
         limit = search_params.get("limit", 100)
-
         return query.offset(skip).limit(limit).all()
 
     def get_wps_by_status(

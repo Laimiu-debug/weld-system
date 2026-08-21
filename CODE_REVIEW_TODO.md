@@ -159,4 +159,5 @@
 4. P1 占位功能、邮箱验证、同步端点与导出限流已落地。
 5. P2 基线已补：脚本清理、企业模块拆分、审批权限批量加载、管理端统一响应、Vite 8 分包。
    - 2026-08-21：删除 9 个未路由 mock 页；管理端移除 `useMockData`/`mockData`；下线未挂载 `*_old`/`admin_simple|complete`；`welder_service` 履历段拆到 `welder_career_mixin`；根目录手工 `test_*.py` 迁入 `legacy_tests/`；主链路见 `docs/SMOKE_CHECKLIST.md`。
+   - 2026-08-21：业务缺口——待办审批按步骤 `approver_ids` 过滤；WPS `search_wps` 接入 workspace；管理调整会员/启停与会员升级补齐 SystemLog + 用户通知。
    - 剩余：API 响应全量迁移、证书段再拆分、按冒烟清单完成联调勾选。

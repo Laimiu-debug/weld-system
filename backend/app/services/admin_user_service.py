@@ -303,13 +303,57 @@ class AdminUserService:
             if is_enterprise_tier:
                 self._update_enterprise_subscription_end_date(db, user, expires_at)
 
-        # TODO: 记录操作日志
+        admin_user_id = getattr(current_admin, "user_id", None) if current_admin else None
+        admin_email = getattr(current_admin, "email", None) if current_admin else None
+        new_tier = membership_tier or old_tier
+        try:
+            from app.services.system_service import SystemService
+
+            SystemService(db).create_system_log(
+                log_level="info",
+                log_type="admin",
+                message=(
+                    f"管理员调整会员: {user.email} {old_tier}->{new_tier}"
+                    + (f" by={admin_email}" if admin_email else "")
+                ),
+                user_id=admin_user_id,
+                details={
+                    "target_user_id": user.id,
+                    "target_user_email": user.email,
+                    "old_tier": old_tier,
+                    "new_tier": new_tier,
+                    "old_expires_at": old_expires_at.isoformat() if old_expires_at else None,
+                    "new_expires_at": expires_at,
+                    "reason": reason,
+                    "admin_id": getattr(current_admin, "id", None) if current_admin else None,
+                },
+            )
+        except Exception as exc:
+            logger.warning("记录会员调整日志失败: %s", exc)
+
+        try:
+            from app.services.notification_service import NotificationService
+
+            reason_text = f" 原因：{reason}" if reason else ""
+            NotificationService(db).deliver_user_notification(
+                user,
+                title="会员等级已调整",
+                content=(
+                    f"管理员已将您的会员从 {old_tier} 调整为 {new_tier}。"
+                    f"{reason_text}"
+                ).strip(),
+                category="membership",
+                announcement_type="info",
+                priority="normal",
+            )
+        except Exception as exc:
+            logger.warning("发送会员调整通知失败: %s", exc)
 
         return {
             "user_id": str(user.id),
             "user_email": user.email,
             "old_tier": old_tier,
-            "new_tier": membership_tier or old_tier,
+            "new_tier": new_tier,
             "old_expires_at": old_expires_at.isoformat() if old_expires_at else None,
             "new_expires_at": expires_at,
             "reason": reason
@@ -471,9 +515,47 @@ class AdminUserService:
         db.commit()
         db.refresh(user)
 
-        # TODO: 记录操作日志
-
+        admin_user_id = getattr(current_admin, "user_id", None) if current_admin else None
+        admin_email = getattr(current_admin, "email", None) if current_admin else None
         action = "启用" if is_active else "禁用"
+        try:
+            from app.services.system_service import SystemService
+
+            SystemService(db).create_system_log(
+                log_level="info",
+                log_type="admin",
+                message=(
+                    f"管理员{action}用户: {user.email}"
+                    + (f" by={admin_email}" if admin_email else "")
+                ),
+                user_id=admin_user_id,
+                details={
+                    "target_user_id": user.id,
+                    "target_user_email": user.email,
+                    "old_status": old_status,
+                    "new_status": is_active,
+                    "action": action,
+                    "reason": reason,
+                    "admin_id": getattr(current_admin, "id", None) if current_admin else None,
+                },
+            )
+        except Exception as exc:
+            logger.warning("记录用户状态变更日志失败: %s", exc)
+
+        try:
+            from app.services.notification_service import NotificationService
+
+            reason_text = f" 原因：{reason}" if reason else ""
+            NotificationService(db).deliver_user_notification(
+                user,
+                title=f"账号已{action}",
+                content=f"您的账号已被管理员{action}。{reason_text}".strip(),
+                category="security_alerts",
+                announcement_type="warning" if not is_active else "info",
+                priority="high" if not is_active else "normal",
+            )
+        except Exception as exc:
+            logger.warning("发送用户状态变更通知失败: %s", exc)
 
         return {
             "user_id": str(user.id),
