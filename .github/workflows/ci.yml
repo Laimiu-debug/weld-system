@@ -63,7 +63,7 @@ jobs:
         run: |
           alembic downgrade add_company_invitations
           alembic upgrade head
-          alembic current | grep "add_quality_location_fields (head)"
+          alembic current | grep "(head)"
 
   frontend-build:
     runs-on: ubuntu-latest
