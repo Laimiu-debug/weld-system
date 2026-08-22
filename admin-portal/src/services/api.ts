@@ -113,9 +113,16 @@ class ApiService {
 
         if (response) {
           switch (response.status) {
-            case 401:
-              message.error('用户名或密码错误');
+            case 401: {
+              const url = String(error.config?.url || '');
+              const isLoginRequest = /\/admin\/auth\/login(\?|$)/.test(url);
+              message.error(
+                isLoginRequest
+                  ? '用户名或密码错误'
+                  : '登录已过期，请重新登录'
+              );
               break;
+            }
             case 403:
               message.error('权限不足');
               break;
@@ -126,7 +133,7 @@ class ApiService {
               message.error('服务器内部错误');
               break;
             default:
-              message.error(response.data?.detail || '登录失败');
+              message.error(response.data?.detail || '请求失败');
           }
         } else {
           message.error('网络连接失败');
@@ -229,6 +236,10 @@ class ApiService {
 
   async put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
     return this.api.put(url, data, config) as unknown as T;
+  }
+
+  async patch<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    return this.api.patch(url, data, config) as unknown as T;
   }
 
   async delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {

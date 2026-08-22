@@ -9,6 +9,7 @@ import {
   MonitorOutlined,
   BarChartOutlined,
   NotificationOutlined,
+  MessageOutlined,
   SettingOutlined,
   SafetyOutlined,
   LogoutOutlined,
@@ -74,6 +75,11 @@ const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
       key: '/announcements',
       icon: <NotificationOutlined />,
       label: '公告管理',
+    },
+    {
+      key: '/feedback',
+      icon: <MessageOutlined />,
+      label: '用户反馈',
     },
     {
       key: '/shared-library',

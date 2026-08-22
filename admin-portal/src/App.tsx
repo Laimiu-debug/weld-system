@@ -13,6 +13,7 @@ import PaymentManagement from '@/pages/PaymentManagement';
 import SystemMonitoring from '@/pages/SystemMonitoring';
 import DataStatistics from '@/pages/DataStatistics';
 import AnnouncementManagement from '@/pages/AnnouncementManagement';
+import FeedbackManagement from '@/pages/FeedbackManagement';
 import SystemConfig from '@/pages/SystemConfig';
 import SecurityManagement from '@/pages/SecurityManagement';
 import UserDetail from '@/pages/UserDetail';
@@ -57,6 +58,7 @@ const AppContent: React.FC = () => {
         <Route path="/system" element={<SystemMonitoring />} />
         <Route path="/statistics" element={<DataStatistics />} />
         <Route path="/announcements" element={<AnnouncementManagement />} />
+        <Route path="/feedback" element={<FeedbackManagement />} />
         <Route path="/config" element={<SystemConfig />} />
         <Route path="/security" element={<SecurityManagement />} />
         <Route path="/shared-library" element={<SharedLibraryManagement />} />

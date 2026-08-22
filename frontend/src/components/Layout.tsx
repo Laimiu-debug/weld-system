@@ -489,6 +489,10 @@ const Layout: React.FC<LayoutProps> = () => {
           key: '/profile/notifications',
           label: '通知设置',
         },
+        {
+          key: '/feedback',
+          label: '意见反馈',
+        },
       ],
     },
   ].filter(item => !item.hidden)
@@ -519,6 +523,7 @@ const Layout: React.FC<LayoutProps> = () => {
       '/templates',
       '/shared-library',
       '/membership',
+      '/feedback',
       '/profile',
       '/enterprise',
     ]

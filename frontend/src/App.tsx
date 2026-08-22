@@ -91,6 +91,7 @@ const PersonalCenter = React.lazy(() => import('@/pages/Profile/PersonalCenter')
 const SystemSettings = React.lazy(() => import('@/pages/Profile/SystemSettings'))
 const SecuritySettings = React.lazy(() => import('@/pages/Profile/SecuritySettings'))
 const NotificationSettings = React.lazy(() => import('@/pages/Profile/NotificationSettings'))
+const FeedbackBoard = React.lazy(() => import('@/pages/Feedback/FeedbackBoard'))
 
 // 错误页面
 const PermissionDenied = React.lazy(() => import('@/pages/Error/PermissionDenied'))
@@ -726,6 +727,14 @@ const App: React.FC = () => {
             element={
               <ProtectedRoute>
                 <NotificationSettings />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="feedback"
+            element={
+              <ProtectedRoute>
+                <FeedbackBoard />
               </ProtectedRoute>
             }
           />

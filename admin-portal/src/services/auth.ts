@@ -61,7 +61,19 @@ class AuthService {
       });
 
       if (!response.ok) {
-        throw new Error('登录失败');
+        let detail = '';
+        try {
+          const errBody = await response.json();
+          detail = typeof errBody?.detail === 'string' ? errBody.detail : '';
+        } catch {
+          // ignore parse errors
+        }
+        if (response.status === 401 || response.status === 400) {
+          message.error(detail || '用户名或密码错误');
+        } else {
+          message.error(detail || `登录失败（HTTP ${response.status}）`);
+        }
+        return false;
       }
 
       const authData = await response.json();
@@ -89,14 +101,14 @@ class AuthService {
       localStorage.setItem('admin_user', JSON.stringify(user));
       return true;
     } catch {
-      message.error('用户名或密码错误');
+      message.error('网络异常，无法登录，请稍后重试');
       return false;
     }
   }
 
   async logout(): Promise<void> {
     try {
-      await apiService.authPost('/admin/auth/logout');
+      await apiService.authPost('/admin/auth/logout', undefined, { silent: true } as any);
     } catch {
       // 仍清除本地会话
     } finally {
@@ -106,7 +118,9 @@ class AuthService {
 
   async refreshToken(): Promise<boolean> {
     try {
-      const response = await apiService.authPost('/admin/auth/refresh');
+      const response = await apiService.authPost('/admin/auth/refresh', undefined, {
+        silent: true,
+      } as any);
 
       if (response.access_token) {
         localStorage.setItem('admin_token', response.access_token);
