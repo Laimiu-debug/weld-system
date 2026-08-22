@@ -57,6 +57,8 @@ import NotificationCenter from '@/components/NotificationCenter'
 import Footer from '@/components/Footer'
 import { useBranding } from '@/hooks/useBranding'
 import GlobalSearch from '@/components/GlobalSearch'
+import BrandMark from '@/components/Brand/BrandMark'
+import ProductIcon from '@/components/icons/ProductIcon'
 
 const { Header, Sider, Content } = AntLayout
 const { Text } = Typography
@@ -229,12 +231,12 @@ const Layout: React.FC<LayoutProps> = () => {
   const menuItems = [
     {
       key: '/dashboard',
-      icon: <DashboardOutlined />,
+      icon: <ProductIcon kind="dashboard" />,
       label: '仪表盘',
     },
     {
       key: 'resource-library-group',
-      icon: <DatabaseOutlined />,
+      icon: <ProductIcon kind="library" />,
       label: '资源库',
       children: [
         {
@@ -254,7 +256,7 @@ const Layout: React.FC<LayoutProps> = () => {
     },
     {
       key: 'wps-group',
-      icon: <FileTextOutlined />,
+      icon: <ProductIcon kind="wps" />,
       label: 'WPS管理',
       children: [
         {
@@ -274,7 +276,7 @@ const Layout: React.FC<LayoutProps> = () => {
     },
     {
       key: 'pqr-group',
-      icon: <ExperimentOutlined />,
+      icon: <ProductIcon kind="pqr" />,
       label: 'PQR管理',
       children: [
         {
@@ -294,7 +296,7 @@ const Layout: React.FC<LayoutProps> = () => {
     },
     {
       key: 'ppqr-group',
-      icon: <SettingOutlined />,
+      icon: <ProductIcon kind="ppqr" />,
       label: 'pPQR管理',
       children: [
         {
@@ -314,25 +316,25 @@ const Layout: React.FC<LayoutProps> = () => {
     },
     {
       key: '/materials',
-      icon: <DatabaseOutlined />,
+      icon: <ProductIcon kind="materials" />,
       label: '焊材管理',
       hidden: isGuestMode ? true : !checkPermission('materials.read'),
     },
     {
       key: '/welders',
-      icon: <TeamOutlined />,
+      icon: <ProductIcon kind="welder" />,
       label: '焊工管理',
       hidden: isGuestMode ? true : !checkPermission('welders.read'),
     },
     {
       key: '/equipment',
-      icon: <ToolOutlined />,
+      icon: <ProductIcon kind="equipment" />,
       label: '设备管理',
       hidden: isGuestMode ? true : !checkPermission('equipment.read'),
     },
     {
       key: 'production-group',
-      icon: <SafetyCertificateOutlined />,
+      icon: <ProductIcon kind="production" />,
       label: '生产管理',
       hidden: isGuestMode ? true : !checkPermission('production.read'),
       children: [
@@ -342,7 +344,7 @@ const Layout: React.FC<LayoutProps> = () => {
     },
     {
       key: 'quality-group',
-      icon: <PartitionOutlined />,
+      icon: <ProductIcon kind="quality" />,
       label: '质量管理',
       hidden: isGuestMode ? true : !checkPermission('quality.read'),
       children: [
@@ -352,7 +354,7 @@ const Layout: React.FC<LayoutProps> = () => {
     },
     {
       key: 'reports-group',
-      icon: <BarChartOutlined />,
+      icon: <ProductIcon kind="reports" />,
       label: '报表统计',
       children: [
         {
@@ -380,7 +382,7 @@ const Layout: React.FC<LayoutProps> = () => {
     },
     {
       key: 'enterprise-group',
-      icon: <ShopOutlined />,
+      icon: <ProductIcon kind="enterprise" />,
       label: '企业管理',
       children: [
         {
@@ -430,7 +432,7 @@ const Layout: React.FC<LayoutProps> = () => {
 
     {
       key: 'employees-group',
-      icon: <TeamOutlined />,
+      icon: <ProductIcon kind="welder" />,
       label: '员工中心',
       hidden: isGuestMode ? true : (!checkPermission('employees.read') || isEnterpriseUser()),
       children: [
@@ -440,7 +442,7 @@ const Layout: React.FC<LayoutProps> = () => {
     },
     {
       key: 'membership-group',
-      icon: <CrownOutlined />,
+      icon: <ProductIcon kind="membership" />,
       label: '会员中心',
       children: [
         {
@@ -461,7 +463,7 @@ const Layout: React.FC<LayoutProps> = () => {
     },
     {
       key: 'profile-group',
-      icon: <UserOutlined />,
+      icon: <ProductIcon kind="profile" />,
       label: isGuestMode ? '账户相关' : '我的',
       children: isGuestMode ? [
         {
@@ -721,12 +723,12 @@ const Layout: React.FC<LayoutProps> = () => {
           <div className="sidebar-header">
             {collapsed ? (
               <div className="sidebar-logo-collapsed">
-                <span className="logo-text">{branding.collapsed_label}</span>
+                <BrandMark size={36} />
               </div>
             ) : (
               <div className="sidebar-logo-expanded">
                 <div className="logo-icon">
-                  <SafetyCertificateOutlined />
+                  <BrandMark size={40} />
                 </div>
                 <div className="logo-text-wrapper">
                   <span className="logo-title">{branding.brand_name}</span>

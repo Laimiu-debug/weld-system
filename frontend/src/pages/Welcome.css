@@ -1,22 +1,23 @@
 /* 焊序欢迎页 */
 
 .welcome-page {
-  --w-ink: #14181f;
-  --w-steel: #3a4254;
-  --w-muted: #6b7385;
-  --w-paper: #eef1f5;
-  --w-surface: #f5f7fa;
+  --w-ink: #07111f;
+  --w-steel: #24364d;
+  --w-muted: #64748b;
+  --w-paper: #e8eef6;
+  --w-surface: #f6f8fb;
   --w-white: #ffffff;
-  --w-brand: #1f5eff;
-  --w-brand-deep: #1546c9;
-  --w-ember: #c96a2b;
-  --w-sider: #001529;
-  --w-banner-a: #1a2744;
-  --w-banner-b: #1f5eff;
+  --w-brand: #2563eb;
+  --w-brand-deep: #1649c9;
+  --w-ember: #f97316;
+  --w-cyan: #22d3ee;
+  --w-sider: #07111f;
+  --w-banner-a: #07111f;
+  --w-banner-b: #123c6b;
   --w-line: rgba(20, 24, 31, 0.08);
   --w-line-strong: rgba(20, 24, 31, 0.14);
-  --w-font-display: 'Noto Serif SC', 'Songti SC', 'STSong', serif;
-  --w-font-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --w-font-display: Inter, 'SF Pro Display', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --w-font-body: Inter, 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --w-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --w-max: 1180px;
 
@@ -48,9 +49,12 @@
   inset: 0;
   z-index: 0;
   background:
-    radial-gradient(ellipse 55% 50% at 88% 18%, rgba(31, 94, 255, 0.14), transparent 60%),
-    radial-gradient(ellipse 40% 45% at 8% 70%, rgba(26, 39, 68, 0.08), transparent 55%),
-    linear-gradient(180deg, #e8ecf3 0%, var(--w-surface) 72%);
+    linear-gradient(rgba(37, 99, 235, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(37, 99, 235, 0.045) 1px, transparent 1px),
+    radial-gradient(ellipse 55% 50% at 88% 18%, rgba(34, 211, 238, 0.13), transparent 60%),
+    radial-gradient(ellipse 42% 48% at 8% 70%, rgba(37, 99, 235, 0.1), transparent 58%),
+    linear-gradient(180deg, #eef5ff 0%, var(--w-surface) 72%);
+  background-size: 32px 32px, 32px 32px, auto, auto, auto;
   pointer-events: none;
 }
 
@@ -81,9 +85,9 @@
 .welcome-brand {
   font-family: var(--w-font-display);
   font-size: clamp(3rem, 6.5vw, 4.75rem);
-  font-weight: 700;
+  font-weight: 780;
   line-height: 1;
-  letter-spacing: 0.06em;
+  letter-spacing: -0.035em;
   color: var(--w-ink);
   margin: 0 0 18px;
 }
@@ -91,7 +95,7 @@
 .welcome-headline {
   font-family: var(--w-font-display);
   font-size: clamp(1.2rem, 2.2vw, 1.55rem);
-  font-weight: 600;
+  font-weight: 620;
   line-height: 1.4;
   color: var(--w-steel);
   margin: 0 0 14px;
@@ -120,7 +124,7 @@
   gap: 8px;
   min-height: 48px;
   padding: 0 22px;
-  border-radius: 6px;
+  border-radius: 9px;
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
@@ -218,15 +222,15 @@
 .welcome-shell__logo-mark {
   width: 32px;
   height: 32px;
-  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  color: #fff;
-  font-size: 15px;
   flex-shrink: 0;
+}
+
+.welcome-shell__logo-mark svg {
+  display: block;
+  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.3));
 }
 
 .welcome-shell__logo-text {

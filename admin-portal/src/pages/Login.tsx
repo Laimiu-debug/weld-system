@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Form, Input, Button, Card, Alert, Typography } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useAuthContext } from '@/contexts/AuthContext';
+import BrandMark from '@/components/BrandMark';
 
 const { Title, Text } = Typography;
 
@@ -36,7 +37,8 @@ const Login: React.FC = () => {
     <div className="admin-login-page">
       <Card className="admin-login-card">
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <Title level={2} style={{ color: '#1F5EFF', marginBottom: 8, letterSpacing: '0.06em' }}>
+          <BrandMark size={54} />
+          <Title level={2} style={{ color: '#0f172a', marginTop: 12, marginBottom: 8, letterSpacing: '0.06em' }}>
             焊序
           </Title>
           <Title level={4} type="secondary" style={{ marginBottom: 0, fontWeight: 500 }}>

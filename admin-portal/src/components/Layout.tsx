@@ -21,6 +21,7 @@ import {
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { useAuthContext } from '@/contexts/AuthContext';
 import AdminNotificationCenter from '@/components/AdminNotificationCenter';
+import BrandMark from '@/components/BrandMark';
 
 const { Header, Sider, Content } = AntLayout;
 
@@ -145,15 +146,17 @@ const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            gap: 10,
             margin: '16px',
-            borderRadius: '6px',
-            color: '#1F5EFF',
+            borderRadius: '10px',
+            color: '#f8fafc',
             fontSize: collapsed ? '14px' : '18px',
             fontWeight: 700,
-            letterSpacing: '0.08em',
+            letterSpacing: '0.06em',
           }}
         >
-          {collapsed ? '焊序' : '焊序 · 管理端'}
+          <BrandMark size={collapsed ? 34 : 38} />
+          {!collapsed && <span>焊序 <small style={{ color: '#94a3b8', fontSize: 11 }}>管理端</small></span>}
         </div>
 
         <Menu

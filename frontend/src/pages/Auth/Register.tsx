@@ -17,6 +17,7 @@ import { UserOutlined, LockOutlined, ExclamationCircleOutlined } from '@ant-desi
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import enterpriseService from '@/services/enterprise'
+import BrandMark from '@/components/Brand/BrandMark'
 
 const { Title, Text } = Typography
 
@@ -189,6 +190,7 @@ const Register: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
+          <BrandMark size={52} style={{ display: 'block', margin: '0 auto 12px' }} />
           <Title level={2} className="text-blue-600 mb-2">
             焊序
           </Title>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { MenuOutlined, CloseOutlined } from '@ant-design/icons'
+import BrandMark from '@/components/Brand/BrandMark'
 
 const PublicNavbar: React.FC = () => {
   const location = useLocation()
@@ -19,7 +20,11 @@ const PublicNavbar: React.FC = () => {
     <nav className="public-navbar">
       <div className="public-navbar__inner">
         <Link to="/" className="public-navbar__brand">
-          焊序
+          <BrandMark size={32} />
+          <span className="public-navbar__brand-copy">
+            <strong>焊序</strong>
+            <small>WELD SEQUENCE</small>
+          </span>
         </Link>
 
         <div className="public-navbar__desktop">
@@ -99,12 +104,31 @@ const PublicNavbar: React.FC = () => {
         }
 
         .public-navbar__brand {
-          font-family: 'Noto Serif SC', 'Songti SC', 'STSong', serif;
-          font-size: 1.35rem;
-          font-weight: 700;
-          letter-spacing: 0.06em;
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
           color: #14181f;
           text-decoration: none;
+        }
+
+        .public-navbar__brand-copy {
+          display: flex;
+          flex-direction: column;
+          line-height: 1;
+        }
+
+        .public-navbar__brand-copy strong {
+          font-size: 16px;
+          font-weight: 760;
+          letter-spacing: 0.08em;
+        }
+
+        .public-navbar__brand-copy small {
+          margin-top: 4px;
+          color: #64748b;
+          font-size: 8px;
+          font-weight: 650;
+          letter-spacing: 0.16em;
         }
 
         .public-navbar__desktop {

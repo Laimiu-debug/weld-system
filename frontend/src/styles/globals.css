@@ -511,15 +511,10 @@ body {
   height: 100%;
 }
 
-.sidebar-logo-collapsed .logo-text {
-  font-size: 24px;
-  font-weight: 700;
-  color: white;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  background: linear-gradient(135deg, #ffffff 0%, #e6f7ff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+.sidebar-logo-collapsed svg,
+.logo-icon svg {
+  display: block;
+  filter: drop-shadow(0 10px 20px rgba(3, 12, 26, 0.28));
 }
 
 /* 展开状态的logo */
@@ -535,19 +530,10 @@ body {
 .logo-icon {
   width: 40px;
   height: 40px;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.logo-icon .anticon {
-  font-size: 20px;
-  color: white;
+  border-radius: 11px;
 }
 
 .logo-text-wrapper {
@@ -557,12 +543,12 @@ body {
 }
 
 .logo-title {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 720;
   color: white;
   line-height: 1.2;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   margin-bottom: 2px;
+  letter-spacing: 0.08em;
 }
 
 .logo-subtitle {
@@ -574,7 +560,12 @@ body {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.8);
   font-weight: 400;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.08em;
+}
+
+.ant-menu-item-icon > svg,
+.ant-menu-submenu-title .ant-menu-item-icon > svg {
+  display: block;
 }
 
 /* 测试账号卡片样式 */

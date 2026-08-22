@@ -1,20 +1,21 @@
-/* 公共营销页：与 Welcome 对齐的工业蓝钢视觉 */
+/* 公共营销页：精密网格、深海军蓝与电弧青构成现代工程科技视觉。 */
 
 .public-page {
-  --p-ink: #14181f;
-  --p-steel: #3a4254;
-  --p-muted: #6b7385;
-  --p-paper: #eef1f5;
-  --p-surface: #f5f7fa;
+  --p-ink: #07111f;
+  --p-steel: #24364d;
+  --p-muted: #64748b;
+  --p-paper: #e8eef6;
+  --p-surface: #f6f8fb;
   --p-white: #ffffff;
-  --p-brand: #1f5eff;
-  --p-brand-deep: #1546c9;
-  --p-ember: #c96a2b;
+  --p-brand: #2563eb;
+  --p-brand-deep: #1649c9;
+  --p-ember: #f97316;
+  --p-cyan: #22d3ee;
   --p-ok: #2f7a4a;
   --p-line: rgba(20, 24, 31, 0.08);
   --p-line-strong: rgba(20, 24, 31, 0.14);
-  --p-font-display: 'Noto Serif SC', 'Songti SC', 'STSong', serif;
-  --p-font-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --p-font-display: Inter, 'SF Pro Display', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --p-font-body: Inter, 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --p-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --p-max: 1120px;
 
@@ -66,9 +67,12 @@
   inset: 0;
   z-index: 0;
   background:
-    radial-gradient(ellipse 60% 55% at 85% 12%, rgba(31, 94, 255, 0.16), transparent 62%),
-    radial-gradient(ellipse 42% 48% at 6% 78%, rgba(26, 39, 68, 0.09), transparent 58%),
-    linear-gradient(180deg, #e6ebf3 0%, var(--p-surface) 78%);
+    linear-gradient(rgba(37, 99, 235, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(37, 99, 235, 0.045) 1px, transparent 1px),
+    radial-gradient(ellipse 60% 55% at 85% 12%, rgba(34, 211, 238, 0.13), transparent 62%),
+    radial-gradient(ellipse 42% 48% at 6% 78%, rgba(37, 99, 235, 0.1), transparent 58%),
+    linear-gradient(180deg, #eef5ff 0%, var(--p-surface) 78%);
+  background-size: 32px 32px, 32px 32px, auto, auto, auto;
   pointer-events: none;
 }
 
@@ -92,8 +96,8 @@
 .public-brand-mark {
   font-family: var(--p-font-display);
   font-size: clamp(2.6rem, 5.5vw, 3.75rem);
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-weight: 780;
+  letter-spacing: -0.035em;
   line-height: 1.05;
   margin: 0 0 16px;
   color: var(--p-ink);
@@ -102,7 +106,7 @@
 .public-hero__title {
   font-family: var(--p-font-display);
   font-size: clamp(1.35rem, 2.6vw, 1.85rem);
-  font-weight: 600;
+  font-weight: 620;
   line-height: 1.35;
   color: var(--p-steel);
   margin: 0 0 14px;

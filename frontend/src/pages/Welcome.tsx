@@ -18,26 +18,28 @@ import {
   ArrowRightOutlined,
 } from '@ant-design/icons'
 import PublicNavbar from '@/components/PublicNavbar'
+import BrandMark from '@/components/Brand/BrandMark'
+import ProductIcon from '@/components/icons/ProductIcon'
 import './Welcome.css'
 
 const CAPABILITIES = [
   {
-    icon: <FileTextOutlined />,
+    icon: <ProductIcon kind="wps" size={22} />,
     title: 'WPS / PQR / pPQR',
     description: '工艺规程与评定记录统一建档，版本可追溯，导出 Word / PDF。',
   },
   {
-    icon: <DatabaseOutlined />,
+    icon: <ProductIcon kind="library" size={22} />,
     title: '模板与共享库',
     description: '模块化模板、企业共享库，适配不同工艺标准与协作场景。',
   },
   {
-    icon: <TeamOutlined />,
+    icon: <ProductIcon kind="enterprise" size={22} />,
     title: '企业协作审批',
     description: '多级审批工作流、角色权限与工厂级数据隔离。',
   },
   {
-    icon: <SafetyCertificateOutlined />,
+    icon: <ProductIcon kind="quality" size={22} />,
     title: '焊工·设备·质量',
     description: '焊工资质、设备台账与质量检验同平台联动管理。',
   },
@@ -62,21 +64,21 @@ const STEPS = [
 ] as const
 
 const SIDE_MENUS = [
-  { icon: <BarChartOutlined />, label: '仪表盘', active: true },
-  { icon: <DatabaseOutlined />, label: '资源库' },
-  { icon: <FileTextOutlined />, label: 'WPS管理' },
-  { icon: <ExperimentOutlined />, label: 'PQR管理' },
-  { icon: <SettingOutlined />, label: 'pPQR管理' },
-  { icon: <TeamOutlined />, label: '焊工管理' },
-  { icon: <ToolOutlined />, label: '设备管理' },
-  { icon: <PartitionOutlined />, label: '质量管理' },
+  { icon: <ProductIcon kind="dashboard" />, label: '仪表盘', active: true },
+  { icon: <ProductIcon kind="library" />, label: '资源库' },
+  { icon: <ProductIcon kind="wps" />, label: 'WPS管理' },
+  { icon: <ProductIcon kind="pqr" />, label: 'PQR管理' },
+  { icon: <ProductIcon kind="ppqr" />, label: 'pPQR管理' },
+  { icon: <ProductIcon kind="welder" />, label: '焊工管理' },
+  { icon: <ProductIcon kind="equipment" />, label: '设备管理' },
+  { icon: <ProductIcon kind="quality" />, label: '质量管理' },
 ] as const
 
 const OVERVIEW_CARDS = [
-  { icon: <FileTextOutlined />, title: 'WPS记录', value: '12', color: '#1890ff' },
-  { icon: <ExperimentOutlined />, title: 'PQR记录', value: '8', color: '#52c41a' },
-  { icon: <TeamOutlined />, title: '认证焊工', value: '24', color: '#fa8c16' },
-  { icon: <ToolOutlined />, title: '设备台账', value: '6', color: '#722ed1' },
+  { icon: <ProductIcon kind="wps" />, title: 'WPS记录', value: '12', color: '#38bdf8' },
+  { icon: <ProductIcon kind="pqr" />, title: 'PQR记录', value: '8', color: '#22c55e' },
+  { icon: <ProductIcon kind="welder" />, title: '认证焊工', value: '24', color: '#f59e0b' },
+  { icon: <ProductIcon kind="equipment" />, title: '设备台账', value: '6', color: '#8b5cf6' },
 ] as const
 
 /** 还原真实「侧栏 + 仪表盘」界面，避免与产品不符的假图 */
@@ -85,11 +87,11 @@ const AppShellPreview: React.FC = () => (
     <aside className="welcome-shell__sider">
       <div className="welcome-shell__logo">
         <span className="welcome-shell__logo-mark">
-          <SafetyCertificateOutlined />
+          <BrandMark size={32} />
         </span>
         <span className="welcome-shell__logo-text">
           <strong>焊序</strong>
-          <em>Hanxu</em>
+          <em>Weld Sequence</em>
         </span>
       </div>
       <nav className="welcome-shell__menu">

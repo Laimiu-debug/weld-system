@@ -12,35 +12,36 @@ import {
 } from '@ant-design/icons'
 import PublicNavbar from '@/components/PublicNavbar'
 import PublicFooter from '@/components/PublicFooter'
+import ProductIcon from '@/components/icons/ProductIcon'
 import '@/styles/PublicPage.css'
 
 const CORE_FEATURES = [
   {
-    icon: <FileTextOutlined />,
+    icon: <ProductIcon kind="wps" size={22} />,
     title: 'WPS / PQR 管理',
     description: '焊接工艺规程与工艺评定记录全生命周期管理。',
     details: ['模板化创建', '版本与历史追踪', '智能审批流程', '一键导出 PDF / Word'],
   },
   {
-    icon: <ToolOutlined />,
+    icon: <ProductIcon kind="library" size={22} />,
     title: '模块化模板',
     description: '按标准组合模块，适配不同焊接工艺规范。',
     details: ['自定义模板', '模块拖拽组合', '企业模板共享', '标准模板库'],
   },
   {
-    icon: <TeamOutlined />,
+    icon: <ProductIcon kind="enterprise" size={22} />,
     title: '企业协作',
     description: '多人协作、权限与审批一体，减少线下流转。',
     details: ['角色权限', '多级审批', '员工邀请入职', '消息提醒'],
   },
   {
-    icon: <SafetyOutlined />,
+    icon: <ProductIcon kind="quality" size={22} />,
     title: '数据安全',
     description: '工作区隔离与可追溯审批，保障企业数据边界。',
     details: ['加密存储', '工作区隔离', '审批留痕', '细粒度权限'],
   },
   {
-    icon: <BarChartOutlined />,
+    icon: <ProductIcon kind="reports" size={22} />,
     title: '统计分析',
     description: '多维度报表与导出，支撑工艺与质量决策。',
     details: ['实时监控', '多维统计', 'WPS / PQR 用量', 'CSV 导出'],
