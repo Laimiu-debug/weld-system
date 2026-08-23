@@ -31,6 +31,16 @@ def _docx(extra_files: dict[str, bytes] | None = None) -> bytes:
     return payload.getvalue()
 
 
+def _xlsx(extra_files: dict[str, bytes] | None = None) -> bytes:
+    payload = BytesIO()
+    with ZipFile(payload, "w") as archive:
+        archive.writestr("[Content_Types].xml", b"<Types />")
+        archive.writestr("xl/workbook.xml", b"<workbook />")
+        for name, content in (extra_files or {}).items():
+            archive.writestr(name, content)
+    return payload.getvalue()
+
+
 def test_private_storage_streams_hashes_and_deletes_document(tmp_path) -> None:
     content = b"%PDF-1.7\nexample welding procedure"
     storage = LocalDocumentStorage(tmp_path)
@@ -101,6 +111,18 @@ def test_active_pdf_and_macro_docx_are_rejected(tmp_path) -> None:
             BytesIO(b"%PDF-1.7\n1 0 obj <</JavaScript 2 0 R>>"),
             "active.pdf",
             max_bytes=1024,
+        )
+
+
+def test_xlsx_roster_is_accepted_and_macro_workbook_is_rejected(tmp_path) -> None:
+    storage = LocalDocumentStorage(tmp_path)
+    result = storage.save_stream(BytesIO(_xlsx()), "welders.xlsx", max_bytes=4096)
+    assert result.mime_type.endswith("spreadsheetml.sheet")
+    with pytest.raises(DocumentUploadError, match="宏代码"):
+        storage.save_stream(
+            BytesIO(_xlsx({"xl/vbaProject.bin": b"macro"})),
+            "macro.xlsx",
+            max_bytes=4096,
         )
     with pytest.raises(DocumentUploadError, match="宏代码"):
         storage.save_stream(

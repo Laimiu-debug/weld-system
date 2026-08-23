@@ -3,6 +3,7 @@ from io import BytesIO
 import pytest
 from docx import Document
 from PIL import Image
+from openpyxl import Workbook
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
@@ -105,6 +106,27 @@ def test_multipage_tiff_creates_one_ocr_page_per_frame() -> None:
 def test_legacy_doc_requires_conversion() -> None:
     with pytest.raises(DocumentParseError, match="转换为 DOCX 或 PDF"):
         DefaultDocumentParser().parse(BytesIO(b"legacy"), "legacy.doc")
+
+
+def test_xlsx_roster_preserves_worksheets_and_rows() -> None:
+    stream = BytesIO()
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "焊工名册"
+    sheet.append(["姓名", "焊工编号", "证书号", "有效期"])
+    sheet.append(["张三", "W-001", "CERT-001", "2027-12-31"])
+    workbook.create_sheet("续证记录").append(["李四", "W-002", "CERT-002"])
+    workbook.save(stream)
+    stream.seek(0)
+
+    parsed = DefaultDocumentParser().parse(stream, "welders.xlsx")
+
+    assert parsed.parser == "openpyxl"
+    assert parsed.page_numbering == "worksheet"
+    assert len(parsed.pages) == 2
+    assert parsed.pages[0].metadata["sheet_name"] == "焊工名册"
+    assert "张三\tW-001\tCERT-001" in parsed.pages[0].text_content
+    assert parsed.pages[0].ocr_status == "not_required"
 
 
 def test_docx_archive_expansion_limit_is_enforced(monkeypatch) -> None:

@@ -205,6 +205,28 @@ class EntityPublishResponse(BaseModel):
     detail_url: str
 
 
+class WelderImportDecision(BaseModel):
+    record_key: str = Field(min_length=1, max_length=500)
+    existing_welder_id: int | None = Field(None, gt=0)
+    create_new: bool = False
+    skip_duplicate: bool = False
+
+    @model_validator(mode="after")
+    def validate_identity_choice(self):
+        if self.existing_welder_id is not None and self.create_new:
+            raise ValueError("不能同时选择现有焊工和新建焊工")
+        return self
+
+
+class WelderImportPublishRequest(BaseModel):
+    decisions: list[WelderImportDecision] = Field(default_factory=list, max_length=1000)
+
+
+class WelderImportReviewResponse(BaseModel):
+    entity_id: str
+    records: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class TemplateRecommendationItem(BaseModel):
     template_id: str
     name: str

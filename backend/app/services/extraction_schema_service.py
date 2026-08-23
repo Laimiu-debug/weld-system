@@ -499,6 +499,67 @@ BUILTIN_CORE_FIELDS: dict[str, tuple[dict[str, Any], ...]] = {
             aliases=("PQR编号", "WPQR编号"),
         ),
     ),
+    "welder": (
+        _core_field("full_name", "姓名", required=True, aliases=("焊工姓名", "name")),
+        _core_field("welder_code", "焊工编号", required=True, aliases=("工号", "welder ID")),
+        _core_field("id_type", "身份证件类型"),
+        _core_field("id_number", "身份证件号", aliases=("身份证号", "ID number")),
+        _core_field("department", "部门"),
+        _core_field(
+            "certification_number",
+            "证书编号",
+            required=True,
+            aliases=("证件号", "certificate number"),
+        ),
+        _core_field("certification_type", "证书类型", required=True, aliases=("认证类型",)),
+        _core_field("certification_level", "证书等级"),
+        _core_field("certification_standard", "认证标准", aliases=("考试标准",)),
+        _core_field("certification_system", "认证体系"),
+        _core_field("issuing_authority", "颁发机构"),
+        _core_field("issue_date", "颁发日期", "datetime"),
+        _core_field("expiry_date", "证书到期日", "datetime", aliases=("有效期至",)),
+        _core_field(
+            "qualified_projects",
+            "持证项目",
+            "table",
+            required=True,
+            aliases=("合格项目", "资质项目", "qualified items"),
+            table_definition={
+                "columns": [
+                    {"key": "project_code", "label": "项目代号", "type": "text"},
+                    {"key": "project_name", "label": "项目名称", "type": "text"},
+                    {"key": "welding_process", "label": "焊接方法", "type": "text"},
+                    {"key": "welding_position", "label": "焊接位置", "type": "text"},
+                    {"key": "material_group", "label": "材料组别", "type": "text"},
+                    {"key": "thickness_range", "label": "厚度范围", "type": "text"},
+                    {"key": "diameter_range", "label": "直径范围", "type": "text"},
+                    {"key": "issue_date", "label": "生效日", "type": "datetime"},
+                    {"key": "expiry_date", "label": "到期日", "type": "datetime"},
+                ]
+            },
+        ),
+        _core_field(
+            "welder_records",
+            "Excel 焊工名册记录",
+            "table",
+            aliases=("焊工名册", "roster rows"),
+            table_definition={
+                "columns": [
+                    {"key": "full_name", "label": "姓名", "type": "text"},
+                    {"key": "welder_code", "label": "焊工编号", "type": "text"},
+                    {"key": "id_number", "label": "身份证件号", "type": "text"},
+                    {"key": "certification_number", "label": "证书编号", "type": "text"},
+                    {"key": "certification_type", "label": "证书类型", "type": "text"},
+                    {"key": "welding_process", "label": "焊接方法", "type": "text"},
+                    {"key": "welding_position", "label": "焊接位置", "type": "text"},
+                    {"key": "material_group", "label": "材料组别", "type": "text"},
+                    {"key": "thickness_range", "label": "厚度范围", "type": "text"},
+                    {"key": "diameter_range", "label": "直径范围", "type": "text"},
+                    {"key": "expiry_date", "label": "到期日", "type": "datetime"},
+                ]
+            },
+        ),
+    ),
 }
 
 

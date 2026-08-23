@@ -120,9 +120,32 @@ def test_builtin_wps_schema_maps_directly_to_formal_fields() -> None:
     )
 
 
-def test_builtin_schema_rejects_unsupported_document_type() -> None:
+def test_builtin_welder_schema_covers_identity_certificate_and_multiple_projects() -> (
+    None
+):
+    schema = build_builtin_extraction_schema("welder")
+    properties = schema["json_schema"]["properties"]
+
+    assert "welder_code" in properties
+    assert "id_number" in properties
+    assert "certification_number" in properties
+    assert properties["qualified_projects"]["properties"]["value"]["type"] == "array"
+    columns = properties["qualified_projects"]["properties"]["value"][
+        "x-weld-table-definition"
+    ]["columns"]
+    assert {
+        "welding_process",
+        "welding_position",
+        "material_group",
+        "thickness_range",
+        "diameter_range",
+    }.issubset({item["key"] for item in columns})
+    assert properties["welder_records"]["properties"]["value"]["type"] == "array"
+
+
+def test_builtin_schema_rejects_unknown_document_type() -> None:
     with pytest.raises(ValueError, match="没有内置提取 Schema"):
-        build_builtin_extraction_schema("welder")
+        build_builtin_extraction_schema("equipment")
 
 
 def test_derived_semantic_fields_are_not_sent_to_ai() -> None:

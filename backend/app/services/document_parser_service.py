@@ -10,6 +10,7 @@ from docx import Document
 from docx.oxml.ns import qn
 from PIL import Image
 from pypdf import PdfReader
+from openpyxl import load_workbook
 
 
 MAX_DOCUMENT_PAGES = 500
@@ -19,6 +20,8 @@ MAX_DOCX_ENTRIES = 5_000
 MAX_DOCX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
 MAX_DOCX_COMPRESSION_RATIO = 200
 MAX_IMAGE_PIXELS = 50_000_000
+MAX_XLSX_ROWS_PER_SHEET = 100_000
+MAX_XLSX_COLUMNS = 1_000
 
 
 class DocumentParseError(ValueError):
@@ -60,6 +63,8 @@ class DefaultDocumentParser:
                 return self._parse_pdf(stream)
             if suffix == ".docx":
                 return self._parse_docx(stream)
+            if suffix == ".xlsx":
+                return self._parse_xlsx(stream)
             if suffix in {".png", ".jpg", ".jpeg", ".tif", ".tiff"}:
                 return self._parse_image(stream, suffix)
             if suffix == ".doc":
@@ -168,6 +173,53 @@ class DefaultDocumentParser:
                 )
         return ParsedDocument(pages=pages, parser="pillow")
 
+    def _parse_xlsx(self, stream: BinaryIO) -> ParsedDocument:
+        """Expose each worksheet as a logical page while preserving row boundaries."""
+        _validate_xlsx_archive(stream)
+        workbook = load_workbook(stream, read_only=True, data_only=True)
+        if len(workbook.worksheets) > MAX_DOCUMENT_PAGES:
+            raise DocumentParseError(f"Excel 工作表数不能超过 {MAX_DOCUMENT_PAGES} 个")
+        pages: list[ParsedPage] = []
+        try:
+            for number, sheet in enumerate(workbook.worksheets, start=1):
+                if (
+                    sheet.max_row > MAX_XLSX_ROWS_PER_SHEET
+                    or sheet.max_column > MAX_XLSX_COLUMNS
+                ):
+                    raise DocumentParseError("Excel 工作表行列数超过系统安全限制")
+                rows: list[str] = []
+                row_count = 0
+                for values in sheet.iter_rows(values_only=True):
+                    cells = [
+                        "" if value is None else str(value).strip() for value in values
+                    ]
+                    while cells and not cells[-1]:
+                        cells.pop()
+                    if not any(cells):
+                        continue
+                    row_count += 1
+                    rows.append("\t".join(cells))
+                text = _bounded_text(_clean_text("\n".join(rows)))
+                pages.append(
+                    ParsedPage(
+                        page_number=number,
+                        text_content=text,
+                        ocr_status="not_required",
+                        metadata={
+                            "source_format": "xlsx",
+                            "page_numbering": "worksheet",
+                            "sheet_name": sheet.title,
+                            "row_count": row_count,
+                            "text_chars": len(text),
+                        },
+                    )
+                )
+        finally:
+            workbook.close()
+        return ParsedDocument(
+            pages=pages, parser="openpyxl", page_numbering="worksheet"
+        )
+
 
 def _validate_docx_archive(stream: BinaryIO) -> None:
     try:
@@ -184,6 +236,25 @@ def _validate_docx_archive(stream: BinaryIO) -> None:
                 raise DocumentParseError("DOCX 压缩比例异常，已拒绝解析")
     except BadZipFile as exc:
         raise DocumentParseError("DOCX 文件损坏或格式无法识别") from exc
+    finally:
+        stream.seek(0)
+
+
+def _validate_xlsx_archive(stream: BinaryIO) -> None:
+    try:
+        stream.seek(0)
+        with ZipFile(stream) as archive:
+            entries = archive.infolist()
+            if len(entries) > MAX_DOCX_ENTRIES:
+                raise DocumentParseError("Excel 文件条目数量超过系统安全限制")
+            total_size = sum(entry.file_size for entry in entries)
+            compressed_size = sum(max(entry.compress_size, 1) for entry in entries)
+            if total_size > MAX_DOCX_UNCOMPRESSED_BYTES:
+                raise DocumentParseError("Excel 解压后大小超过系统安全限制")
+            if total_size / max(compressed_size, 1) > MAX_DOCX_COMPRESSION_RATIO:
+                raise DocumentParseError("Excel 压缩比例异常，已拒绝解析")
+    except BadZipFile as exc:
+        raise DocumentParseError("Excel 文件损坏或格式无法识别") from exc
     finally:
         stream.seek(0)
 

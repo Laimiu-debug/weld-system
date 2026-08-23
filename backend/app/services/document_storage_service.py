@@ -16,6 +16,7 @@ DOCUMENT_TYPES = {
     ".pdf": "application/pdf",
     ".doc": "application/msword",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ".png": "image/png",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
@@ -55,7 +56,7 @@ def _validate_filename(original_filename: str, max_bytes: int) -> str:
         raise DocumentUploadError("文件名无效")
     suffix = Path(original_filename).suffix.lower()
     if suffix not in DOCUMENT_TYPES:
-        raise DocumentUploadError("仅支持 PDF、Word 和常见扫描图片")
+        raise DocumentUploadError("仅支持 PDF、Word、Excel 和常见扫描图片")
     if max_bytes <= 0:
         raise DocumentUploadError("上传大小限制配置无效")
     return suffix
@@ -77,16 +78,20 @@ def _validate_payload(suffix: str, payload: BinaryIO) -> None:
             if any(marker in searchable for marker in dangerous):
                 raise DocumentUploadError("PDF 包含脚本、附件或启动动作，已拒绝上传")
             overlap = searchable[-32:]
-    elif suffix == ".docx":
+    elif suffix in {".docx", ".xlsx"}:
         try:
             with zipfile.ZipFile(payload) as archive:
                 names = set(archive.namelist())
-                required = {"[Content_Types].xml", "word/document.xml"}
+                required = (
+                    {"[Content_Types].xml", "word/document.xml"}
+                    if suffix == ".docx"
+                    else {"[Content_Types].xml", "xl/workbook.xml"}
+                )
                 if not required.issubset(names):
                     raise DocumentUploadError("DOCX 文件结构无效")
                 lowered = {name.lower() for name in names}
-                if "word/vbaproject.bin" in lowered:
-                    raise DocumentUploadError("DOCX 包含宏代码，已拒绝上传")
+                if any(name.endswith("vbaproject.bin") for name in lowered):
+                    raise DocumentUploadError("文件包含宏代码，已拒绝上传")
         except zipfile.BadZipFile as exc:
             raise DocumentUploadError("DOCX 文件结构无效") from exc
     payload.seek(0)
@@ -177,7 +182,7 @@ class LocalDocumentStorage:
             valid = header.startswith(b"%PDF-")
         elif suffix == ".doc":
             valid = header.startswith(bytes.fromhex("D0CF11E0A1B11AE1"))
-        elif suffix == ".docx":
+        elif suffix in {".docx", ".xlsx"}:
             valid = header.startswith(b"PK\x03\x04")
         elif suffix == ".png":
             valid = header.startswith(b"\x89PNG\r\n\x1a\n")

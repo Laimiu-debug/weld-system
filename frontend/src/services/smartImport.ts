@@ -169,10 +169,29 @@ export interface BatchOperationResult {
 
 export interface EntityPublishResult {
   entity_id: string
-  target_entity_type: 'wps' | 'pqr'
+  target_entity_type: 'wps' | 'pqr' | 'welder'
   target_entity_id: string
   status: 'published'
   detail_url: string
+}
+
+export interface WelderImportRecord {
+  record_key: string
+  full_name: string
+  welder_code: string
+  id_number: string
+  certification_number: string
+  identity_status: 'new' | 'matched' | 'ambiguous'
+  matched_by?: 'welder_code' | 'id_number' | 'full_name'
+  candidates: Array<{ id: number; welder_code: string; full_name: string; id_number?: string }>
+  certificate_status: 'new' | 'duplicate' | 'renewal' | 'conflict'
+  expiry_status: 'valid' | 'expiring_soon' | 'expired'
+  qualified_projects: Array<Record<string, unknown>>
+}
+
+export interface WelderImportReview {
+  entity_id: string
+  records: WelderImportRecord[]
 }
 
 export interface TemplateRecommendation {
@@ -494,6 +513,24 @@ class SmartImportService {
 
   async publishEntity(entityId: string): Promise<EntityPublishResult> {
     const response = await api.post(`/smart-import/entities/${entityId}/publish`)
+    return response.data
+  }
+
+  async getWelderImportReview(entityId: string): Promise<WelderImportReview> {
+    const response = await api.get(`/smart-import/entities/${entityId}/welder-review`)
+    return response.data
+  }
+
+  async publishWelderImport(
+    entityId: string,
+    decisions: Array<{
+      record_key: string
+      existing_welder_id?: number
+      create_new?: boolean
+      skip_duplicate?: boolean
+    }>
+  ): Promise<EntityPublishResult> {
+    const response = await api.post(`/smart-import/entities/${entityId}/welder-publish`, { decisions })
     return response.data
   }
 

@@ -66,6 +66,8 @@ from app.schemas.smart_import import (
     SourceDocumentRegister,
     SourceDocumentResponse,
     TemplateRecommendationResponse,
+    WelderImportPublishRequest,
+    WelderImportReviewResponse,
 )
 from app.services.ai_extraction_service import (
     AIExtractionRunError,
@@ -97,6 +99,7 @@ from app.services.smart_import_review_service import SmartImportReviewService
 from app.services.smart_import_template_service import SmartImportTemplateService
 from app.services.system_config_service import get_max_upload_bytes
 from app.services.wps_template_service import WPSTemplateService
+from app.services.welder_import_service import WelderImportService
 from app.tasks.celery_app import celery_app
 from app.tasks.smart_import_tasks import run_smart_import_extraction
 
@@ -1285,6 +1288,53 @@ def publish_extracted_entity(
         target_entity_id=record.target_entity_id,
         status="published",
         detail_url=f"/{record.target_entity_type}/{record.target_entity_id}",
+    )
+
+
+@router.get(
+    "/entities/{entity_id}/welder-review",
+    response_model=WelderImportReviewResponse,
+)
+def review_welder_import(
+    entity_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> WelderImportReviewResponse:
+    context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "review")
+    ensure_module_permission(db, current_user, "welder", "update")
+    return WelderImportReviewResponse(
+        **WelderImportService(db).review(entity_id, current_user, context)
+    )
+
+
+@router.post(
+    "/entities/{entity_id}/welder-publish",
+    response_model=EntityPublishResponse,
+)
+def publish_welder_import(
+    entity_id: str,
+    request: WelderImportPublishRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> EntityPublishResponse:
+    context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "publish")
+    ensure_module_permission(db, current_user, "welder", "create")
+    record = WelderImportService(db).publish(
+        entity_id,
+        [item.model_dump() for item in request.decisions],
+        current_user,
+        context,
+    )
+    return EntityPublishResponse(
+        entity_id=entity_id,
+        target_entity_type="welder",
+        target_entity_id=record.target_entity_id,
+        status="published",
+        detail_url=f"/welders/{record.target_entity_id}",
     )
 
 

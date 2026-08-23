@@ -53,6 +53,7 @@ import smartImportService, {
   ImportEntityType,
   SourceDocument,
   TemplateRecommendationResult,
+  WelderImportReview,
 } from '@/services/smartImport'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import customModuleService, { CustomModuleSummary } from '@/services/customModules'
@@ -164,6 +165,8 @@ const SmartImportPage: React.FC = () => {
   const [reviewField, setReviewField] = useState<ExtractedField | null>(null)
   const [reviewing, setReviewing] = useState(false)
   const [publishing, setPublishing] = useState(false)
+  const [welderReview, setWelderReview] = useState<WelderImportReview | null>(null)
+  const [welderChoices, setWelderChoices] = useState<Record<string, number | 'new'>>({})
   const [providerOpen, setProviderOpen] = useState(false)
   const [providerConfigs, setProviderConfigs] = useState<AIProviderConfig[]>([])
   const [enterprisePolicy, setEnterprisePolicy] = useState<EnterpriseAIPolicy | null>(null)
@@ -368,7 +371,7 @@ const SmartImportPage: React.FC = () => {
     extractForm.setFieldsValue({
       mode: capabilities?.platform_available ? 'platform' : 'byok',
       provider: 'openai_responses',
-      schema_source: ['wps', 'pqr'].includes(batch.target_entity_type)
+      schema_source: ['wps', 'pqr', 'welder'].includes(batch.target_entity_type)
         ? 'builtin:auto'
         : undefined,
       run_ocr: true,
@@ -491,6 +494,62 @@ const SmartImportPage: React.FC = () => {
       })
     } catch (error) {
       message.error(errorMessage(error, '发布失败'))
+    } finally {
+      setPublishing(false)
+    }
+  }
+
+  const openWelderReview = async () => {
+    if (!result) return
+    try {
+      const review = await smartImportService.getWelderImportReview(result.entity.id)
+      setWelderReview(review)
+      setWelderChoices(review.records.reduce<Record<string, number | 'new'>>((choices, item) => {
+        if (item.identity_status === 'matched' && item.candidates[0]) {
+          choices[item.record_key] = item.candidates[0].id
+        } else if (item.identity_status === 'new') {
+          choices[item.record_key] = 'new'
+        }
+        return choices
+      }, {}))
+    } catch (error) {
+      message.error(errorMessage(error, '加载焊工资质审核失败'))
+    }
+  }
+
+  const publishWelderReview = async () => {
+    if (!result || !welderReview) return
+    const unresolved = welderReview.records.filter(item =>
+      item.identity_status === 'ambiguous' && !welderChoices[item.record_key]
+    )
+    if (unresolved.length) {
+      message.warning(`还有 ${unresolved.length} 条重名记录需要确认`)
+      return
+    }
+    setPublishing(true)
+    try {
+      const published = await smartImportService.publishWelderImport(
+        result.entity.id,
+        welderReview.records.map(item => ({
+          record_key: item.record_key,
+          existing_welder_id: typeof welderChoices[item.record_key] === 'number'
+            ? welderChoices[item.record_key] as number
+            : undefined,
+          create_new: welderChoices[item.record_key] === 'new',
+          skip_duplicate: item.certificate_status === 'duplicate',
+        }))
+      )
+      setWelderReview(null)
+      setResult({ ...result, entity: { ...result.entity, status: 'published' } })
+      await loadBatches(batch?.id)
+      Modal.success({
+        title: '焊工与资质已导入',
+        content: '已写入现有焊工、证书和持证项目，重复证书已跳过，续证已更新。',
+        okText: '查看焊工',
+        onOk: () => navigate(published.detail_url),
+      })
+    } catch (error) {
+      message.error(errorMessage(error, '焊工资质发布失败'))
     } finally {
       setPublishing(false)
     }
@@ -870,7 +929,7 @@ const SmartImportPage: React.FC = () => {
 
                 <Card title="上传已有工艺文件">
                   <Dragger
-                    accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.docx"
+                    accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.docx,.xlsx"
                     multiple
                     maxCount={50}
                     showUploadList={false}
@@ -879,7 +938,7 @@ const SmartImportPage: React.FC = () => {
                   >
                     <p className="ant-upload-drag-icon"><CloudUploadOutlined /></p>
                     <p className="ant-upload-text">点击或拖入一个或多个文件</p>
-                    <p className="ant-upload-hint">支持 PDF、扫描图片、TIFF 和 DOCX；文件会依次上传，单个失败不影响其他文件。</p>
+                    <p className="ant-upload-hint">支持 PDF、扫描图片、TIFF、DOCX 和 XLSX 名册；文件会依次上传，单个失败不影响其他文件。</p>
                   </Dragger>
                   {uploadResults.length > 0 && (
                     <List
@@ -975,7 +1034,7 @@ const SmartImportPage: React.FC = () => {
               optionFilterProp="label"
               placeholder="选择自动核心字段、企业模板或模块"
               options={[
-                ...(['wps', 'pqr'].includes(batch?.target_entity_type || '')
+                ...(['wps', 'pqr', 'welder'].includes(batch?.target_entity_type || '')
                   ? [{ value: 'builtin:auto', label: `自动 · ${entityLabels[batch!.target_entity_type]} 核心字段（推荐）` }]
                   : []),
                 ...templates.map(item => {
@@ -1151,6 +1210,16 @@ const SmartImportPage: React.FC = () => {
                     按已审核字段发布
                   </Button>
                 )}
+                {result.entity.entity_type === 'welder' && (
+                  <Button
+                    type="primary"
+                    icon={<SendOutlined />}
+                    loading={publishing}
+                    onClick={() => void openWelderReview()}
+                  >
+                    审核焊工与资质
+                  </Button>
+                )}
               </>
             )}
           </Space>
@@ -1181,6 +1250,55 @@ const SmartImportPage: React.FC = () => {
           </Space>
         )}
       </Drawer>
+
+      <Modal
+        title="焊工、证书与持证项目审核"
+        open={Boolean(welderReview)}
+        onCancel={() => !publishing && setWelderReview(null)}
+        onOk={() => void publishWelderReview()}
+        confirmLoading={publishing}
+        okText="确认导入现有焊工库"
+        width="min(1200px, 96vw)"
+      >
+        <Alert
+          type="info"
+          showIcon
+          message="编号或身份证件优先匹配；只有姓名相同的记录必须人工确认"
+          description="重复证书默认跳过；有效期更晚的同号证书按续证更新。每个持证项目会单独保存到期状态。"
+          style={{ marginBottom: 16 }}
+        />
+        <Table
+          rowKey="record_key"
+          dataSource={welderReview?.records || []}
+          pagination={{ pageSize: 10 }}
+          scroll={{ x: 1050 }}
+          columns={[
+            { title: '姓名 / 编号', width: 180, render: (_, item) => <><Text strong>{item.full_name || '未识别姓名'}</Text><br /><Text type="secondary">{item.welder_code || item.id_number || '无身份编号'}</Text></> },
+            { title: '身份处理', width: 250, render: (_, item) => (
+              <Select
+                value={welderChoices[item.record_key]}
+                placeholder="请选择对应焊工"
+                style={{ width: '100%' }}
+                onChange={value => setWelderChoices(current => ({ ...current, [item.record_key]: value }))}
+                options={[
+                  ...item.candidates.map(candidate => ({ value: candidate.id, label: `${candidate.full_name} · ${candidate.welder_code}` })),
+                  { value: 'new', label: '确认新建焊工' },
+                ]}
+              />
+            ) },
+            { title: '证书号', dataIndex: 'certification_number', width: 170, render: value => value || '未识别' },
+            { title: '证书判断', width: 120, render: (_, item) => {
+              const config = { new: ['blue', '新证书'], duplicate: ['default', '重复·跳过'], renewal: ['green', '续证更新'], conflict: ['red', '归属冲突'] }[item.certificate_status]
+              return <Tag color={config[0]}>{config[1]}</Tag>
+            } },
+            { title: '有效期', width: 110, render: (_, item) => {
+              const config = { valid: ['success', '有效'], expiring_soon: ['warning', '即将到期'], expired: ['error', '已过期'] }[item.expiry_status]
+              return <Tag color={config[0]}>{config[1]}</Tag>
+            } },
+            { title: '持证项目', width: 100, render: (_, item) => `${item.qualified_projects.length} 项` },
+          ]}
+        />
+      </Modal>
 
       <Modal
         title="审核识别字段"
