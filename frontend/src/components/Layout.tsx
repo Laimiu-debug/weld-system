@@ -240,8 +240,12 @@ const Layout: React.FC<LayoutProps> = () => {
       label: '智能焊序',
       children: [
         {
+          key: '/capabilities',
+          label: '企业能力库',
+        },
+        {
           key: '/smart-import',
-          label: '企业能力建库',
+          label: '智能导入',
         },
       ],
       hidden: isGuestMode,

@@ -19,6 +19,13 @@ from app.schemas.qualification import (
     WPSPQRSupportResponse,
     WPSQualificationTraceResponse,
 )
+from app.schemas.capability import (
+    CapabilityCheckRequest,
+    CapabilityCheckResponse,
+    CapabilityFilters,
+    CapabilityOverviewResponse,
+)
+from app.services.capability_service import CapabilityLibraryService
 from app.services.qualification_service import QualificationService
 from app.services.workspace_service import WorkspaceService
 
@@ -172,4 +179,40 @@ def get_wps_qualification_trace(
 ):
     return QualificationService(db).wps_trace(
         wps_id, current_user, _workspace(db, current_user, workspace_id)
+    )
+
+
+@router.get(
+    "/capabilities/overview",
+    response_model=CapabilityOverviewResponse,
+)
+def get_capability_overview(
+    filters: CapabilityFilters = Depends(),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+):
+    ensure_module_permission(db, current_user, "capability", "read")
+    return CapabilityLibraryService(db).overview(
+        current_user,
+        _workspace(db, current_user, workspace_id),
+        filters,
+    )
+
+
+@router.post(
+    "/capabilities/check",
+    response_model=CapabilityCheckResponse,
+)
+def check_capability(
+    request: CapabilityCheckRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+):
+    ensure_module_permission(db, current_user, "capability", "read")
+    return CapabilityLibraryService(db).check(
+        current_user,
+        _workspace(db, current_user, workspace_id),
+        request,
     )

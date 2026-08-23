@@ -1,0 +1,179 @@
+.capability-page {
+  --capability-orange: #f97316;
+  --capability-slate: #334155;
+  max-width: 1680px;
+  margin: 0 auto;
+  color: var(--capability-slate);
+}
+
+.capability-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.capability-header h2,
+.metric-card h2,
+.resource-summary h4,
+.health-card h4 {
+  margin: 0;
+}
+
+.capability-title-icon {
+  color: var(--capability-orange);
+  font-size: 30px;
+}
+
+.capability-summary,
+.filter-card,
+.issue-card,
+.capability-table-card,
+.resource-card {
+  margin-bottom: 16px;
+}
+
+.health-card,
+.metric-card {
+  height: 100%;
+  border: 1px solid #e2e8f0;
+}
+
+.health-content {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 14px;
+}
+
+.metric-card .ant-card-body {
+  display: flex;
+  min-height: 152px;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.metric-icon {
+  color: #64748b;
+  font-size: 22px;
+}
+
+.metric-warning .metric-icon,
+.metric-warning h2 {
+  color: #d97706;
+}
+
+.filter-card .ant-form-item {
+  margin-bottom: 0;
+}
+
+.capability-link {
+  height: auto;
+  padding: 0;
+  font-weight: 600;
+}
+
+.issue-blocking {
+  color: #dc2626;
+  font-size: 18px;
+}
+
+.issue-warning {
+  color: #d97706;
+  font-size: 18px;
+}
+
+.resource-summary,
+.gap-actions {
+  display: flex;
+  min-height: 112px;
+  align-items: center;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.gap-actions {
+  align-items: flex-start;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+
+.resource-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  flex: 0 0 48px;
+  border-radius: 10px;
+  background: #fff7ed;
+  color: var(--capability-orange);
+  font-size: 24px;
+}
+
+.check-alert {
+  margin-bottom: 20px;
+}
+
+.check-result {
+  margin-top: 24px;
+}
+
+.check-status-row {
+  margin: 16px 0;
+}
+
+.status-block {
+  display: flex;
+  min-height: 102px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid;
+  border-radius: 8px;
+}
+
+.status-ready {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.status-missing {
+  border-color: #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+@media (max-width: 767px) {
+  .capability-header {
+    flex-direction: column;
+  }
+
+  .capability-header > div,
+  .capability-header > .ant-space {
+    width: 100%;
+  }
+
+  .filter-card .ant-form-item {
+    margin-bottom: 12px;
+  }
+
+  .health-content {
+    justify-content: space-between;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capability-page *,
+  .capability-page *::before,
+  .capability-page *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

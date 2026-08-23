@@ -562,6 +562,11 @@ class QualificationService:
         pqr = self.db.query(PQR).filter(PQR.id == link.pqr_id).first()
         if not wps or not pqr:
             return True
+        if str(link.wps_snapshot_hash).startswith("legacy:"):
+            return (
+                _legacy_record_hash(wps) != link.wps_snapshot_hash
+                or _legacy_record_hash(pqr) != link.pqr_snapshot_hash
+            )
         return (
             _hash(_record_snapshot(wps)) != link.wps_snapshot_hash
             or _hash(_record_snapshot(pqr)) != link.pqr_snapshot_hash
@@ -733,6 +738,14 @@ def _hash(value: Any) -> str:
         value, ensure_ascii=False, sort_keys=True, default=str
     ).encode()
     return hashlib.sha256(payload).hexdigest()
+
+
+def _legacy_record_hash(record: Any) -> str:
+    """Match the compact fingerprint produced by the legacy-link SQL migration."""
+    updated = getattr(record, "updated_at", None)
+    stamp = str(updated) if updated else ""
+    payload = f"{record.id}:{stamp}".encode()
+    return f"legacy:{hashlib.md5(payload, usedforsecurity=False).hexdigest()}"
 
 
 def _workspace(record: Any) -> dict[str, Any]:
