@@ -247,6 +247,10 @@ const Layout: React.FC<LayoutProps> = () => {
           key: '/smart-import',
           label: '智能导入',
         },
+        {
+          key: '/engineering',
+          label: '工程项目与图纸',
+        },
       ],
       hidden: isGuestMode,
     },
@@ -545,6 +549,8 @@ const Layout: React.FC<LayoutProps> = () => {
       '/profile',
       '/enterprise',
       '/smart-import',
+      '/engineering',
+      '/capabilities',
     ]
     for (const base of candidates) {
       if (pathname === base || pathname.startsWith(`${base}/`)) {

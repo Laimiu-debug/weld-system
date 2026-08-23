@@ -67,7 +67,7 @@ class ImportBatch(WorkspaceOwnedMixin, Base):
     __table_args__ = (
         *_workspace_constraints("import_batch"),
         CheckConstraint(
-            "target_entity_type IN ('wps','pqr','ppqr','welder')",
+            "target_entity_type IN ('wps','pqr','ppqr','welder','drawing')",
             name="ck_import_batch_target",
         ),
         CheckConstraint(
@@ -115,7 +115,7 @@ class SourceDocument(WorkspaceOwnedMixin, Base):
     __table_args__ = (
         *_workspace_constraints("source_document"),
         CheckConstraint(
-            "document_type IN ('wps','pqr','ppqr','welder','unknown')",
+            "document_type IN ('wps','pqr','ppqr','welder','drawing','unknown')",
             name="ck_source_document_type",
         ),
         CheckConstraint(

@@ -43,6 +43,7 @@ from app.api.v1.endpoints import (
     feedback,
     qualification,
     smart_import,
+    engineering,
 )
 
 api_router = APIRouter()
@@ -90,6 +91,7 @@ api_router.include_router(smart_import.router, prefix="/smart-import", tags=["�
 api_router.include_router(
     qualification.router, prefix="/qualification", tags=["焊接能力规则"]
 )
+api_router.include_router(engineering.router, prefix="/engineering", tags=["工程图纸与焊缝"])
 
 # 角色权限管理路由
 api_router.include_router(roles.router, prefix="/roles", tags=["角色权限管理"])

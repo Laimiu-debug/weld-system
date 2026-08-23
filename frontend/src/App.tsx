@@ -26,6 +26,8 @@ const PricingTerms = React.lazy(() => import('@/pages/Legal/PricingTerms'))
 const Dashboard = React.lazy(() => import('@/pages/Dashboard'))
 const SmartImport = React.lazy(() => import('@/pages/SmartImport'))
 const CapabilityLibrary = React.lazy(() => import('@/pages/CapabilityLibrary'))
+const EngineeringProjects = React.lazy(() => import('@/pages/Engineering/Projects'))
+const DrawingReview = React.lazy(() => import('@/pages/Engineering/DrawingReview'))
 
 const WPSList = React.lazy(() => import('@/pages/WPS/WPSList'))
 const WPSCreate = React.lazy(() => import('@/pages/WPS/WPSCreate'))
@@ -272,6 +274,8 @@ const App: React.FC = () => {
               </ProtectedRoute>
             }
           />
+          <Route path="engineering" element={<ProtectedRoute><EngineeringProjects /></ProtectedRoute>} />
+          <Route path="engineering/revisions/:id/review" element={<ProtectedRoute><DrawingReview /></ProtectedRoute>} />
           {/* 模块管理 */}
           <Route
             path="modules"

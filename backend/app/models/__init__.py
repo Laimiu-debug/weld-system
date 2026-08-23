@@ -68,6 +68,17 @@ from app.models.qualification import (
     PQRQualificationResult,
     WPSPQRSupportLink,
 )
+from app.models.engineering import (
+    EngineeringProject,
+    Product,
+    ProductRevision,
+    Part,
+    WeldJoint,
+    WeldRequirement,
+    DrawingParseRun,
+    EngineeringReviewRecord,
+    EngineeringDependencyState,
+)
 
 __all__ = [
     "User",
@@ -136,4 +147,13 @@ __all__ = [
     "QualificationRulePack",
     "PQRQualificationResult",
     "WPSPQRSupportLink",
+    "EngineeringProject",
+    "Product",
+    "ProductRevision",
+    "Part",
+    "WeldJoint",
+    "WeldRequirement",
+    "DrawingParseRun",
+    "EngineeringReviewRecord",
+    "EngineeringDependencyState",
 ]
