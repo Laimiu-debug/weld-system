@@ -183,7 +183,11 @@ class ProductionExecutionTrace(WorkspaceMixin, Base):
             "workspace_type IN ('personal','enterprise')",
             name="ck_production_execution_workspace",
         ),
-        UniqueConstraint("idempotency_key", name="uq_production_execution_idempotency"),
+        UniqueConstraint(
+            "production_task_id",
+            "idempotency_key",
+            name="uq_production_execution_task_idempotency",
+        ),
         Index(
             "ix_production_execution_trace",
             "production_release_id",

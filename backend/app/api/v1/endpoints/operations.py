@@ -2,6 +2,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api import deps
@@ -146,6 +147,7 @@ def get_deployment_profile(
             network,
             bool(settings.AI_OFFLINE_BASE_URL),
             settings.OCR_OFFLINE_ENABLED,
+            True,
         ),
     }
 
@@ -212,4 +214,22 @@ def execute_tenant_lifecycle_job(
         OperationsService(db).execute_lifecycle_job(
             job_id, data.confirmation, data.dry_run, current_user, context
         )
+    )
+
+
+@router.get("/tenant-lifecycle/{job_id}/artifact", response_class=FileResponse)
+def download_tenant_lifecycle_artifact(
+    job_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+):
+    context = resolve_workspace(db, current_user, workspace_id)
+    path, item = OperationsService(db).lifecycle_export_artifact(
+        job_id, current_user, context
+    )
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename=f"tenant-{item.company_id}-{item.id}.zip",
     )

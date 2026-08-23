@@ -341,6 +341,8 @@ class ProductionReleaseService:
         welder = self.db.query(Welder).filter(Welder.id == welder_id).first()
         if not wps or wps.status != "approved" or not welder:
             raise HTTPException(409, "WPS 未批准或焊工不存在")
+        self.access.check_access(user, wps, DataAccessAction.VIEW, context)
+        self.access.check_access(user, welder, DataAccessAction.VIEW, context)
         equipment = (
             self.db.query(Equipment).filter(Equipment.id == equipment_id).first()
             if equipment_id
@@ -352,6 +354,8 @@ class ProductionReleaseService:
             or str(equipment.status) not in {"operational", "idle"}
         ):
             raise HTTPException(409, "设备不可用")
+        if equipment:
+            self.access.check_access(user, equipment, DataAccessAction.VIEW, context)
         if (
             equipment
             and equipment.calibration_due_date
@@ -440,11 +444,34 @@ class ProductionReleaseService:
         key = payload["idempotency_key"]
         existing = (
             self.db.query(ProductionExecutionTrace)
-            .filter(ProductionExecutionTrace.idempotency_key == key)
+            .filter(
+                ProductionExecutionTrace.production_task_id == task.id,
+                ProductionExecutionTrace.idempotency_key == key,
+            )
             .first()
         )
         if existing:
             return existing, False
+        if task.task_type == "welding":
+            if not task.assigned_welder_id:
+                raise HTTPException(409, "焊接任务必须先分配具备资格或已授权的焊工")
+            authorization = (
+                self.db.query(ProductionResourceAuthorization)
+                .filter(
+                    ProductionResourceAuthorization.production_task_id == task.id,
+                    ProductionResourceAuthorization.welder_id
+                    == task.assigned_welder_id,
+                    ProductionResourceAuthorization.qualification_status.in_(
+                        ["qualified", "authorized"]
+                    ),
+                )
+                .order_by(ProductionResourceAuthorization.created_at.desc())
+                .first()
+            )
+            if not authorization:
+                raise HTTPException(409, "焊接任务缺少有效的焊工资格授权")
+            if authorization.equipment_id != task.assigned_equipment_id:
+                raise HTTPException(409, "任务设备与焊工资格授权记录不一致")
         event_ids = payload.get("consumable_usage_event_ids", [])
         events = (
             self.db.query(ConsumableActualUsageEvent)

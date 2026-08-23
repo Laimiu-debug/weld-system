@@ -414,6 +414,9 @@ class EngineeringService:
         change_summary: str | None = None,
     ):
         product = self._get(Product, product_id, user, context, True)
+        from app.services.operations_service import OperationsService
+
+        OperationsService(self.db).ensure_document_storage_allowed(context)
         stored = storage.save_stream(file_stream, filename, max_bytes)
         values = workspace_values(user, context, product.access_level)
         values_no_created = {k: v for k, v in values.items() if k != "created_by"}

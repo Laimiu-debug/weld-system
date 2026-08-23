@@ -1,5 +1,10 @@
 """P7 conversion, qualification and traceability contract tests."""
 from datetime import date, timedelta
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+import pytest
+from fastapi import HTTPException
 
 from app.models.production import ProductionTask
 from app.models.production_release import (
@@ -12,6 +17,7 @@ from app.models.production_release import (
 from app.models.welder import Welder, WelderCertification
 from app.models.wps import WPS
 from app.services.production_release_service import (
+    ProductionReleaseService,
     canonical_hash,
     evaluate_welder_qualification,
     sequence_step_to_task_kind,
@@ -134,6 +140,94 @@ def test_release_and_execution_have_database_idempotency_guards():
             getattr(constraint, "columns", None) is not None
             and "idempotency_key" in constraint.columns.keys()
             for constraint in model.__table__.constraints
+        )
+
+    execution_constraint = next(
+        item
+        for item in ProductionExecutionTrace.__table__.constraints
+        if item.name == "uq_production_execution_task_idempotency"
+    )
+    assert set(execution_constraint.columns.keys()) == {
+        "production_task_id",
+        "idempotency_key",
+    }
+
+
+def test_resource_assignment_rejects_welder_from_another_personal_workspace():
+    task = SimpleNamespace(
+        id=1,
+        production_release_id="release-1",
+        task_type="welding",
+        wps_id=9,
+        workspace_type="personal",
+        user_id=7,
+    )
+    wps = SimpleNamespace(
+        id=9,
+        status="approved",
+        workspace_type="personal",
+        user_id=7,
+    )
+    other_welder = SimpleNamespace(
+        id=8,
+        workspace_type="personal",
+        user_id=99,
+    )
+    db = Mock()
+
+    def query(model):
+        result = Mock()
+        result.filter.return_value.first.return_value = {
+            ProductionTask: task,
+            WPS: wps,
+            Welder: other_welder,
+        }.get(model)
+        return result
+
+    db.query.side_effect = query
+    service = ProductionReleaseService(db)
+    with pytest.raises(HTTPException) as exc:
+        service.assign(
+            1,
+            8,
+            None,
+            None,
+            SimpleNamespace(id=7),
+            SimpleNamespace(
+                workspace_type="personal", company_id=None, is_personal=lambda: True
+            ),
+        )
+    assert exc.value.status_code == 403
+
+
+def test_welding_execution_requires_assigned_authorized_welder():
+    task = SimpleNamespace(
+        id=1,
+        production_release_id="release-1",
+        task_type="welding",
+        assigned_welder_id=None,
+        workspace_type="personal",
+        user_id=7,
+    )
+    db = Mock()
+
+    def query(model):
+        result = Mock()
+        result.filter.return_value.first.return_value = (
+            task if model is ProductionTask else None
+        )
+        return result
+
+    db.query.side_effect = query
+    service = ProductionReleaseService(db)
+    with pytest.raises(HTTPException, match="必须先分配"):
+        service.record_execution(
+            1,
+            {"idempotency_key": "execution-0001", "status": "completed"},
+            SimpleNamespace(id=7),
+            SimpleNamespace(
+                workspace_type="personal", company_id=None, is_personal=lambda: True
+            ),
         )
 
 

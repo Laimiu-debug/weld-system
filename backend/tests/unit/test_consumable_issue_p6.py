@@ -486,6 +486,22 @@ def test_actual_issue_return_consume_are_idempotent_and_inventory_safe():
     assert material.total_consumed == 4
     assert len(session.rows[MaterialTransaction]) == 2
 
+    with pytest.raises(HTTPException, match="退料量与消耗量"):
+        service.record_actual_event(
+            issue_item_id=item.id,
+            event_type="return",
+            quantity=1,
+            unit="kg",
+            client_idempotency_key="return-after-consume",
+            batch_number="B1",
+            notes=None,
+            quota_operation_id="op-1",
+            user=user,
+            context=context,
+        )
+    assert material.current_stock == 6
+    assert item.actual_returned_quantity == 1
+
 
 def test_actual_issue_rejects_shortage_wrong_trace_and_overconsumption():
     service, _, item, _, material, user, context = _actual_service_state()

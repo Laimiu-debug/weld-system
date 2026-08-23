@@ -3,6 +3,7 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
+import zipfile
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -134,6 +135,30 @@ def test_deployment_modes_have_explicit_capabilities(
     assert result["local_ai"] is local_ai
 
 
+def test_external_storage_capability_respects_tenant_switch():
+    result = deployment_capabilities(
+        "private",
+        "allowlist_only",
+        local_ai=True,
+        local_ocr=True,
+        external_storage_allowed=False,
+    )
+    assert result["external_storage"] is False
+
+
+def test_external_document_backend_is_blocked_by_tenant_policy(monkeypatch):
+    monkeypatch.setattr(settings, "DOCUMENT_STORAGE_BACKEND", "s3")
+    profile = SimpleNamespace(
+        deployment_mode="private",
+        network_policy="allowlist_only",
+        external_storage_allowed=False,
+    )
+    service = OperationsService(Mock())
+    service.get_deployment_profile = Mock(return_value=profile)
+    with pytest.raises(HTTPException, match="禁止向外部文档存储"):
+        service.ensure_document_storage_allowed(SimpleNamespace(company_id=9))
+
+
 def test_outbound_consent_is_versioned_revocable_and_document_bound():
     assert {
         "document_id",
@@ -162,6 +187,42 @@ def test_tenant_lifecycle_requires_audited_export_delete_states():
         "approved_by",
         "executed_by",
     } <= set(TenantLifecycleJob.__table__.c.keys())
+
+
+def test_active_alert_uniqueness_does_not_block_multiple_resolved_rows():
+    index = next(
+        item
+        for item in OperationalAlert.__table__.indexes
+        if item.name == "uq_operational_alert_active_fingerprint"
+    )
+    assert index.unique is True
+    assert "acknowledged" in str(index.dialect_options["postgresql"]["where"])
+
+
+def test_tenant_export_creates_and_validates_real_zip(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path))
+    db = Mock()
+    result = Mock()
+    result.mappings.return_value = []
+    db.execute.return_value = result
+    query = Mock()
+    query.filter.return_value.order_by.return_value.all.return_value = []
+    db.query.return_value = query
+    service = OperationsService(db)
+    service._tenant_table_rows = Mock(
+        return_value={"companies": [{"id": 9, "name": "Tenant 9"}]}
+    )
+    job = TenantLifecycleJob(id="job-export", company_id=9, operation="export")
+
+    manifest = service._create_tenant_export(job, 9)
+    artifact = service._validate_tenant_export(manifest, job, 9)
+
+    assert artifact.is_file()
+    assert manifest["artifact_size_bytes"] > 0
+    assert len(manifest["artifact_sha256"]) == 64
+    with zipfile.ZipFile(artifact) as archive:
+        content = archive.read("manifest.json")
+        assert b'"job_id":"job-export"' in content
 
 
 def test_tenant_delete_requires_dry_run_export_manifest():
@@ -244,6 +305,7 @@ def test_p8_api_exposes_dashboard_health_privacy_backup_and_lifecycle():
         "/operations/backup-verifications",
         "/operations/tenant-lifecycle",
         "/operations/tenant-lifecycle/{job_id}/execute",
+        "/operations/tenant-lifecycle/{job_id}/artifact",
     } <= paths
 
 

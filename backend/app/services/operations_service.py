@@ -4,16 +4,20 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+import zipfile
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import uuid4
 
 import httpx
 from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.database import Base
 from app.core.data_access import WorkspaceContext, WorkspaceType
 from app.core.module_permissions import user_can_manage_employees
 from app.models.company import Company
@@ -29,6 +33,7 @@ from app.models.operations import (
 from app.models.smart_import import AIUsageLedger, ExtractionJob, SourceDocument
 from app.models.user import User
 from app.services.ai_credential_service import AIProviderConfigService
+from app.services.document_storage_service import get_document_storage
 
 
 REQUIRED_BACKUP_CATEGORIES = {
@@ -105,7 +110,11 @@ def validate_backup_manifest(
 
 
 def deployment_capabilities(
-    mode: str, network_policy: str, local_ai: bool, local_ocr: bool
+    mode: str,
+    network_policy: str,
+    local_ai: bool,
+    local_ocr: bool,
+    external_storage_allowed: bool = True,
 ) -> dict:
     offline = mode == "offline" or network_policy == "offline"
     return {
@@ -114,7 +123,7 @@ def deployment_capabilities(
         "local_ai": bool(local_ai),
         "local_ocr": bool(local_ocr),
         "manual_entry": True,
-        "external_storage": not offline,
+        "external_storage": not offline and bool(external_storage_allowed),
     }
 
 
@@ -493,6 +502,7 @@ class OperationsService:
             bool(
                 (profile and profile.local_ocr_enabled) or settings.OCR_OFFLINE_ENABLED
             ),
+            profile.external_storage_allowed if profile else True,
         )
         configs = AIProviderConfigService(self.db).list(user, context)
         healthy = [
@@ -647,6 +657,19 @@ class OperationsService:
         self.db.commit()
         return item
 
+    def ensure_document_storage_allowed(self, context: WorkspaceContext) -> None:
+        """Block tenant writes to an external document backend when policy forbids it."""
+        if settings.DOCUMENT_STORAGE_BACKEND.strip().lower() == "local":
+            return
+        profile = self.get_deployment_profile(context)
+        offline = (
+            (profile and profile.network_policy == "offline")
+            or (profile and profile.deployment_mode == "offline")
+            or (not profile and settings.DEPLOYMENT_MODE == "offline")
+        )
+        if offline or (profile and not profile.external_storage_allowed):
+            raise HTTPException(503, "当前部署策略禁止向外部文档存储写入数据")
+
     def verify_backup(self, data, user: User):
         if not user.is_superuser:
             raise HTTPException(403, "只有平台管理员可以登记恢复验证")
@@ -697,6 +720,226 @@ class OperationsService:
         self.db.commit()
         return item
 
+    @staticmethod
+    def _export_root() -> Path:
+        root = (Path(settings.UPLOAD_DIR).resolve() / "tenant_exports").resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    @classmethod
+    def _export_path(cls, artifact_key: str) -> Path:
+        root = cls._export_root()
+        candidate = (Path(settings.UPLOAD_DIR).resolve() / artifact_key).resolve()
+        if not candidate.is_relative_to(root):
+            raise HTTPException(409, "租户导出制品路径无效")
+        return candidate
+
+    @staticmethod
+    def _json_bytes(value: Any) -> bytes:
+        return json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+    @staticmethod
+    def _file_sha256(path: Path) -> tuple[str, int]:
+        digest = hashlib.sha256()
+        size = 0
+        with path.open("rb") as source:
+            while True:
+                chunk = source.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                size += len(chunk)
+        return digest.hexdigest(), size
+
+    def _tenant_table_rows(self, company_id: int) -> dict[str, list[dict]]:
+        """Collect direct company rows plus dependent child rows through foreign keys."""
+        tables = sorted(Base.metadata.tables.values(), key=lambda row: row.name)
+        collected: dict[str, list[dict]] = {table.name: [] for table in tables}
+
+        for table in tables:
+            if table.name == Company.__tablename__:
+                statement = select(table).where(table.c.id == company_id)
+            elif "company_id" in table.c:
+                statement = select(table).where(table.c.company_id == company_id)
+            else:
+                continue
+            collected[table.name] = [
+                dict(row) for row in self.db.execute(statement).mappings()
+            ]
+
+        changed = True
+        while changed:
+            changed = False
+            for table in tables:
+                primary_keys = [column.name for column in table.primary_key.columns]
+                known_keys = {
+                    tuple(row.get(column) for column in primary_keys)
+                    for row in collected[table.name]
+                }
+                for foreign_key in table.foreign_keys:
+                    parent_rows = collected[foreign_key.column.table.name]
+                    parent_values = {
+                        row.get(foreign_key.column.name)
+                        for row in parent_rows
+                        if row.get(foreign_key.column.name) is not None
+                    }
+                    if not parent_values:
+                        continue
+                    ordered_values = sorted(parent_values, key=str)
+                    for offset in range(0, len(ordered_values), 1000):
+                        values = ordered_values[offset : offset + 1000]
+                        rows = self.db.execute(
+                            select(table).where(foreign_key.parent.in_(values))
+                        ).mappings()
+                        for mapping in rows:
+                            row = dict(mapping)
+                            key = tuple(row.get(column) for column in primary_keys)
+                            if key in known_keys:
+                                continue
+                            collected[table.name].append(row)
+                            known_keys.add(key)
+                            changed = True
+        return collected
+
+    def _create_tenant_export(self, job: TenantLifecycleJob, company_id: int) -> dict:
+        """Create an atomic ZIP containing every company-scoped table and source file."""
+        root = self._export_root()
+        final_path = (root / f"{job.id}.zip").resolve()
+        staging_path = (root / f".{job.id}.{uuid4().hex}.part").resolve()
+        table_counts: dict[str, int] = {}
+        exported_files: list[dict[str, Any]] = []
+        try:
+            with zipfile.ZipFile(
+                staging_path, "x", compression=zipfile.ZIP_DEFLATED, allowZip64=True
+            ) as archive:
+                tenant_rows = self._tenant_table_rows(company_id)
+                if len(tenant_rows.get(Company.__tablename__, [])) != 1:
+                    raise HTTPException(404, "企业不存在，无法生成租户导出制品")
+                for table_name, rows in tenant_rows.items():
+                    table_counts[table_name] = len(rows)
+                    archive.writestr(
+                        f"tables/{table_name}.json", self._json_bytes(rows)
+                    )
+
+                documents = (
+                    self.db.query(SourceDocument)
+                    .filter(SourceDocument.company_id == company_id)
+                    .order_by(SourceDocument.id)
+                    .all()
+                )
+                storage = get_document_storage()
+                for document in documents:
+                    safe_name = Path(document.original_filename or "document").name
+                    member = f"private_documents/{document.id}/{safe_name}"
+                    digest = hashlib.sha256()
+                    size = 0
+                    with storage.open_stream(document.storage_key) as source:
+                        with archive.open(member, "w") as destination:
+                            while True:
+                                chunk = source.read(1024 * 1024)
+                                if not chunk:
+                                    break
+                                digest.update(chunk)
+                                size += len(chunk)
+                                destination.write(chunk)
+                    actual_hash = digest.hexdigest()
+                    if document.sha256 and actual_hash != document.sha256:
+                        raise HTTPException(409, f"原始文档校验失败：{document.id}")
+                    exported_files.append(
+                        {
+                            "document_id": document.id,
+                            "archive_member": member,
+                            "sha256": actual_hash,
+                            "size_bytes": size,
+                        }
+                    )
+
+                content_manifest = {
+                    "format_version": 1,
+                    "job_id": job.id,
+                    "company_id": company_id,
+                    "generated_at": utcnow().isoformat(),
+                    "table_counts": table_counts,
+                    "private_files": exported_files,
+                }
+                archive.writestr("manifest.json", self._json_bytes(content_manifest))
+            staging_path.replace(final_path)
+        except Exception:
+            staging_path.unlink(missing_ok=True)
+            raise
+
+        artifact_hash, size = self._file_sha256(final_path)
+        return {
+            "format": "tenant-export-zip-v1",
+            "company_id": company_id,
+            "job_id": job.id,
+            "generated_at": utcnow().isoformat(),
+            "artifact_key": final_path.relative_to(
+                Path(settings.UPLOAD_DIR).resolve()
+            ).as_posix(),
+            "artifact_sha256": artifact_hash,
+            "artifact_size_bytes": size,
+            "table_counts": table_counts,
+            "private_file_count": len(exported_files),
+            "includes_private_files": True,
+            "includes_audit": True,
+        }
+
+    def _validate_tenant_export(
+        self, manifest: dict, job: TenantLifecycleJob, company_id: int
+    ) -> Path:
+        if (
+            manifest.get("format") != "tenant-export-zip-v1"
+            or manifest.get("job_id") != job.id
+            or manifest.get("company_id") != company_id
+            or not manifest.get("artifact_key")
+            or not manifest.get("artifact_sha256")
+        ):
+            raise HTTPException(409, "租户删除前必须生成有效的数据导出制品")
+        path = self._export_path(manifest["artifact_key"])
+        if not path.is_file():
+            raise HTTPException(409, "租户导出制品不存在，请重新执行 dry-run")
+        digest, size = self._file_sha256(path)
+        if digest != manifest["artifact_sha256"]:
+            raise HTTPException(409, "租户导出制品校验失败，请重新执行 dry-run")
+        if size != manifest.get("artifact_size_bytes"):
+            raise HTTPException(409, "租户导出制品大小不匹配，请重新执行 dry-run")
+        try:
+            with zipfile.ZipFile(path) as archive:
+                if archive.testzip() is not None:
+                    raise HTTPException(409, "租户导出制品已损坏")
+                content = json.loads(archive.read("manifest.json"))
+        except (OSError, zipfile.BadZipFile, KeyError, json.JSONDecodeError) as exc:
+            raise HTTPException(409, "租户导出制品无法验证") from exc
+        if content.get("job_id") != job.id or content.get("company_id") != company_id:
+            raise HTTPException(409, "租户导出制品与生命周期任务不匹配")
+        return path
+
+    def lifecycle_export_artifact(
+        self, job_id: str, user: User, context: WorkspaceContext
+    ) -> tuple[Path, TenantLifecycleJob]:
+        self.ensure_manager(user, context)
+        item = (
+            self.db.query(TenantLifecycleJob)
+            .filter(
+                TenantLifecycleJob.id == job_id,
+                TenantLifecycleJob.company_id == context.company_id,
+            )
+            .first()
+        )
+        if not item or not item.export_manifest:
+            raise HTTPException(404, "租户导出制品不存在")
+        path = self._validate_tenant_export(
+            item.export_manifest, item, context.company_id
+        )
+        return path, item
+
     def decide_lifecycle_job(
         self, job_id: str, approve: bool, user: User, context: WorkspaceContext
     ):
@@ -740,31 +983,38 @@ class OperationsService:
         expected = f"EXECUTE {item.operation.upper()} {item.company_id}"
         if confirmation != expected:
             raise HTTPException(422, f"执行确认文本必须为 {expected}")
-        if item.operation == "delete" and not dry_run and not item.export_manifest:
-            raise HTTPException(409, "租户删除前必须先完成 dry-run 并生成导出清单")
         company_id = item.company_id
-        table_counts = {}
-        for model in (SourceDocument, ExtractionJob, AIUsageLedger):
-            if hasattr(model, "company_id"):
-                table_counts[model.__tablename__] = (
-                    self.db.query(model).filter(model.company_id == company_id).count()
-                )
-        item.export_manifest = {
-            "company_id": company_id,
-            "generated_at": utcnow().isoformat(),
-            "table_counts": table_counts,
-            "includes_private_files": True,
-            "includes_audit": True,
-        }
+        if dry_run or (item.operation == "export" and not item.export_manifest):
+            item.export_manifest = self._create_tenant_export(item, company_id)
         if dry_run:
             self.db.commit()
             return item
+        self._validate_tenant_export(item.export_manifest or {}, item, company_id)
         item.status = "processing"
         self.db.flush()
         if item.operation == "delete":
+            storage_keys = [
+                value
+                for (value,) in self.db.query(SourceDocument.storage_key)
+                .filter(SourceDocument.company_id == company_id)
+                .all()
+            ]
             company = self.db.query(Company).filter(Company.id == company_id).first()
             if company:
                 self.db.delete(company)
         item.status, item.executed_by, item.executed_at = "completed", user.id, utcnow()
         self.db.commit()
+        if item.operation == "delete":
+            storage = get_document_storage()
+            failures = []
+            for storage_key in storage_keys:
+                try:
+                    storage.delete(storage_key)
+                except Exception:
+                    failures.append(storage_key)
+            if failures:
+                item.status = "failed"
+                item.error_message = f"数据库已删除，但有 {len(failures)} 个原始文件清理失败"
+                self.db.commit()
+                raise HTTPException(500, "租户数据已删除，但部分原始文件需要人工清理")
         return item

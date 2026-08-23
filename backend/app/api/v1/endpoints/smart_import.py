@@ -605,6 +605,7 @@ def upload_document(
     batch = service.get_batch(batch_id, current_user, context)
     stored = None
     try:
+        OperationsService(db).ensure_document_storage_allowed(context)
         stored = storage.save_stream(
             file.file, file.filename, max_bytes=get_max_upload_bytes()
         )

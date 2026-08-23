@@ -304,8 +304,11 @@ class ConsumableIssueService:
             issue_list.status = "issued"
             issue_list.issued_at = issue_list.issued_at or _utcnow_naive()
         elif event_type == "return":
-            if item.actual_returned_quantity + quantity > item.actual_issued_quantity:
-                raise HTTPException(409, "累计退料量不能超过累计实际领用量")
+            if (
+                item.actual_returned_quantity + item.actual_consumed_quantity + quantity
+                > item.actual_issued_quantity
+            ):
+                raise HTTPException(409, "累计退料量与消耗量不能超过累计实际领用量")
             stock_after = stock_before + quantity
             item.actual_returned_quantity += quantity
             transaction = self._material_transaction(

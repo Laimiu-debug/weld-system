@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -103,8 +104,11 @@ class OperationalAlert(OperationsWorkspaceMixin, Base):
             "workspace_type IN ('personal','enterprise')",
             name="ck_operational_alert_workspace",
         ),
-        UniqueConstraint(
-            "fingerprint", "status", name="uq_operational_alert_fingerprint_status"
+        Index(
+            "uq_operational_alert_active_fingerprint",
+            "fingerprint",
+            unique=True,
+            postgresql_where=text("status IN ('open', 'acknowledged')"),
         ),
         Index("ix_operational_alert_scope", "company_id", "status", "severity"),
     )

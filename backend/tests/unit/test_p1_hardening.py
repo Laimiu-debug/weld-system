@@ -29,7 +29,9 @@ def test_readiness_not_ready_when_postgres_down(monkeypatch):
 
 
 def test_redact_authorization_header():
-    redacted = redact_headers({"Authorization": "Bearer super-secret", "X-Request-ID": "abc"})
+    redacted = redact_headers(
+        {"Authorization": "Bearer super-secret", "X-Request-ID": "abc"}
+    )
     assert redacted["Authorization"] == "[redacted]"
     assert redacted["X-Request-ID"] == "abc"
 
@@ -46,10 +48,14 @@ def test_error_body_shape():
 
 def test_memory_rate_limit_trips():
     key = "unit-test-rate-limit"
-    for _ in range(3):
-        enforce_rate_limit(key, limit=3, window_seconds=60)
-    with pytest.raises(HTTPException) as exc:
-        enforce_rate_limit(key, limit=3, window_seconds=60)
+    with patch(
+        "app.core.rate_limit.redis_client.incr",
+        side_effect=RuntimeError("force memory fallback"),
+    ):
+        for _ in range(3):
+            enforce_rate_limit(key, limit=3, window_seconds=60)
+        with pytest.raises(HTTPException) as exc:
+            enforce_rate_limit(key, limit=3, window_seconds=60)
     assert exc.value.status_code == 429
 
 
@@ -93,7 +99,9 @@ def test_change_password_requires_json_body():
 def test_reports_catalog_is_available():
     app = FastAPI()
     app.include_router(reports.router, prefix="/reports")
-    app.dependency_overrides[deps.get_current_active_user] = lambda: SimpleNamespace(id=1)
+    app.dependency_overrides[deps.get_current_active_user] = lambda: SimpleNamespace(
+        id=1
+    )
     client = TestClient(app)
     response = client.get("/reports/")
     assert response.status_code == 200
@@ -140,10 +148,14 @@ def test_export_limit_trips_after_window():
     from app.core.rate_limit import enforce_export_limit
 
     user_id = 880017
-    for _ in range(20):
-        enforce_export_limit(user_id)
-    with pytest.raises(HTTPException) as exc:
-        enforce_export_limit(user_id)
+    with patch(
+        "app.core.rate_limit.redis_client.incr",
+        side_effect=RuntimeError("force memory fallback"),
+    ):
+        for _ in range(20):
+            enforce_export_limit(user_id)
+        with pytest.raises(HTTPException) as exc:
+            enforce_export_limit(user_id)
     assert exc.value.status_code == 429
 
 
@@ -209,4 +221,3 @@ def test_load_latest_approvals_skips_empty():
     assert latest == {}
     assert workflows == {}
     db.query.assert_not_called()
-
