@@ -33,6 +33,7 @@ from app.services.ai_provider_service import (
     StructuredAIRequest,
     validate_ai_base_url,
 )
+from app.services.ai_quota_service import AIQuotaError, AIQuotaService
 from app.services.document_page_renderer import DocumentPageRenderer
 from app.services.document_parser_service import DocumentParseError
 from app.services.document_storage_service import DocumentStorage
@@ -123,11 +124,13 @@ class AIExtractionService:
         storage: DocumentStorage,
         provider: AIProvider,
         renderer: DocumentPageRenderer | None = None,
+        quota_service: AIQuotaService | None = None,
     ):
         self.db = db
         self.storage = storage
         self.provider = provider
         self.renderer = renderer or DocumentPageRenderer()
+        self.quota = quota_service or AIQuotaService(db)
         self.smart_import = SmartImportService(db)
 
     def run(
@@ -178,6 +181,8 @@ class AIExtractionService:
         self.db.add(job)
         self.db.commit()
         try:
+            if mode == "platform":
+                self.quota.reserve(job, user, context, len(pages))
             usage = [0, 0, 0]
             response_ids: list[str] = []
             self._run_ocr(document, pages, run_ocr, usage, response_ids)
@@ -221,12 +226,19 @@ class AIExtractionService:
             self.db.commit()
             self.db.refresh(job)
             self.db.refresh(entity)
+            self.quota.settle(job, user, context, len(pages))
             return job, entity, pages
+        except AIQuotaError as exc:
+            self._fail_job(job.id, exc.code, str(exc))
+            self.quota.refund(job.id, user, context, str(exc))
+            raise AIExtractionRunError(exc.code, str(exc), exc.status_code) from exc
         except AIExtractionRunError as exc:
             self._fail_job(job.id, exc.code, str(exc))
+            self.quota.refund(job.id, user, context, str(exc))
             raise
         except AIProviderError as exc:
             self._fail_job(job.id, exc.code, str(exc))
+            self.quota.refund(job.id, user, context, str(exc))
             status_code = 503 if exc.retryable else 422
             raise AIExtractionRunError(exc.code, str(exc), status_code) from exc
         except (
@@ -236,11 +248,13 @@ class AIExtractionService:
             TypeError,
         ) as exc:
             self._fail_job(job.id, "invalid_extraction_result", "AI 提取结果校验失败")
+            self.quota.refund(job.id, user, context, "AI 提取结果校验失败")
             raise AIExtractionRunError(
                 "invalid_extraction_result", "AI 提取结果未通过结构校验"
             ) from exc
         except Exception as exc:
             self._fail_job(job.id, "extraction_failed", "AI 提取任务失败")
+            self.quota.refund(job.id, user, context, "AI 提取任务失败")
             raise AIExtractionRunError("extraction_failed", "AI 提取任务失败", 500) from exc
 
     def _run_ocr(

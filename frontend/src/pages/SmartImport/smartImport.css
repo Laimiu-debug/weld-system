@@ -18,6 +18,10 @@
   margin-top: 16px;
 }
 
+.smart-import__quota {
+  margin-top: 12px;
+}
+
 .smart-import__main,
 .smart-import__batch-meta {
   width: 100%;

@@ -4,7 +4,11 @@ Database models for the welding system backend.
 from app.models.user import User
 from app.models.verification_code import VerificationCode
 from app.models.admin import Admin
-from app.models.subscription import Subscription, SubscriptionPlan, SubscriptionTransaction
+from app.models.subscription import (
+    Subscription,
+    SubscriptionPlan,
+    SubscriptionTransaction,
+)
 from app.models.system_announcement import SystemAnnouncement
 from app.models.system_log import SystemLog
 from app.models.company import Company, Factory, CompanyEmployee, CompanyInvitation
@@ -15,7 +19,7 @@ from app.models.shared_library import (
     SharedTemplate,
     UserRating,
     SharedDownload,
-    SharedComment
+    SharedComment,
 )
 from app.models.welder import (
     Welder,
@@ -24,7 +28,7 @@ from app.models.welder import (
     WelderTraining,
     WelderWorkRecord,
     WelderAssessment,
-    WelderWorkHistory
+    WelderWorkHistory,
 )
 from app.models.pqr import PQR, PQRTestSpecimen
 from app.models.ppqr import PPQR, PPQRComparison
@@ -36,7 +40,7 @@ from app.models.approval import (
     ApprovalNotification,
     ApprovalStatus,
     ApprovalAction,
-    DocumentType
+    DocumentType,
 )
 from app.models.equipment import Equipment, EquipmentMaintenance, EquipmentUsage
 from app.models.production import ProductionTask, ProductionRecord, ProductionPlan
@@ -44,6 +48,8 @@ from app.models.quality import QualityInspection, QualityStandard
 from app.models.business_extensions import EmployeePerformance, ReportTemplate
 from app.models.feedback import UserFeedback
 from app.models.smart_import import (
+    AIPlanEntitlement,
+    AIUsageLedger,
     DocumentPage,
     EntityPublishRecord,
     ExtractedEntity,
@@ -114,4 +120,6 @@ __all__ = [
     "FieldEvidence",
     "ImportReviewRecord",
     "EntityPublishRecord",
+    "AIPlanEntitlement",
+    "AIUsageLedger",
 ]

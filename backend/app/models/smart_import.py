@@ -6,6 +6,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -367,5 +368,81 @@ class EntityPublishRecord(WorkspaceOwnedMixin, Base):
             "target_entity_type",
             "target_entity_id",
             unique=True,
+        ),
+    )
+
+
+class AIPlanEntitlement(Base):
+    __tablename__ = "ai_plan_entitlements"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tier_key = Column(String(50), nullable=False)
+    workspace_type = Column(String(20), nullable=False)
+    monthly_points = Column(Integer, nullable=False, default=0)
+    max_points_per_task = Column(Integer, nullable=False, default=0)
+    max_pages_per_task = Column(Integer, nullable=False, default=0)
+    is_enabled = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "workspace_type IN ('personal','enterprise')",
+            name="ck_ai_entitlement_workspace_type",
+        ),
+        CheckConstraint(
+            "monthly_points >= 0 AND max_points_per_task >= 0 AND max_pages_per_task >= 0",
+            name="ck_ai_entitlement_nonnegative",
+        ),
+        Index(
+            "uq_ai_entitlement_tier_workspace",
+            "tier_key",
+            "workspace_type",
+            unique=True,
+        ),
+    )
+
+
+class AIUsageLedger(WorkspaceOwnedMixin, Base):
+    __tablename__ = "ai_usage_ledgers"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    job_id = Column(
+        String(36),
+        ForeignKey("extraction_jobs.id", ondelete="SET NULL"),
+        index=True,
+    )
+    source = Column(String(20), nullable=False)
+    transaction_type = Column(String(20), nullable=False)
+    points = Column(Integer, nullable=False, default=0)
+    balance_delta = Column(Integer, nullable=False, default=0)
+    input_tokens = Column(Integer, nullable=False, default=0)
+    output_tokens = Column(Integer, nullable=False, default=0)
+    total_tokens = Column(Integer, nullable=False, default=0)
+    ocr_pages = Column(Integer, nullable=False, default=0)
+    period_start = Column(Date, nullable=False, index=True)
+    idempotency_key = Column(String(120), nullable=False, unique=True)
+    metadata_json = Column(JSONB, nullable=False, default=dict)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        *_workspace_constraints("ai_usage_ledger"),
+        CheckConstraint("source IN ('platform','byok')", name="ck_ai_usage_source"),
+        CheckConstraint(
+            "transaction_type IN ('reservation','settlement','refund')",
+            name="ck_ai_usage_transaction_type",
+        ),
+        CheckConstraint(
+            "points >= 0 AND input_tokens >= 0 AND output_tokens >= 0 AND total_tokens >= 0 AND ocr_pages >= 0",
+            name="ck_ai_usage_nonnegative",
+        ),
+        Index(
+            "ix_ai_usage_workspace_period",
+            "workspace_type",
+            "company_id",
+            "user_id",
+            "period_start",
         ),
     )

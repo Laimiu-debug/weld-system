@@ -1,4 +1,4 @@
-"""Smart-import staging endpoints. No endpoint here publishes formal business data."""
+"""Smart-import extraction, review, and controlled publication endpoints."""
 from typing import Iterator, Optional
 from urllib.parse import quote
 
@@ -20,21 +20,32 @@ from app.api import deps
 from app.core.data_access import WorkspaceContext, WorkspaceType
 from app.core.config import settings
 from app.core.rate_limit import enforce_rate_limit
+from app.core.module_permissions import ensure_module_permission
 from app.models.company import CompanyEmployee
-from app.models.smart_import import ExtractedEntity, ExtractedField, FieldEvidence
+from app.models.smart_import import (
+    ExtractedEntity,
+    ExtractedField,
+    FieldEvidence,
+    ImportReviewRecord,
+)
 from app.models.user import User
 from app.schemas.smart_import import (
     AIExtractionRequest,
     AIExtractionResponse,
+    AIQuotaStatusResponse,
     BatchDetailResponse,
+    BulkFieldAcceptRequest,
     DocumentPageResponse,
     DocumentParseResponse,
+    EntityPublishResponse,
     ExtractedEntityDetailResponse,
     ExtractedEntityResponse,
     ExtractedFieldResponse,
     FieldEvidenceResponse,
+    FieldReviewRequest,
     ImportBatchCreate,
     ImportBatchResponse,
+    ImportReviewRecordResponse,
     ManualDraftCreate,
     SourceDocumentRegister,
     SourceDocumentResponse,
@@ -44,6 +55,7 @@ from app.services.ai_extraction_service import (
     AIExtractionService,
     build_provider,
 )
+from app.services.ai_quota_service import AIQuotaService
 from app.services.custom_module_service import CustomModuleService
 from app.services.document_parser_service import DefaultDocumentParser, DocumentParser
 from app.services.document_storage_service import (
@@ -56,6 +68,7 @@ from app.services.extraction_schema_service import (
     build_template_extraction_schema,
 )
 from app.services.smart_import_service import SmartImportService
+from app.services.smart_import_review_service import SmartImportReviewService
 from app.services.system_config_service import get_max_upload_bytes
 from app.services.wps_template_service import WPSTemplateService
 
@@ -121,6 +134,26 @@ def get_ai_capabilities(
         "max_document_pages": settings.AI_MAX_DOCUMENT_PAGES,
         "max_input_chars": settings.AI_MAX_INPUT_CHARS,
     }
+
+
+@router.get("/ai-quota", response_model=AIQuotaStatusResponse)
+def get_ai_quota(
+    estimated_pages: int | None = Query(None, ge=1, le=1000),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> dict:
+    context = resolve_workspace(db, current_user, workspace_id)
+    service = AIQuotaService(db)
+    result = service.get_status(current_user, context)
+    if estimated_pages is not None:
+        result["estimated_points"] = service.estimate(estimated_pages)
+        result["can_run_estimate"] = (
+            result["platform_enabled"]
+            and estimated_pages <= result["max_pages_per_task"]
+            and result["estimated_points"] <= result["remaining_points"]
+        )
+    return result
 
 
 def build_requested_schema(
@@ -446,6 +479,115 @@ def get_extracted_entity(
     return build_entity_detail(db, entity)
 
 
+@router.get(
+    "/documents/{document_id}/current-entity",
+    response_model=ExtractedEntityDetailResponse,
+)
+def get_current_extracted_entity(
+    document_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> ExtractedEntityDetailResponse:
+    context = resolve_workspace(db, current_user, workspace_id)
+    service = SmartImportService(db)
+    document = service.get_document(document_id, current_user, context)
+    entity = (
+        service._scope_query(
+            db.query(ExtractedEntity), ExtractedEntity, current_user, context
+        )
+        .filter(
+            ExtractedEntity.document_id == document.id,
+            ExtractedEntity.is_current.is_(True),
+        )
+        .order_by(ExtractedEntity.version.desc())
+        .first()
+    )
+    if entity is None:
+        raise HTTPException(status_code=404, detail="该文档尚无提取草稿")
+    return build_entity_detail(db, entity)
+
+
+@router.post(
+    "/entities/{entity_id}/fields/{field_id}/review",
+    response_model=ExtractedEntityDetailResponse,
+)
+def review_extracted_field(
+    entity_id: str,
+    field_id: str,
+    request: FieldReviewRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> ExtractedEntityDetailResponse:
+    context = resolve_workspace(db, current_user, workspace_id)
+    service = SmartImportReviewService(db)
+    entity = service.get_entity(entity_id, current_user, context)
+    ensure_module_permission(db, current_user, entity.entity_type, "update")
+    entity = service.review_field(entity_id, field_id, request, current_user, context)
+    return build_entity_detail(db, entity)
+
+
+@router.post(
+    "/entities/{entity_id}/fields/bulk-accept",
+    response_model=ExtractedEntityDetailResponse,
+)
+def bulk_accept_extracted_fields(
+    entity_id: str,
+    request: BulkFieldAcceptRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> ExtractedEntityDetailResponse:
+    context = resolve_workspace(db, current_user, workspace_id)
+    service = SmartImportReviewService(db)
+    entity = service.get_entity(entity_id, current_user, context)
+    ensure_module_permission(db, current_user, entity.entity_type, "update")
+    entity = service.bulk_accept(entity_id, request, current_user, context)
+    return build_entity_detail(db, entity)
+
+
+@router.get(
+    "/entities/{entity_id}/reviews",
+    response_model=list[ImportReviewRecordResponse],
+)
+def list_import_reviews(
+    entity_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> list[ImportReviewRecordResponse]:
+    context = resolve_workspace(db, current_user, workspace_id)
+    entity = SmartImportReviewService(db).get_entity(entity_id, current_user, context)
+    return (
+        db.query(ImportReviewRecord)
+        .filter(ImportReviewRecord.entity_id == entity.id)
+        .order_by(ImportReviewRecord.created_at.desc())
+        .all()
+    )
+
+
+@router.post("/entities/{entity_id}/publish", response_model=EntityPublishResponse)
+def publish_extracted_entity(
+    entity_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> EntityPublishResponse:
+    context = resolve_workspace(db, current_user, workspace_id)
+    service = SmartImportReviewService(db)
+    entity = service.get_entity(entity_id, current_user, context)
+    ensure_module_permission(db, current_user, entity.entity_type, "create")
+    record = service.publish(entity_id, current_user, context)
+    return EntityPublishResponse(
+        entity_id=entity.id,
+        target_entity_type=record.target_entity_type,
+        target_entity_id=record.target_entity_id,
+        status="published",
+        detail_url=f"/{record.target_entity_type}/{record.target_entity_id}",
+    )
+
+
 @router.post(
     "/documents/{document_id}/manual-drafts",
     response_model=ExtractedEntityResponse,
@@ -462,3 +604,6 @@ def create_manual_draft(
     return SmartImportService(db).create_manual_draft(
         document_id, data, current_user, context
     )
+    EntityPublishResponse,
+    FieldReviewRequest,
+    ImportReviewRecordResponse,

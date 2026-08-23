@@ -1,5 +1,5 @@
 """Schemas for staged smart-import APIs."""
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, SecretStr, field_validator
@@ -153,6 +153,54 @@ class ExtractedFieldResponse(BaseModel):
 
 class ExtractedEntityDetailResponse(ExtractedEntityResponse):
     fields: list[ExtractedFieldResponse] = Field(default_factory=list)
+
+
+class FieldReviewRequest(BaseModel):
+    action: Literal["accept", "correct", "reject"]
+    value: Any = None
+    reason: str | None = Field(None, max_length=1000)
+
+
+class BulkFieldAcceptRequest(BaseModel):
+    field_ids: list[str] = Field(default_factory=list, max_length=500)
+    minimum_confidence: float | None = Field(None, ge=0, le=1)
+
+
+class ImportReviewRecordResponse(BaseModel):
+    id: str
+    entity_id: str
+    extracted_field_id: str | None
+    action: str
+    previous_value: Any
+    new_value: Any
+    reason: str | None
+    reviewer_id: int | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class EntityPublishResponse(BaseModel):
+    entity_id: str
+    target_entity_type: str
+    target_entity_id: str
+    status: str
+    detail_url: str
+
+
+class AIQuotaStatusResponse(BaseModel):
+    tier_key: str
+    workspace_type: str
+    monthly_points: int
+    used_points: int
+    reserved_or_used_points: int
+    remaining_points: int
+    max_points_per_task: int
+    max_pages_per_task: int
+    period_start: date
+    platform_enabled: bool
+    estimated_points: int | None = None
+    can_run_estimate: bool | None = None
 
 
 class AIExtractionRequest(BaseModel):

@@ -25,15 +25,21 @@ import {
 } from 'antd'
 import {
   CloudUploadOutlined,
+  CheckOutlined,
+  CloseOutlined,
+  EditOutlined,
   EyeOutlined,
   FileSearchOutlined,
   PlusOutlined,
   ReloadOutlined,
   RobotOutlined,
+  SendOutlined,
+  WalletOutlined,
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import smartImportService, {
   AIExtractionJob,
+  AIQuotaStatus,
   DocumentPage,
   ExtractedEntity,
   ExtractedField,
@@ -42,6 +48,7 @@ import smartImportService, {
   ImportEntityType,
   SourceDocument,
 } from '@/services/smartImport'
+import { useNavigate } from 'react-router-dom'
 import customModuleService, { CustomModuleSummary } from '@/services/customModules'
 import wpsTemplateService, { WPSTemplateSummary } from '@/services/wpsTemplates'
 import './smartImport.css'
@@ -102,7 +109,27 @@ function displayValue(value: unknown): string {
   return String(value)
 }
 
+function parseEditedValue(original: unknown, value: string): unknown {
+  if (typeof original === 'number') {
+    const parsed = Number(value)
+    if (!Number.isNaN(parsed)) return parsed
+  }
+  if (typeof original === 'boolean') {
+    if (value === 'true' || value === '是') return true
+    if (value === 'false' || value === '否') return false
+  }
+  if (original && typeof original === 'object') {
+    try {
+      return JSON.parse(value)
+    } catch {
+      return value
+    }
+  }
+  return value
+}
+
 const SmartImportPage: React.FC = () => {
+  const navigate = useNavigate()
   const [batches, setBatches] = useState<ImportBatch[]>([])
   const [batch, setBatch] = useState<ImportBatchDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -112,11 +139,16 @@ const SmartImportPage: React.FC = () => {
   const [extracting, setExtracting] = useState(false)
   const [activeDocument, setActiveDocument] = useState<SourceDocument | null>(null)
   const [capabilities, setCapabilities] = useState<AICapabilities | null>(null)
+  const [quota, setQuota] = useState<AIQuotaStatus | null>(null)
   const [templates, setTemplates] = useState<WPSTemplateSummary[]>([])
   const [modules, setModules] = useState<CustomModuleSummary[]>([])
   const [result, setResult] = useState<ExtractionResult | null>(null)
+  const [reviewField, setReviewField] = useState<ExtractedField | null>(null)
+  const [reviewing, setReviewing] = useState(false)
+  const [publishing, setPublishing] = useState(false)
   const [createForm] = Form.useForm()
   const [extractForm] = Form.useForm()
+  const [reviewForm] = Form.useForm()
   const extractionMode = Form.useWatch('mode', extractForm)
   const provider = Form.useWatch('provider', extractForm)
 
@@ -138,6 +170,7 @@ const SmartImportPage: React.FC = () => {
   useEffect(() => {
     void loadBatches()
     smartImportService.getAICapabilities().then(setCapabilities).catch(() => undefined)
+    smartImportService.getAIQuota().then(setQuota).catch(() => undefined)
   }, [])
 
   const selectBatch = async (id: string) => {
@@ -187,6 +220,7 @@ const SmartImportPage: React.FC = () => {
     if (!batch) return
     setActiveDocument(document)
     setExtractOpen(true)
+    smartImportService.getAIQuota(document.page_count || 1).then(setQuota).catch(() => undefined)
     extractForm.resetFields()
     extractForm.setFieldsValue({
       mode: capabilities?.platform_available ? 'platform' : 'byok',
@@ -211,6 +245,87 @@ const SmartImportPage: React.FC = () => {
       )
     } catch (error) {
       message.error(errorMessage(error, '加载模板和模块失败'))
+    }
+  }
+
+  const viewDraft = async (document: SourceDocument) => {
+    try {
+      const entity = await smartImportService.getCurrentDocumentEntity(document.id)
+      const pages = await smartImportService.listDocumentPages(document.id)
+      setResult({
+        entity,
+        pages,
+        job: {
+          id: entity.job_id || '',
+          status: 'completed',
+          mode: entity.source_mode === 'ai' ? 'platform' : 'byok',
+          input_tokens: 0,
+          output_tokens: 0,
+          total_tokens: 0,
+        },
+      })
+    } catch (error) {
+      message.error(errorMessage(error, '该文件还没有可审核的提取草稿'))
+    }
+  }
+
+  const applyFieldReview = async () => {
+    if (!result || !reviewField) return
+    const values = await reviewForm.validateFields()
+    setReviewing(true)
+    try {
+      const data = values.action === 'correct'
+        ? { ...values, value: parseEditedValue(reviewField.normalized_value, values.value) }
+        : values
+      const entity = await smartImportService.reviewField(
+        result.entity.id,
+        reviewField.id,
+        data
+      )
+      setResult({ ...result, entity })
+      setReviewField(null)
+      reviewForm.resetFields()
+      message.success(values.action === 'correct' ? '字段已修正' : '字段审核状态已更新')
+    } catch (error) {
+      message.error(errorMessage(error, '字段审核失败'))
+    } finally {
+      setReviewing(false)
+    }
+  }
+
+  const bulkAccept = async () => {
+    if (!result) return
+    try {
+      const entity = await smartImportService.bulkAcceptFields(result.entity.id, {
+        minimum_confidence: 0.85,
+      })
+      setResult({ ...result, entity })
+      message.success('已接受置信度不低于 85% 的待审核字段')
+    } catch (error) {
+      message.error(errorMessage(error, '批量接受失败'))
+    }
+  }
+
+  const publishEntity = async () => {
+    if (!result) return
+    setPublishing(true)
+    try {
+      const published = await smartImportService.publishEntity(result.entity.id)
+      setResult({
+        ...result,
+        entity: { ...result.entity, status: 'published' },
+      })
+      await loadBatches(batch?.id)
+      Modal.success({
+        title: '已发布到正式业务模块',
+        content: '正式记录仍保持草稿状态，需要继续执行现有审批流程。',
+        okText: '查看正式记录',
+        onOk: () => navigate(published.detail_url),
+      })
+    } catch (error) {
+      message.error(errorMessage(error, '发布失败'))
+    } finally {
+      setPublishing(false)
     }
   }
 
@@ -262,7 +377,7 @@ const SmartImportPage: React.FC = () => {
     },
     {
       title: '操作',
-      width: 210,
+      width: 280,
       render: (_, row) => (
         <Space>
           {row.status !== 'ready' && (
@@ -284,6 +399,9 @@ const SmartImportPage: React.FC = () => {
             onClick={() => void prepareExtraction(row)}
           >
             AI 提取
+          </Button>
+          <Button size="small" icon={<EyeOutlined />} onClick={() => void viewDraft(row)}>
+            查看草稿
           </Button>
         </Space>
       ),
@@ -318,6 +436,20 @@ const SmartImportPage: React.FC = () => {
       },
     },
     {
+      title: '审核状态',
+      dataIndex: 'review_status',
+      width: 110,
+      render: status => {
+        const labels: Record<string, string> = {
+          pending: '待审核', accepted: '已接受', corrected: '已修正', rejected: '已拒绝', not_required: '无需处理',
+        }
+        const colors: Record<string, string> = {
+          pending: 'warning', accepted: 'success', corrected: 'processing', rejected: 'error', not_required: 'default',
+        }
+        return <Tag color={colors[status]}>{labels[status] || status}</Tag>
+      },
+    },
+    {
       title: '证据',
       dataIndex: 'evidence',
       width: 320,
@@ -331,7 +463,49 @@ const SmartImportPage: React.FC = () => {
         </Space>
       ) : <Text type="secondary">无证据片段</Text>,
     },
+    {
+      title: '操作',
+      width: 190,
+      fixed: 'right',
+      render: (_, field) => result?.entity.status === 'published' ? null : (
+        <Space size={4}>
+          <Button
+            type="text"
+            size="small"
+            icon={<CheckOutlined />}
+            title="接受"
+            onClick={() => {
+              setReviewField(field)
+              reviewForm.setFieldsValue({ action: 'accept', value: field.normalized_value })
+            }}
+          />
+          <Button
+            type="text"
+            size="small"
+            icon={<EditOutlined />}
+            title="修正"
+            onClick={() => {
+              setReviewField(field)
+              reviewForm.setFieldsValue({ action: 'correct', value: displayValue(field.normalized_value), reason: '' })
+            }}
+          />
+          <Button
+            type="text"
+            danger
+            size="small"
+            icon={<CloseOutlined />}
+            title="拒绝"
+            onClick={() => {
+              setReviewField(field)
+              reviewForm.setFieldsValue({ action: 'reject', reason: '' })
+            }}
+          />
+        </Space>
+      ),
+    },
   ]
+
+  const pendingFieldCount = result?.entity.fields.filter(field => field.review_status === 'pending').length || 0
 
   return (
     <div className="smart-import">
@@ -349,6 +523,22 @@ const SmartImportPage: React.FC = () => {
         message="AI 是可选输入方式"
         description="可使用平台额度或临时填写自己的 API Key。自己的 Key 只用于本次请求，不会保存；也可以继续使用原有手工新建功能。"
       />
+
+      {quota && (
+        <Card size="small" className="smart-import__quota">
+          <Space wrap>
+            <WalletOutlined />
+            <Text strong>本月平台 AI 点数</Text>
+            <Text>{quota.remaining_points} / {quota.monthly_points} 点可用</Text>
+            {quota.estimated_points !== undefined && (
+              <Tag color={quota.can_run_estimate ? 'success' : 'error'}>
+                当前文件预计 {quota.estimated_points} 点
+              </Tag>
+            )}
+            <Text type="secondary">BYOK 不扣平台点数</Text>
+          </Space>
+        </Card>
+      )}
 
       <Spin spinning={loading}>
         <Row gutter={[16, 16]} className="smart-import__workspace">
@@ -472,6 +662,15 @@ const SmartImportPage: React.FC = () => {
               <Radio value="byok">使用自己的 API Key</Radio>
             </Radio.Group>
           </Form.Item>
+          {extractionMode === 'platform' && quota && (
+            <Alert
+              type={quota.can_run_estimate === false ? 'error' : 'success'}
+              showIcon
+              message={`预计使用 ${quota.estimated_points || 1} 点，剩余 ${quota.remaining_points} 点`}
+              description="任务提交时预占，成功后结算；调用失败会自动退回。"
+              className="smart-import__modal-alert"
+            />
+          )}
           {extractionMode === 'byok' && (
             <>
               <Form.Item name="provider" label="接口协议" rules={[{ required: true }]}>
@@ -504,7 +703,27 @@ const SmartImportPage: React.FC = () => {
         open={Boolean(result)}
         onClose={() => setResult(null)}
         width="min(1100px, 96vw)"
-        extra={result && <Tag color="warning">待工程师审核</Tag>}
+        extra={result && (
+          <Space>
+            <Tag color={result.entity.status === 'published' ? 'success' : 'warning'}>
+              {result.entity.status === 'published' ? '已发布' : `待审核 ${pendingFieldCount} 项`}
+            </Tag>
+            {result.entity.status !== 'published' && (
+              <>
+                <Button onClick={() => void bulkAccept()}>接受高置信度字段</Button>
+                <Button
+                  type="primary"
+                  icon={<SendOutlined />}
+                  loading={publishing}
+                  disabled={pendingFieldCount > 0 || !['wps', 'pqr'].includes(result.entity.entity_type)}
+                  onClick={() => void publishEntity()}
+                >
+                  发布到正式模块
+                </Button>
+              </>
+            )}
+          </Space>
+        )}
       >
         {result && (
           <Space direction="vertical" size={16} className="smart-import__main">
@@ -531,6 +750,38 @@ const SmartImportPage: React.FC = () => {
           </Space>
         )}
       </Drawer>
+
+      <Modal
+        title="审核识别字段"
+        open={Boolean(reviewField)}
+        onCancel={() => {
+          setReviewField(null)
+          reviewForm.resetFields()
+        }}
+        onOk={() => void applyFieldReview()}
+        confirmLoading={reviewing}
+        okText="确认"
+      >
+        <Form form={reviewForm} layout="vertical">
+          <Form.Item name="action" label="处理方式" rules={[{ required: true }]}>
+            <Radio.Group options={[
+              { value: 'accept', label: '接受识别值' },
+              { value: 'correct', label: '修正' },
+              { value: 'reject', label: '拒绝该字段' },
+            ]} />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(previous, current) => previous.action !== current.action}>
+            {({ getFieldValue }) => getFieldValue('action') === 'correct' ? (
+              <Form.Item name="value" label="修正后的值" rules={[{ required: true, message: '请输入修正后的值' }]}>
+                <Input.TextArea rows={4} />
+              </Form.Item>
+            ) : null}
+          </Form.Item>
+          <Form.Item name="reason" label="审核说明（可选）">
+            <Input.TextArea rows={3} maxLength={1000} />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   )
 }

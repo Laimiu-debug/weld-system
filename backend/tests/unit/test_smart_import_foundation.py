@@ -16,6 +16,7 @@ from app.api.v1.endpoints.smart_import import (
     validate_ai_extraction_request,
 )
 from app.models.smart_import import (
+    AIUsageLedger,
     DocumentPage,
     EntityPublishRecord,
     ExtractedEntity,
@@ -44,6 +45,7 @@ WORKSPACE_MODELS = (
     FieldEvidence,
     ImportReviewRecord,
     EntityPublishRecord,
+    AIUsageLedger,
 )
 
 
@@ -137,11 +139,12 @@ def test_enterprise_scope_limits_company_and_factory_visibility() -> None:
     assert "import_batches.user_id = 7" in sql
 
 
-def test_staging_router_exposes_draft_flow_but_no_publish_endpoint() -> None:
+def test_smart_import_router_exposes_extract_review_and_publish_flow() -> None:
     paths = {route.path for route in router.routes}
 
     assert "/batches" in paths
     assert "/ai-capabilities" in paths
+    assert "/ai-quota" in paths
     assert "/batches/{batch_id}/documents" in paths
     assert "/batches/{batch_id}/upload" in paths
     assert "/documents/{document_id}/content" in paths
@@ -149,8 +152,10 @@ def test_staging_router_exposes_draft_flow_but_no_publish_endpoint() -> None:
     assert "/documents/{document_id}/pages" in paths
     assert "/documents/{document_id}/extract" in paths
     assert "/entities/{entity_id}" in paths
+    assert "/entities/{entity_id}/fields/{field_id}/review" in paths
+    assert "/entities/{entity_id}/fields/bulk-accept" in paths
+    assert "/entities/{entity_id}/publish" in paths
     assert "/documents/{document_id}/manual-drafts" in paths
-    assert all("publish" not in path for path in paths)
 
 
 def test_entity_detail_contains_field_confidence_and_evidence() -> None:

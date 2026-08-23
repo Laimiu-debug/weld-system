@@ -93,6 +93,29 @@ export interface ExtractedEntity {
   fields: ExtractedField[]
 }
 
+export interface AIQuotaStatus {
+  tier_key: string
+  workspace_type: 'personal' | 'enterprise'
+  monthly_points: number
+  used_points: number
+  reserved_or_used_points: number
+  remaining_points: number
+  max_points_per_task: number
+  max_pages_per_task: number
+  period_start: string
+  platform_enabled: boolean
+  estimated_points?: number
+  can_run_estimate?: boolean
+}
+
+export interface EntityPublishResult {
+  entity_id: string
+  target_entity_type: 'wps' | 'pqr'
+  target_entity_id: string
+  status: 'published'
+  detail_url: string
+}
+
 export interface ImportBatchDetail extends ImportBatch {
   documents: SourceDocument[]
 }
@@ -122,6 +145,13 @@ class SmartImportService {
     max_input_chars: number
   }> {
     const response = await api.get('/smart-import/ai-capabilities')
+    return response.data
+  }
+
+  async getAIQuota(estimatedPages?: number): Promise<AIQuotaStatus> {
+    const response = await api.get('/smart-import/ai-quota', {
+      params: estimatedPages ? { estimated_pages: estimatedPages } : undefined,
+    })
     return response.data
   }
 
@@ -222,6 +252,45 @@ class SmartImportService {
 
   async getExtractedEntity(entityId: string): Promise<ExtractedEntity> {
     const response = await api.get(`/smart-import/entities/${entityId}`)
+    return response.data
+  }
+
+  async getCurrentDocumentEntity(documentId: string): Promise<ExtractedEntity> {
+    const response = await api.get(
+      `/smart-import/documents/${documentId}/current-entity`
+    )
+    return response.data
+  }
+
+  async reviewField(
+    entityId: string,
+    fieldId: string,
+    data: {
+      action: 'accept' | 'correct' | 'reject'
+      value?: unknown
+      reason?: string
+    }
+  ): Promise<ExtractedEntity> {
+    const response = await api.post(
+      `/smart-import/entities/${entityId}/fields/${fieldId}/review`,
+      data
+    )
+    return response.data
+  }
+
+  async bulkAcceptFields(
+    entityId: string,
+    data: { field_ids?: string[]; minimum_confidence?: number }
+  ): Promise<ExtractedEntity> {
+    const response = await api.post(
+      `/smart-import/entities/${entityId}/fields/bulk-accept`,
+      data
+    )
+    return response.data
+  }
+
+  async publishEntity(entityId: string): Promise<EntityPublishResult> {
+    const response = await api.post(`/smart-import/entities/${entityId}/publish`)
     return response.data
   }
 

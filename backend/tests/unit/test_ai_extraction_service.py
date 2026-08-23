@@ -150,7 +150,8 @@ def test_scanned_page_ocr_and_extraction_create_review_only_evidence() -> None:
     renderer = Mock()
     renderer.render_png.return_value = b"\x89PNG\r\n\x1a\nimage"
     provider = FakeProvider()
-    service = AIExtractionService(db, storage, provider, renderer)
+    quota = Mock()
+    service = AIExtractionService(db, storage, provider, renderer, quota)
     service.smart_import = smart_import
     context = WorkspaceContext(user_id=7, workspace_type=WorkspaceType.PERSONAL)
 
@@ -178,3 +179,4 @@ def test_scanned_page_ocr_and_extraction_create_review_only_evidence() -> None:
     evidence = next(item for item in added if isinstance(item, FieldEvidence))
     assert evidence.page_id == "page-1"
     assert evidence.evidence_type == "ocr"
+    quota.settle.assert_called_once_with(job, SimpleNamespace(id=7), context, 1)
