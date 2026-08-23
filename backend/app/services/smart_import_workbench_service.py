@@ -21,7 +21,10 @@ from app.models.user import User
 from app.models.pqr import PQR
 from app.models.wps import WPS
 from app.schemas.custom_module import CustomModuleCreate, CustomModuleUpdate
-from app.schemas.smart_import import UnmappedFieldBindRequest
+from app.schemas.smart_import import (
+    ManualWorkbenchFieldCreate,
+    UnmappedFieldBindRequest,
+)
 from app.services.custom_module_service import CustomModuleService
 from app.services.smart_import_review_service import SmartImportReviewService
 
@@ -193,7 +196,12 @@ class SmartImportWorkbenchService:
             ),
             "rule_conflicts": sum(
                 item["code"]
-                in {"semantic_conflict", "range_violation", "option_violation"}
+                in {
+                    "semantic_conflict",
+                    "range_violation",
+                    "option_violation",
+                    "type_violation",
+                }
                 for item in issues
             ),
             "unconfirmed": len(pending),
@@ -214,6 +222,8 @@ class SmartImportWorkbenchService:
                     "field_key": binding.get("field_key"),
                     "label": binding.get("label") or binding.get("field_key"),
                     "field_type": binding.get("field_type", "text"),
+                    "ai_extract_mode": binding.get("ai_extract_mode", "auto"),
+                    "extractable": bool(binding.get("extractable")),
                 }
                 for binding in bindings
                 if binding.get("ai_extract_mode") != "derived"
@@ -302,6 +312,88 @@ class SmartImportWorkbenchService:
         self.db.refresh(entity)
         return entity
 
+    def add_manual_field(
+        self,
+        entity_id: str,
+        request: ManualWorkbenchFieldCreate,
+        user: User,
+        context: WorkspaceContext,
+    ) -> ExtractedEntity:
+        """Add a schema-bound value that AI did not or must not extract."""
+        entity = self.review.get_entity(entity_id, user, context)
+        self.review._ensure_editable(entity)
+        job = (
+            self.db.query(ExtractionJob)
+            .filter(ExtractionJob.id == entity.job_id)
+            .first()
+        )
+        bindings = (job.schema_snapshot or {}).get("field_bindings", []) if job else []
+        target = next(
+            (
+                item
+                for item in bindings
+                if (
+                    request.target_field_id
+                    and item.get("field_id") == request.target_field_id
+                )
+                or (
+                    item.get("module_id") == request.target_module_id
+                    and item.get("instance_id") == request.target_instance_id
+                    and item.get("field_key") == request.target_field_key
+                )
+            ),
+            None,
+        )
+        if target is None:
+            raise HTTPException(status_code=404, detail="目标字段不存在于本次导入 Schema")
+        duplicate = (
+            self.db.query(ExtractedField)
+            .filter(
+                ExtractedField.entity_id == entity.id,
+                ExtractedField.instance_id == target.get("instance_id"),
+                ExtractedField.field_key == target.get("field_key"),
+                ExtractedField.review_status != "rejected",
+            )
+            .first()
+        )
+        if duplicate:
+            raise HTTPException(status_code=409, detail="该字段已有有效值，请直接修正现有字段")
+        workspace = self.review._workspace(entity)
+        field = ExtractedField(
+            id=str(uuid4()),
+            entity_id=entity.id,
+            module_id=target.get("module_id"),
+            instance_id=target.get("instance_id"),
+            field_id=target.get("field_id"),
+            field_key=target["field_key"],
+            canonical_field_key=target.get("canonical_field_key"),
+            raw_value=request.value,
+            normalized_value=request.value,
+            confidence=1.0,
+            review_status="accepted",
+            schema_version=job.schema_version if job else "1.0",
+            **workspace,
+        )
+        if entity.source_mode == "ai":
+            entity.source_mode = "mixed"
+        self.db.add(field)
+        self.db.add(
+            ImportReviewRecord(
+                id=str(uuid4()),
+                entity_id=entity.id,
+                extracted_field_id=field.id,
+                action="correct",
+                previous_value=None,
+                new_value=request.value,
+                reason=request.reason or "审核工作台手工录入字段",
+                reviewer_id=user.id,
+                **workspace,
+            )
+        )
+        self.db.commit()
+        self.db.refresh(entity)
+        return entity
+
     def _create_custom_binding(self, entity, request, user, context):
         if entity.entity_type not in {"wps", "pqr", "ppqr"}:
             raise HTTPException(status_code=422, detail="当前类型暂不支持创建模块字段，请绑定已有字段")
@@ -368,6 +460,21 @@ class SmartImportWorkbenchService:
     @staticmethod
     def _validate_value(field, binding, issues, states):
         value = field.normalized_value
+        field_type = binding.get("field_type")
+        invalid_type = (
+            field_type in {"number", "integer"}
+            and (not isinstance(value, (int, float)) or isinstance(value, bool))
+        ) or (field_type == "checkbox" and not isinstance(value, bool))
+        if invalid_type:
+            SmartImportWorkbenchService._issue(
+                issues,
+                states,
+                "type_violation",
+                "error",
+                [field.id],
+                f"{binding.get('label') or field.field_key} 的值类型不正确",
+            )
+            return
         minimum, maximum = binding.get("minimum"), binding.get("maximum")
         if isinstance(value, (int, float)) and minimum is not None and value < minimum:
             SmartImportWorkbenchService._issue(

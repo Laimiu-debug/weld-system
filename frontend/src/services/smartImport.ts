@@ -48,13 +48,20 @@ export interface AIExtractionJob {
   id: string
   document_id: string
   status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled'
-  mode: 'platform' | 'byok'
+  mode: 'platform' | 'byok' | 'manual' | 'offline'
   provider?: string
   model?: string
   provider_config_id?: string
   retry_of_job_id?: string
   template_id?: string
   progress: number
+  progress_detail: {
+    job_kind?: 'parse' | 'extraction'
+    phase?: string
+    current_stage?: string
+    pages?: { completed: number; total: number }
+    fields?: { completed: number; total: number }
+  }
   input_tokens: number
   output_tokens: number
   total_tokens: number
@@ -223,6 +230,8 @@ export interface WorkbenchValidation {
     field_key: string
     label: string
     field_type: string
+    ai_extract_mode: 'auto' | 'manual' | 'disabled' | 'derived'
+    extractable: boolean
   }>
 }
 
@@ -430,6 +439,13 @@ class SmartImportService {
     return response.data
   }
 
+  async queueDocumentParse(
+    documentId: string
+  ): Promise<{ job: AIExtractionJob; message: string }> {
+    const response = await api.post(`/smart-import/documents/${documentId}/parse-async`)
+    return response.data
+  }
+
   async listDocumentPages(documentId: string): Promise<DocumentPage[]> {
     const response = await api.get(`/smart-import/documents/${documentId}/pages`)
     return response.data
@@ -566,6 +582,21 @@ class SmartImportService {
       `/smart-import/entities/${entityId}/fields/${fieldId}/bind-unmapped`,
       data
     )
+    return response.data
+  }
+
+  async addManualWorkbenchField(
+    entityId: string,
+    data: {
+      target_field_id?: string
+      target_module_id?: string
+      target_instance_id?: string
+      target_field_key: string
+      value: unknown
+      reason?: string
+    }
+  ): Promise<ExtractedEntity> {
+    const response = await api.post(`/smart-import/entities/${entityId}/manual-fields`, data)
     return response.data
   }
 

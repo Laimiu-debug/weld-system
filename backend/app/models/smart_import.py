@@ -239,6 +239,7 @@ class ExtractionJob(WorkspaceOwnedMixin, Base):
     )
     run_ocr = Column(Boolean, nullable=False, default=True)
     progress = Column(Integer, nullable=False, default=0)
+    progress_detail = Column(JSONB, nullable=False, default=dict)
     schema_version = Column(String(40), nullable=False)
     schema_snapshot = Column(JSONB, nullable=False, default=dict)
     prompt_version = Column(String(40))

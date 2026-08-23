@@ -1,7 +1,8 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from app.models.smart_import import ExtractedField, ExtractionJob
+from app.models.smart_import import ExtractedField, ExtractionJob, ImportReviewRecord
+from app.schemas.smart_import import ManualWorkbenchFieldCreate
 from app.services.smart_import_workbench_service import SmartImportWorkbenchService
 
 
@@ -117,3 +118,54 @@ def test_schema_metadata_supports_old_snapshots_without_rich_bindings() -> None:
         "maximum": 40,
         "options": [],
     }
+
+
+def test_manual_field_can_fill_non_extractable_schema_binding() -> None:
+    entity = SimpleNamespace(id="entity-1", job_id="job-1", source_mode="ai")
+    job = SimpleNamespace(
+        schema_version="1.0",
+        schema_snapshot={
+            "field_bindings": [
+                {
+                    "field_id": "field-disabled",
+                    "module_id": "module-1",
+                    "instance_id": "instance-1",
+                    "field_key": "internal_note",
+                    "canonical_field_key": None,
+                    "ai_extract_mode": "disabled",
+                    "extractable": False,
+                }
+            ]
+        },
+    )
+    db = Mock()
+    db.query.side_effect = [_Query([job]), _Query([])]
+    service = SmartImportWorkbenchService(db)
+    service.review = Mock()
+    service.review.get_entity.return_value = entity
+    service.review._workspace.return_value = {
+        "user_id": 7,
+        "workspace_type": "personal",
+        "company_id": None,
+        "factory_id": None,
+        "access_level": "private",
+    }
+
+    result = service.add_manual_field(
+        "entity-1",
+        ManualWorkbenchFieldCreate(
+            target_field_id="field-disabled",
+            target_field_key="internal_note",
+            value="仅人工维护",
+        ),
+        SimpleNamespace(id=7),
+        SimpleNamespace(),
+    )
+
+    added = [call.args[0] for call in db.add.call_args_list]
+    field = next(item for item in added if isinstance(item, ExtractedField))
+    history = next(item for item in added if isinstance(item, ImportReviewRecord))
+    assert field.normalized_value == "仅人工维护"
+    assert field.review_status == "accepted"
+    assert history.new_value == "仅人工维护"
+    assert result.source_mode == "mixed"

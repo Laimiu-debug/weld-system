@@ -79,6 +79,33 @@ def test_batch_state_becomes_partial_success() -> None:
     db.commit.assert_called_once()
 
 
+def test_parse_jobs_do_not_count_as_completed_extractions() -> None:
+    db = Mock()
+    document_query = Mock()
+    document_query.filter.return_value.all.return_value = [
+        SourceDocument(id="doc-1", batch_id="batch-1"),
+    ]
+    job_query = Mock()
+    job_query.filter.return_value.order_by.return_value.all.return_value = [
+        ExtractionJob(
+            id="parse-1",
+            document_id="doc-1",
+            status="completed",
+            progress=100,
+            schema_snapshot={"job_kind": "parse"},
+        ),
+    ]
+    entity_query = Mock()
+    entity_query.filter.return_value.all.return_value = []
+    db.query.side_effect = [document_query, job_query, entity_query]
+    batch = ImportBatch(id="batch-1", status="draft", progress=0)
+
+    result = AIExtractionQueueService(db).refresh_batch(batch)
+
+    assert result.status == "draft"
+    assert result.progress == 0
+
+
 def test_celery_dispatch_serializes_only_job_identifier(monkeypatch) -> None:
     apply_async = Mock()
     monkeypatch.setattr(
@@ -90,3 +117,16 @@ def test_celery_dispatch_serializes_only_job_identifier(monkeypatch) -> None:
     smart_import_endpoint.dispatch_extraction_job(SimpleNamespace(id="job-safe-1"))
 
     apply_async.assert_called_once_with(args=["job-safe-1"], task_id="job-safe-1")
+
+
+def test_parse_dispatch_serializes_only_job_identifier(monkeypatch) -> None:
+    apply_async = Mock()
+    monkeypatch.setattr(
+        smart_import_endpoint.run_smart_import_parse,
+        "apply_async",
+        apply_async,
+    )
+
+    smart_import_endpoint.dispatch_parse_job(SimpleNamespace(id="parse-safe-1"))
+
+    apply_async.assert_called_once_with(args=["parse-safe-1"], task_id="parse-safe-1")

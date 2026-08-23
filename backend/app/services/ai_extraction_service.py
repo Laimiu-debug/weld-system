@@ -232,6 +232,11 @@ class AIExtractionService:
                 raise AIExtractionRunError(exc.code, str(exc), exc.status_code) from exc
 
         workspace = _resource_workspace(document)
+        field_total = sum(
+            1
+            for item in schema_snapshot.get("field_bindings", [])
+            if item.get("extractable")
+        )
         if existing_job is None:
             job = ExtractionJob(
                 id=str(uuid4()),
@@ -249,6 +254,12 @@ class AIExtractionService:
                 attempt_count=1,
                 run_ocr=run_ocr,
                 progress=5,
+                progress_detail={
+                    "job_kind": "extraction",
+                    "phase": "starting",
+                    "pages": {"completed": 0, "total": len(pages)},
+                    "fields": {"completed": 0, "total": field_total},
+                },
                 started_at=_utcnow(),
                 **workspace,
             )
@@ -262,6 +273,12 @@ class AIExtractionService:
                 raise AIExtractionRunError("job_document_mismatch", "任务与文档不匹配", 409)
             job.status = "processing"
             job.progress = 5
+            job.progress_detail = {
+                "job_kind": "extraction",
+                "phase": "starting",
+                "pages": {"completed": 0, "total": len(pages)},
+                "fields": {"completed": 0, "total": field_total},
+            }
             job.attempt_count = (job.attempt_count or 0) + 1
             job.started_at = _utcnow()
             job.completed_at = None
@@ -276,10 +293,19 @@ class AIExtractionService:
             response_ids: list[str] = []
             self._ensure_active(job)
             job.progress = 10
+            job.progress_detail = {
+                **(job.progress_detail or {}),
+                "phase": "ocr",
+            }
             self.db.commit()
             self._run_ocr(document, pages, run_ocr, usage, response_ids, job)
             self._ensure_active(job)
             job.progress = 60
+            job.progress_detail = {
+                **(job.progress_detail or {}),
+                "phase": "extracting",
+                "pages": {"completed": len(pages), "total": len(pages)},
+            }
             self.db.commit()
             input_text = _document_text(pages)
             if len(input_text) > settings.AI_MAX_INPUT_CHARS:
@@ -288,6 +314,7 @@ class AIExtractionService:
                 )
             stages = build_extraction_stages(schema_snapshot, include_unmapped=True)
             cleaned: dict[str, Any] = {}
+            completed_fields = 0
             for stage_index, stage in enumerate(stages):
                 self._ensure_active(job)
                 runtime_schema = relax_business_required_fields(stage["json_schema"])
@@ -318,7 +345,17 @@ class AIExtractionService:
                 _add_usage(usage, result)
                 if result.response_id:
                     response_ids.append(result.response_id)
+                completed_fields += len(stage.get("field_bindings") or [])
                 job.progress = 60 + int((stage_index + 1) * 25 / max(len(stages), 1))
+                job.progress_detail = {
+                    **(job.progress_detail or {}),
+                    "phase": "extracting",
+                    "current_stage": stage["name"],
+                    "fields": {
+                        "completed": min(completed_fields, field_total),
+                        "total": field_total,
+                    },
+                }
                 self.db.commit()
             entity = self._save_result(
                 document,
@@ -333,6 +370,12 @@ class AIExtractionService:
             )
             job.status = "completed"
             job.progress = 100
+            job.progress_detail = {
+                "job_kind": "extraction",
+                "phase": "completed",
+                "pages": {"completed": len(pages), "total": len(pages)},
+                "fields": {"completed": field_total, "total": field_total},
+            }
             job.completed_at = _utcnow()
             job.external_response_id = response_ids[-1] if response_ids else None
             job.input_tokens, job.output_tokens, job.total_tokens = usage
@@ -403,6 +446,7 @@ class AIExtractionService:
         job: ExtractionJob,
     ) -> None:
         pending = [page for page in pages if page.ocr_status == "pending"]
+        already_ready = len(pages) - len(pending)
         if pending and not run_ocr:
             raise AIExtractionRunError("ocr_required", "文档包含扫描页，必须先执行 OCR")
         for index, page in enumerate(pending):
@@ -485,6 +529,14 @@ class AIExtractionService:
                 job.progress = min(
                     55, 10 + int((index + 1) * 45 / max(len(pending), 1))
                 )
+                job.progress_detail = {
+                    **(job.progress_detail or {}),
+                    "phase": "ocr",
+                    "pages": {
+                        "completed": already_ready + index + 1,
+                        "total": len(pages),
+                    },
+                }
                 self.db.commit()
             except Exception:
                 self.db.rollback()
@@ -656,6 +708,7 @@ class AIExtractionService:
             job.status = "failed"
             job.error_code = code[:80]
             job.error_message = message[:1000]
+            job.progress_detail = {**(job.progress_detail or {}), "phase": "failed"}
             job.completed_at = _utcnow()
             self.db.commit()
 

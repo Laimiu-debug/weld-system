@@ -127,6 +127,15 @@ class ManualDraftCreate(BaseModel):
     fields: list[ManualFieldDraft] = Field(default_factory=list, max_length=500)
 
 
+class ManualWorkbenchFieldCreate(BaseModel):
+    target_field_id: str | None = Field(None, max_length=36)
+    target_module_id: str | None = Field(None, max_length=100)
+    target_instance_id: str | None = Field(None, max_length=100)
+    target_field_key: str = Field(min_length=1, max_length=150)
+    value: Any = None
+    reason: str | None = Field(None, max_length=1000)
+
+
 class ExtractedEntityResponse(BaseModel):
     id: str
     document_id: str
@@ -432,6 +441,7 @@ class ExtractionJobResponse(BaseModel):
     retry_of_job_id: str | None
     template_id: str | None = None
     progress: int
+    progress_detail: dict[str, Any] = Field(default_factory=dict)
     status: str
     schema_version: str
     request_trace_id: str | None

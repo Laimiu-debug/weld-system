@@ -15,10 +15,97 @@ from app.services.ai_extraction_service import (
 )
 from app.services.ai_extraction_queue_service import AIExtractionQueueService
 from app.services.document_storage_service import get_document_storage
+from app.services.document_parser_service import DefaultDocumentParser
+from app.services.smart_import_service import SmartImportService
 from app.tasks.celery_app import celery_app
 
 
 logger = logging.getLogger(__name__)
+
+
+@celery_app.task(name="smart_import.parse")
+def run_smart_import_parse(job_id: str) -> dict:
+    """Parse a private source document in the worker without serializing file data."""
+    db = SessionLocal()
+    try:
+        job = db.query(ExtractionJob).filter(ExtractionJob.id == job_id).first()
+        if not job:
+            return {"job_id": job_id, "status": "missing"}
+        if job.status == "cancelled":
+            return {"job_id": job.id, "status": "cancelled"}
+        if (
+            job.status != "queued"
+            or (job.schema_snapshot or {}).get("job_kind") != "parse"
+        ):
+            return {"job_id": job.id, "status": job.status}
+        user = db.query(User).filter(User.id == job.user_id).first()
+        if not user:
+            _mark_setup_failure(db, job, "task_user_missing", "任务用户不存在")
+            return {"job_id": job.id, "status": "failed"}
+        context = WorkspaceContext(
+            user_id=user.id,
+            workspace_type=job.workspace_type,
+            company_id=job.company_id,
+            factory_id=job.factory_id,
+        )
+        job.status = "processing"
+        job.attempt_count = (job.attempt_count or 0) + 1
+        job.started_at = datetime.now(UTC).replace(tzinfo=None)
+        job.progress = 10
+        job.progress_detail = {
+            "job_kind": "parse",
+            "phase": "parsing",
+            "pages": {"completed": 0, "total": 0},
+            "fields": {"completed": 0, "total": 0},
+        }
+        db.commit()
+        document, pages = SmartImportService(db).parse_document(
+            job.document_id,
+            user,
+            context,
+            get_document_storage(),
+            DefaultDocumentParser(),
+        )
+        db.refresh(job)
+        if job.status == "cancelled":
+            return {"job_id": job.id, "status": "cancelled"}
+        job.status = "completed"
+        job.progress = 100
+        job.progress_detail = {
+            "job_kind": "parse",
+            "phase": "completed",
+            "pages": {"completed": len(pages), "total": len(pages)},
+            "fields": {"completed": 0, "total": 0},
+        }
+        job.completed_at = datetime.now(UTC).replace(tzinfo=None)
+        batch = (
+            db.query(ImportBatch).filter(ImportBatch.id == document.batch_id).first()
+        )
+        if batch:
+            remaining = (
+                db.query(SourceDocument)
+                .filter(
+                    SourceDocument.batch_id == batch.id,
+                    SourceDocument.status.notin_(("ready", "failed", "archived")),
+                )
+                .count()
+            )
+            batch.status = "draft" if remaining == 0 else "processing"
+        db.commit()
+        return {
+            "job_id": job.id,
+            "document_id": document.id,
+            "status": job.status,
+            "page_count": len(pages),
+        }
+    except Exception:
+        logger.exception("Smart-import parse task %s failed", job_id)
+        job = db.query(ExtractionJob).filter(ExtractionJob.id == job_id).first()
+        if job and job.status not in {"failed", "cancelled", "completed"}:
+            _mark_setup_failure(db, job, "parse_failed", "后台文档解析失败")
+        return {"job_id": job_id, "status": "failed", "error_code": "parse_failed"}
+    finally:
+        db.close()
 
 
 @celery_app.task(name="smart_import.extract")
@@ -103,6 +190,7 @@ def _mark_setup_failure(db, job: ExtractionJob, code: str, message: str) -> None
     job.status = "failed"
     job.error_code = code
     job.error_message = message
+    job.progress_detail = {**(job.progress_detail or {}), "phase": "failed"}
     job.completed_at = datetime.now(UTC).replace(tzinfo=None)
     db.commit()
 

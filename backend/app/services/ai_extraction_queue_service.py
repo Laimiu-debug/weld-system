@@ -73,6 +73,8 @@ class AIExtractionQueueService:
         )
         latest: dict[str, ExtractionJob] = {}
         for job in jobs:
+            if (job.schema_snapshot or {}).get("job_kind") == "parse":
+                continue
             latest.setdefault(job.document_id, job)
         entities = (
             self.db.query(ExtractedEntity)
@@ -162,6 +164,19 @@ class AIExtractionQueueService:
             retry_of_job_id=retry_of_job_id,
             run_ocr=run_ocr,
             progress=0,
+            progress_detail={
+                "job_kind": "extraction",
+                "phase": "queued",
+                "pages": {"completed": 0, "total": int(document.page_count or 0)},
+                "fields": {
+                    "completed": 0,
+                    "total": sum(
+                        1
+                        for item in schema_snapshot.get("field_bindings", [])
+                        if item.get("extractable")
+                    ),
+                },
+            },
             schema_version=str(schema_snapshot.get("schema_version") or "1.0"),
             schema_snapshot=schema_snapshot,
             prompt_version="smart-import-v1",
@@ -174,6 +189,66 @@ class AIExtractionQueueService:
             factory_id=document.factory_id,
             access_level=document.access_level,
         )
+        batch = self.smart_import.get_batch(document.batch_id, user, context)
+        batch.status = "queued"
+        self.db.add(job)
+        self.db.commit()
+        self.db.refresh(job)
+        return job
+
+    def create_parse_job(
+        self,
+        document_id: str,
+        user: User,
+        context: WorkspaceContext,
+        *,
+        retry_of_job_id: str | None = None,
+    ) -> ExtractionJob:
+        """Create a non-AI Celery job for private document pagination."""
+        document = self.smart_import.get_document(document_id, user, context)
+        if document.status == "parsing":
+            raise HTTPException(status_code=409, detail="文档正在解析，请勿重复提交")
+        duplicate = (
+            self.smart_import._scope_query(
+                self.db.query(ExtractionJob), ExtractionJob, user, context
+            )
+            .filter(
+                ExtractionJob.document_id == document.id,
+                ExtractionJob.status.in_(ACTIVE_JOB_STATUSES),
+            )
+            .first()
+        )
+        if duplicate:
+            raise HTTPException(status_code=409, detail="该文件已有正在执行的后台任务")
+        job = ExtractionJob(
+            id=str(uuid4()),
+            document_id=document.id,
+            mode="offline",
+            retry_of_job_id=retry_of_job_id,
+            run_ocr=False,
+            progress=0,
+            progress_detail={
+                "job_kind": "parse",
+                "phase": "queued",
+                "pages": {"completed": 0, "total": 0},
+                "fields": {"completed": 0, "total": 0},
+            },
+            schema_version="parse-v1",
+            schema_snapshot={"schema_version": "parse-v1", "job_kind": "parse"},
+            prompt_version=None,
+            request_trace_id=str(uuid4()),
+            status="queued",
+            attempt_count=0,
+            user_id=document.user_id,
+            workspace_type=document.workspace_type,
+            company_id=document.company_id,
+            factory_id=document.factory_id,
+            access_level=document.access_level,
+        )
+        document.metadata_json = {
+            **(document.metadata_json or {}),
+            "parsing": {"status": "queued", "job_id": job.id},
+        }
         batch = self.smart_import.get_batch(document.batch_id, user, context)
         batch.status = "queued"
         self.db.add(job)
@@ -206,6 +281,7 @@ class AIExtractionQueueService:
         job.status = "cancelled"
         job.error_code = "task_cancelled"
         job.error_message = "任务已由用户取消"
+        job.progress_detail = {**(job.progress_detail or {}), "phase": "cancelled"}
         job.completed_at = datetime.now(UTC).replace(tzinfo=None)
         self.db.commit()
         self.db.refresh(job)

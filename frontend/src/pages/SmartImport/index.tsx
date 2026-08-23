@@ -151,6 +151,22 @@ function parseEditedValue(original: unknown, value: string): unknown {
   return value
 }
 
+function parseManualValue(fieldType: string, value: string): unknown {
+  if (['number', 'integer'].includes(fieldType)) {
+    const parsed = Number(value)
+    if (!Number.isNaN(parsed)) return fieldType === 'integer' ? Math.trunc(parsed) : parsed
+    throw new Error('请输入有效数值')
+  }
+  if (fieldType === 'checkbox') {
+    if (['true', '是', '1'].includes(value)) return true
+    if (['false', '否', '0'].includes(value)) return false
+  }
+  if (['table', 'object', 'array'].includes(fieldType)) {
+    try { return JSON.parse(value) } catch { throw new Error('请输入合法 JSON') }
+  }
+  return value
+}
+
 const SmartImportPage: React.FC = () => {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -182,6 +198,8 @@ const SmartImportPage: React.FC = () => {
   const [pagePreviewUrl, setPagePreviewUrl] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [bindField, setBindField] = useState<ExtractedField | null>(null)
+  const [manualFieldOpen, setManualFieldOpen] = useState(false)
+  const [manualFieldSaving, setManualFieldSaving] = useState(false)
   const [binding, setBinding] = useState(false)
   const [providerOpen, setProviderOpen] = useState(false)
   const [providerConfigs, setProviderConfigs] = useState<AIProviderConfig[]>([])
@@ -198,11 +216,13 @@ const SmartImportPage: React.FC = () => {
   const [policyForm] = Form.useForm()
   const [rotateForm] = Form.useForm()
   const [bindForm] = Form.useForm()
+  const [manualFieldForm] = Form.useForm()
   const uploadQueueRef = useRef<Promise<void>>(Promise.resolve())
   const pendingUploadCountRef = useRef(0)
   const extractionMode = Form.useWatch('mode', extractForm)
   const provider = Form.useWatch('provider', extractForm)
   const bindAction = Form.useWatch('action', bindForm)
+  const manualFieldTarget = Form.useWatch('target', manualFieldForm)
   const loadProviderSettings = useCallback(async () => {
     const configs = await smartImportService.listAIProviderConfigs()
     setProviderConfigs(configs)
@@ -276,7 +296,10 @@ const SmartImportPage: React.FC = () => {
       try {
         const job = await smartImportService.getExtractionJob(queuedJob.id)
         setQueuedJob(job)
-        if (job.status === 'completed') {
+        if (job.status === 'completed' && job.progress_detail?.job_kind === 'parse') {
+          await loadBatches(batch?.id)
+          message.success('后台文件解析完成，可以开始 AI 提取或手工录入')
+        } else if (job.status === 'completed') {
           const [entity, pages] = await Promise.all([
             smartImportService.getCurrentDocumentEntity(job.document_id),
             smartImportService.listDocumentPages(job.document_id),
@@ -406,11 +429,12 @@ const SmartImportPage: React.FC = () => {
           file,
           targetType
         )
-        await smartImportService.parseDocument(document.id)
+        const queued = await smartImportService.queueDocumentParse(document.id)
+        setQueuedJob(queued.job)
         options.onSuccess?.(document)
         setUploadResults(items => items.map(item =>
           item.id === itemId
-            ? { ...item, status: 'completed', message: `${document.page_count || 0} 页` }
+            ? { ...item, status: 'completed', message: '已进入后台解析队列' }
             : item
         ))
       } catch (error) {
@@ -502,6 +526,11 @@ const SmartImportPage: React.FC = () => {
           output_tokens: 0,
           total_tokens: 0,
           progress: 100,
+          progress_detail: {
+            job_kind: 'extraction',
+            phase: 'completed',
+            fields: { completed: entity.fields.length, total: entity.fields.length },
+          },
         },
       })
     } catch (error) {
@@ -596,6 +625,35 @@ const SmartImportPage: React.FC = () => {
       message.error(errorMessage(error, '字段绑定失败'))
     } finally {
       setBinding(false)
+    }
+  }
+
+  const addManualField = async () => {
+    if (!result || !workbenchValidation) return
+    const values = await manualFieldForm.validateFields()
+    const option = workbenchValidation.binding_options.find(item =>
+      `${item.field_id || ''}|${item.module_id || ''}|${item.instance_id || ''}|${item.field_key}` === values.target
+    )
+    if (!option) return
+    setManualFieldSaving(true)
+    try {
+      const entity = await smartImportService.addManualWorkbenchField(result.entity.id, {
+        target_field_id: option.field_id,
+        target_module_id: option.module_id,
+        target_instance_id: option.instance_id,
+        target_field_key: option.field_key,
+        value: parseManualValue(option.field_type, values.value),
+        reason: values.reason,
+      })
+      setResult({ ...result, entity })
+      await refreshWorkbench(entity.id)
+      manualFieldForm.resetFields()
+      setManualFieldOpen(false)
+      message.success('字段已手工录入并记入审核历史')
+    } catch (error) {
+      message.error(errorMessage(error, '手工录入字段失败'))
+    } finally {
+      setManualFieldSaving(false)
     }
   }
 
@@ -787,6 +845,9 @@ const SmartImportPage: React.FC = () => {
           <Space direction="vertical" size={2}>
             <Tag color={statusColors[status]}>{statusLabels[status] || status}</Tag>
             {job && <Tag color={statusColors[job.status]}>{statusLabels[job.status] || job.status} {job.progress}%</Tag>}
+            {job?.progress_detail?.fields && job.progress_detail.fields.total > 0 && (
+              <Text type="secondary">字段 {job.progress_detail.fields.completed}/{job.progress_detail.fields.total}</Text>
+            )}
           </Space>
         )
       },
@@ -800,11 +861,12 @@ const SmartImportPage: React.FC = () => {
             <Button
               size="small"
               onClick={async () => {
-                await smartImportService.parseDocument(row.id)
+                const response = await smartImportService.queueDocumentParse(row.id)
+                setQueuedJob(response.job)
                 await loadBatches(batch?.id)
               }}
             >
-              重新解析
+              后台重新解析
             </Button>
           )}
           <Button
@@ -874,6 +936,7 @@ const SmartImportPage: React.FC = () => {
           unconfirmed: '未确认', unmapped: '未映射', duplicate_field: '重复',
           existing_record_duplicate: '正式库已存在',
           semantic_conflict: '关联值冲突', range_violation: '超出范围', option_violation: '选项不合法',
+          type_violation: '值类型不正确',
         }
         return conflicts.length
           ? <Space size={[4, 4]} wrap>{conflicts.map(item => <Tag key={item} color="error">{labels[item] || item}</Tag>)}</Space>
@@ -965,6 +1028,17 @@ const SmartImportPage: React.FC = () => {
   ]
 
   const pendingFieldCount = result?.entity.fields.filter(field => field.review_status === 'pending').length || 0
+  const existingFieldKeys = new Set(
+    (result?.entity.fields || [])
+      .filter(field => field.review_status !== 'rejected')
+      .map(field => `${field.field_id || ''}|${field.module_id || ''}|${field.instance_id || ''}|${field.field_key}`)
+  )
+  const manualFieldOptions = (workbenchValidation?.binding_options || []).filter(item =>
+    !existingFieldKeys.has(`${item.field_id || ''}|${item.module_id || ''}|${item.instance_id || ''}|${item.field_key}`)
+  )
+  const selectedManualField = (workbenchValidation?.binding_options || []).find(item =>
+    `${item.field_id || ''}|${item.module_id || ''}|${item.instance_id || ''}|${item.field_key}` === manualFieldTarget
+  )
   const activePage = result?.pages.find(page => page.page_number === activePageNumber)
   const reviewGroups = (result?.entity.fields || []).reduce<Record<string, ExtractedField[]>>((groups, field) => {
     const key = field.module_id || 'core'
@@ -1027,11 +1101,17 @@ const SmartImportPage: React.FC = () => {
         <Card size="small" className="smart-import__quota">
           <Space wrap>
             <RobotOutlined />
-            <Text strong>后台提取任务</Text>
+            <Text strong>{queuedJob.progress_detail?.job_kind === 'parse' ? '后台解析任务' : '后台提取任务'}</Text>
             <Tag color={queuedJob.status === 'completed' ? 'success' : queuedJob.status === 'failed' ? 'error' : queuedJob.status === 'cancelled' ? 'default' : 'processing'}>
               {statusLabels[queuedJob.status] || queuedJob.status}
             </Tag>
             <Progress percent={queuedJob.progress || 0} size="small" style={{ width: 180 }} />
+            {queuedJob.progress_detail?.pages && queuedJob.progress_detail.pages.total > 0 && (
+              <Text type="secondary">页面 {queuedJob.progress_detail.pages.completed}/{queuedJob.progress_detail.pages.total}</Text>
+            )}
+            {queuedJob.progress_detail?.fields && queuedJob.progress_detail.fields.total > 0 && (
+              <Text type="secondary">字段 {queuedJob.progress_detail.fields.completed}/{queuedJob.progress_detail.fields.total}</Text>
+            )}
             {['queued', 'processing'].includes(queuedJob.status) && (
               <Button size="small" danger onClick={async () => {
                 try { setQueuedJob(await smartImportService.cancelExtractionJob(queuedJob.id)); message.success('任务已取消') }
@@ -1113,7 +1193,7 @@ const SmartImportPage: React.FC = () => {
                         <List.Item key={item.id}>
                           <List.Item.Meta title={item.filename} description={item.message} />
                           <Tag color={item.status === 'completed' ? 'success' : item.status === 'failed' ? 'error' : 'processing'}>
-                            {item.status === 'queued' ? '等待上传' : item.status === 'uploading' ? '上传解析中' : item.status === 'completed' ? '已完成' : '失败'}
+                            {item.status === 'queued' ? '等待上传' : item.status === 'uploading' ? '上传中' : item.status === 'completed' ? '已提交解析' : '失败'}
                           </Tag>
                         </List.Item>
                       )}
@@ -1356,6 +1436,7 @@ const SmartImportPage: React.FC = () => {
             {result.entity.status !== 'published' && (
               <>
                 <Button onClick={() => void bulkAccept()}>接受高置信度字段</Button>
+                <Button icon={<PlusOutlined />} onClick={() => setManualFieldOpen(true)}>手工录入字段</Button>
                 {['wps', 'pqr'].includes(result.entity.entity_type) && (
                   <Button
                     icon={<EditOutlined />}
@@ -1526,6 +1607,56 @@ const SmartImportPage: React.FC = () => {
             { title: '持证项目', width: 100, render: (_, item) => `${item.qualified_projects.length} 项` },
           ]}
         />
+      </Modal>
+
+      <Modal
+        title="手工录入模块字段"
+        open={manualFieldOpen}
+        onCancel={() => { setManualFieldOpen(false); manualFieldForm.resetFields() }}
+        onOk={() => void addManualField()}
+        confirmLoading={manualFieldSaving}
+        okText="保存并确认"
+      >
+        <Alert
+          type="info"
+          showIcon
+          message="用于补录未识别或禁止自动提取的模块字段"
+          description="本操作不会调用模型或扣减额度；保存后字段直接标记为人工确认，并进入审核历史。"
+          className="smart-import__modal-alert"
+        />
+        <Form form={manualFieldForm} layout="vertical">
+          <Form.Item name="target" label="模块字段" rules={[{ required: true, message: '请选择字段' }]}>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              options={manualFieldOptions.map(item => ({
+                value: `${item.field_id || ''}|${item.module_id || ''}|${item.instance_id || ''}|${item.field_key}`,
+                label: `${item.label} · ${item.extractable ? '支持自动提取' : item.ai_extract_mode === 'disabled' ? '已禁用自动提取' : '仅手工录入'}`,
+              }))}
+              placeholder={manualFieldOptions.length ? '选择需要补录的字段' : '没有可补录字段'}
+            />
+          </Form.Item>
+          {selectedManualField && (
+            <Tag color={selectedManualField.extractable ? 'blue' : 'orange'}>
+              {selectedManualField.extractable ? 'AI 未识别，可人工补录' : '该字段不支持自动提取'}
+            </Tag>
+          )}
+          <Form.Item
+            name="value"
+            label="字段值"
+            rules={[{ required: true, message: '请输入字段值' }]}
+            extra={selectedManualField?.field_type === 'table' ? '表格字段请输入合法 JSON 数组。' : undefined}
+          >
+            {selectedManualField?.field_type === 'checkbox' ? (
+              <Select options={[{ value: 'true', label: '是' }, { value: 'false', label: '否' }]} />
+            ) : (
+              <Input.TextArea rows={4} maxLength={10000} />
+            )}
+          </Form.Item>
+          <Form.Item name="reason" label="录入说明（可选）">
+            <Input.TextArea rows={2} maxLength={1000} />
+          </Form.Item>
+        </Form>
       </Modal>
 
       <Modal

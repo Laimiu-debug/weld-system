@@ -63,6 +63,7 @@ from app.schemas.smart_import import (
     ImportBatchResponse,
     ImportReviewRecordResponse,
     ManualDraftCreate,
+    ManualWorkbenchFieldCreate,
     SourceDocumentRegister,
     SourceDocumentResponse,
     TemplateRecommendationResponse,
@@ -109,7 +110,10 @@ from app.services.wps_template_service import WPSTemplateService
 from app.services.welder_import_service import WelderImportService
 from app.services.smart_import_workbench_service import SmartImportWorkbenchService
 from app.tasks.celery_app import celery_app
-from app.tasks.smart_import_tasks import run_smart_import_extraction
+from app.tasks.smart_import_tasks import (
+    run_smart_import_extraction,
+    run_smart_import_parse,
+)
 
 
 router = APIRouter()
@@ -681,6 +685,47 @@ def parse_document(
     )
 
 
+def dispatch_parse_job(job: ExtractionJob) -> None:
+    try:
+        run_smart_import_parse.apply_async(args=[job.id], task_id=job.id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="后台解析队列暂时不可用") from exc
+
+
+@router.post(
+    "/documents/{document_id}/parse-async",
+    response_model=AIExtractionQueuedResponse,
+    status_code=202,
+)
+def queue_document_parse(
+    document_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> AIExtractionQueuedResponse:
+    """Queue private file pagination; OCR remains in the extraction worker."""
+    enforce_rate_limit(
+        f"smart-import-parse-queue:{current_user.id}", limit=20, window_seconds=60
+    )
+    context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "extract")
+    job = AIExtractionQueueService(db).create_parse_job(
+        document_id, current_user, context
+    )
+    try:
+        dispatch_parse_job(job)
+    except HTTPException:
+        job.status = "failed"
+        job.error_code = "queue_unavailable"
+        job.error_message = "后台解析队列暂时不可用"
+        job.completed_at = datetime.utcnow()
+        db.commit()
+        raise
+    return AIExtractionQueuedResponse(
+        job=ExtractionJobResponse.model_validate(job), message="文件已进入后台解析队列"
+    )
+
+
 @router.get("/documents/{document_id}/pages", response_model=list[DocumentPageResponse])
 def list_document_pages(
     document_id: str,
@@ -918,6 +963,28 @@ def retry_extraction_job(
     context = resolve_workspace(db, current_user, workspace_id)
     service = AIExtractionQueueService(db)
     source = service.get_job(job_id, current_user, context)
+    if (source.schema_snapshot or {}).get("job_kind") == "parse":
+        if source.status not in {"failed", "cancelled"}:
+            raise HTTPException(status_code=409, detail="只有失败或已取消任务可以重试")
+        job = service.create_parse_job(
+            source.document_id,
+            current_user,
+            context,
+            retry_of_job_id=source.id,
+        )
+        try:
+            dispatch_parse_job(job)
+        except HTTPException:
+            job.status = "failed"
+            job.error_code = "queue_unavailable"
+            job.error_message = "后台解析队列暂时不可用"
+            job.completed_at = datetime.utcnow()
+            db.commit()
+            raise
+        return AIExtractionQueuedResponse(
+            job=ExtractionJobResponse.model_validate(job),
+            message="文件重新进入后台解析队列",
+        )
     credentials = AIProviderConfigService(db)
     if source.provider_config_id:
         credentials.resolve_for_use(source.provider_config_id, current_user, context)
@@ -1345,6 +1412,28 @@ def bind_unmapped_import_field(
     ensure_module_permission(db, current_user, entity.entity_type, "update")
     service = SmartImportWorkbenchService(db)
     entity = service.bind_unmapped(entity_id, field_id, request, current_user, context)
+    return build_entity_detail(db, entity)
+
+
+@router.post(
+    "/entities/{entity_id}/manual-fields",
+    response_model=ExtractedEntityDetailResponse,
+    status_code=201,
+)
+def add_manual_workbench_field(
+    entity_id: str,
+    request: ManualWorkbenchFieldCreate,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> ExtractedEntityDetailResponse:
+    context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "modify")
+    entity = SmartImportReviewService(db).get_entity(entity_id, current_user, context)
+    ensure_module_permission(db, current_user, entity.entity_type, "update")
+    entity = SmartImportWorkbenchService(db).add_manual_field(
+        entity_id, request, current_user, context
+    )
     return build_entity_detail(db, entity)
 
 
