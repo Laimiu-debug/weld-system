@@ -91,6 +91,17 @@ class Settings(BaseSettings):
 
     # 文件存储配置
     UPLOAD_DIR: str = "./storage/uploads"
+    DOCUMENT_STORAGE_BACKEND: str = "local"  # local, s3
+    DOCUMENT_STORAGE_S3_BUCKET: Optional[str] = None
+    DOCUMENT_STORAGE_S3_ENDPOINT_URL: Optional[str] = None
+    DOCUMENT_STORAGE_S3_REGION: Optional[str] = None
+    DOCUMENT_STORAGE_S3_ACCESS_KEY_ID: Optional[str] = None
+    DOCUMENT_STORAGE_S3_SECRET_ACCESS_KEY: Optional[str] = None
+    DOCUMENT_STORAGE_S3_PREFIX: str = "private_documents"
+    DOCUMENT_RETENTION_ORIGINAL_DAYS: int = 0  # 0 means retain until explicit deletion
+    DOCUMENT_RETENTION_TEMPORARY_HOURS: int = 24
+    DOCUMENT_RETENTION_EVIDENCE_DAYS: int = 365
+    DOCUMENT_RETENTION_EXPORT_DAYS: int = 365
     MAX_FILE_SIZE: int = 10485760  # 10MB
     ALLOWED_EXTENSIONS: List[str] = [
         ".jpg", ".jpeg", ".png", ".pdf", ".doc", ".docx", ".xls", ".xlsx"

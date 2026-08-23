@@ -16,12 +16,14 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.data_access import WorkspaceContext
 from app.models.smart_import import (
+    DocumentArtifact,
     DocumentPage,
     ExtractedEntity,
     ExtractedField,
     ExtractionJob,
     FieldEvidence,
 )
+from app.services.document_artifact_service import artifact_expiry
 from app.models.user import User
 from app.schemas.smart_import import AIExtractionRequest
 from app.services.ai_provider_service import (
@@ -343,6 +345,34 @@ class AIExtractionService:
                         "external_response_id": result.response_id,
                     },
                 }
+                self.db.query(DocumentArtifact).filter(
+                    DocumentArtifact.document_id == document.id,
+                    DocumentArtifact.artifact_type == "ocr_text",
+                    DocumentArtifact.reference_id == page.id,
+                ).delete(synchronize_session=False)
+                self.db.add(
+                    DocumentArtifact(
+                        id=str(uuid4()),
+                        document_id=document.id,
+                        artifact_type="ocr_text",
+                        reference_id=page.id,
+                        mime_type="text/plain; charset=utf-8",
+                        size_bytes=len(page.text_content.encode("utf-8")),
+                        retention_class="evidence",
+                        expires_at=artifact_expiry("evidence"),
+                        metadata_json={
+                            "page_number": page.page_number,
+                            "source": "ocr",
+                            "provider": self.provider.provider_name,
+                            "model": self.provider.model_name,
+                        },
+                        user_id=page.user_id,
+                        workspace_type=page.workspace_type,
+                        company_id=page.company_id,
+                        factory_id=page.factory_id,
+                        access_level=page.access_level,
+                    )
+                )
                 _add_usage(usage, result)
                 if result.response_id:
                     response_ids.append(result.response_id)
@@ -396,6 +426,25 @@ class AIExtractionService:
             **workspace,
         )
         self.db.add(entity)
+        self.db.add(
+            DocumentArtifact(
+                id=str(uuid4()),
+                document_id=document.id,
+                artifact_type="extraction_result",
+                reference_id=entity.id,
+                mime_type="application/json",
+                size_bytes=0,
+                retention_class="evidence",
+                expires_at=artifact_expiry("evidence"),
+                metadata_json={
+                    "entity_type": batch.target_entity_type,
+                    "schema_version": job.schema_version,
+                    "job_id": job.id,
+                    "version": version,
+                },
+                **workspace,
+            )
+        )
         page_by_number = {page.page_number: page for page in pages}
         for binding in schema_snapshot.get("field_bindings") or []:
             if not binding.get("extractable"):

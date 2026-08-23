@@ -81,6 +81,23 @@ class DocumentPageResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DocumentArtifactResponse(BaseModel):
+    id: str
+    document_id: str
+    artifact_type: str
+    reference_id: str | None
+    mime_type: str | None
+    size_bytes: int
+    sha256: str | None
+    retention_class: str
+    expires_at: datetime | None
+    status: str
+    metadata_json: dict[str, Any]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class DocumentParseResponse(BaseModel):
     document: SourceDocumentResponse
     pages: list[DocumentPageResponse]

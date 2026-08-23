@@ -1,5 +1,8 @@
 import hashlib
 from io import BytesIO
+from types import SimpleNamespace
+from unittest.mock import Mock
+from zipfile import ZipFile
 
 import pytest
 from fastapi import HTTPException, UploadFile
@@ -10,7 +13,22 @@ from app.api.v1.endpoints import smart_import as smart_import_endpoint
 from app.services.document_storage_service import (
     DocumentUploadError,
     LocalDocumentStorage,
+    S3DocumentStorage,
 )
+from app.services.document_artifact_service import (
+    DocumentArtifactRetentionService,
+    artifact_expiry,
+)
+
+
+def _docx(extra_files: dict[str, bytes] | None = None) -> bytes:
+    payload = BytesIO()
+    with ZipFile(payload, "w") as archive:
+        archive.writestr("[Content_Types].xml", b"<Types />")
+        archive.writestr("word/document.xml", b"<document />")
+        for name, content in (extra_files or {}).items():
+            archive.writestr(name, content)
+    return payload.getvalue()
 
 
 def test_private_storage_streams_hashes_and_deletes_document(tmp_path) -> None:
@@ -73,6 +91,84 @@ def test_delete_cannot_escape_private_document_root(tmp_path) -> None:
         storage.open_stream("../outside.pdf")
 
     assert outside.read_bytes() == b"keep"
+
+
+def test_active_pdf_and_macro_docx_are_rejected(tmp_path) -> None:
+    storage = LocalDocumentStorage(tmp_path)
+
+    with pytest.raises(DocumentUploadError, match="脚本、附件或启动动作"):
+        storage.save_stream(
+            BytesIO(b"%PDF-1.7\n1 0 obj <</JavaScript 2 0 R>>"),
+            "active.pdf",
+            max_bytes=1024,
+        )
+    with pytest.raises(DocumentUploadError, match="宏代码"):
+        storage.save_stream(
+            BytesIO(_docx({"word/vbaProject.bin": b"macro"})),
+            "macro.docx",
+            max_bytes=4096,
+        )
+
+
+def test_s3_compatible_storage_roundtrip_and_key_isolation() -> None:
+    class FakeS3:
+        def __init__(self):
+            self.objects = {}
+
+        def upload_fileobj(self, stream, bucket, key, ExtraArgs=None):
+            self.objects[(bucket, key)] = (stream.read(), ExtraArgs)
+
+        def download_fileobj(self, bucket, key, destination):
+            destination.write(self.objects[(bucket, key)][0])
+
+        def delete_object(self, Bucket, Key):
+            self.objects.pop((Bucket, Key), None)
+
+    client = FakeS3()
+    storage = S3DocumentStorage(
+        client=client, bucket="weld-private", prefix="tenant-documents"
+    )
+    content = _docx()
+
+    result = storage.save_stream(BytesIO(content), "WPS.docx", max_bytes=4096)
+
+    assert result.storage_key.startswith("tenant-documents/")
+    assert result.sha256 == hashlib.sha256(content).hexdigest()
+    with storage.open_stream(result.storage_key) as stream:
+        assert stream.read() == content
+    with pytest.raises(DocumentUploadError, match="私有文档前缀"):
+        storage.open_stream("other-bucket/document.docx")
+    storage.delete(result.storage_key)
+    assert client.objects == {}
+
+
+def test_artifact_retention_defaults_keep_originals_and_expire_derivatives() -> None:
+    assert artifact_expiry("original") is None
+    assert artifact_expiry("temporary") is not None
+    assert artifact_expiry("evidence") is not None
+    assert artifact_expiry("export") is not None
+
+
+def test_retention_cleanup_deletes_payload_and_keeps_audit_tombstone() -> None:
+    artifact = SimpleNamespace(
+        storage_key="private_documents/a/file.pdf",
+        status="active",
+        metadata_json={"page_number": 1},
+    )
+    db = Mock()
+    db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = [
+        artifact
+    ]
+    storage = Mock()
+
+    count = DocumentArtifactRetentionService(db, storage).purge_expired()
+
+    assert count == 1
+    storage.delete.assert_called_once_with("private_documents/a/file.pdf")
+    assert artifact.status == "deleted"
+    assert artifact.storage_key is None
+    assert artifact.metadata_json["deletion_reason"] == "retention_expired"
+    db.commit.assert_called_once()
 
 
 def test_upload_endpoint_removes_file_when_database_registration_fails(

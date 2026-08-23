@@ -45,6 +45,7 @@ from app.schemas.smart_import import (
     BatchOperationItem,
     BatchOperationResponse,
     BulkFieldAcceptRequest,
+    DocumentArtifactResponse,
     DocumentPageResponse,
     DocumentParseResponse,
     EntityPublishResponse,
@@ -603,6 +604,23 @@ def list_document_pages(
     return SmartImportService(db).get_document_pages(document_id, current_user, context)
 
 
+@router.get(
+    "/documents/{document_id}/artifacts",
+    response_model=list[DocumentArtifactResponse],
+)
+def list_document_artifacts(
+    document_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> list[DocumentArtifactResponse]:
+    """List typed artifacts without exposing private storage keys."""
+    context = resolve_workspace(db, current_user, workspace_id)
+    return SmartImportService(db).get_document_artifacts(
+        document_id, current_user, context
+    )
+
+
 @router.post("/documents/{document_id}/extract", response_model=AIExtractionResponse)
 def extract_document(
     document_id: str,
@@ -618,9 +636,7 @@ def extract_document(
     )
     context = resolve_workspace(db, current_user, workspace_id)
     validate_ai_extraction_request(request)
-    document = SmartImportService(db).get_document(
-        document_id, current_user, context
-    )
+    document = SmartImportService(db).get_document(document_id, current_user, context)
     schema_snapshot, template_id = build_requested_schema(
         request, db, current_user, context, document.document_type
     )
@@ -691,9 +707,7 @@ def queue_document_extraction(
             status_code=422,
             detail="临时 API Key 不进入后台队列，请使用已保存配置或单次同步提取",
         )
-    document = SmartImportService(db).get_document(
-        document_id, current_user, context
-    )
+    document = SmartImportService(db).get_document(document_id, current_user, context)
     schema_snapshot, template_id = build_requested_schema(
         request, db, current_user, context, document.document_type
     )

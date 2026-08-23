@@ -15,6 +15,7 @@ from app.core.data_access import (
     WorkspaceType,
 )
 from app.models.smart_import import (
+    DocumentArtifact,
     DocumentPage,
     ExtractedEntity,
     ExtractedField,
@@ -34,6 +35,7 @@ from app.services.document_parser_service import (
     DocumentParser,
 )
 from app.services.document_storage_service import DocumentStorage, DocumentUploadError
+from app.services.document_artifact_service import artifact_expiry
 
 
 T = TypeVar("T")
@@ -182,8 +184,23 @@ class SmartImportService:
             status="stored" if data.storage_key else "registered",
             **self._workspace_values(user, context, batch.access_level),
         )
+        workspace = self._workspace_values(user, context, batch.access_level)
+        original_artifact = DocumentArtifact(
+            id=str(uuid4()),
+            document_id=document.id,
+            artifact_type="original",
+            storage_key=data.storage_key,
+            mime_type=data.mime_type,
+            size_bytes=data.size_bytes,
+            sha256=data.sha256.lower(),
+            retention_class="original",
+            expires_at=artifact_expiry("original"),
+            metadata_json={"filename": data.original_filename},
+            **workspace,
+        )
         batch.total_documents = (batch.total_documents or 0) + 1
         self.db.add(document)
+        self.db.add(original_artifact)
         self.db.commit()
         self.db.refresh(document)
         return document
@@ -209,6 +226,17 @@ class SmartImportService:
             self.db.query(DocumentPage)
             .filter(DocumentPage.document_id == document.id)
             .order_by(DocumentPage.page_number)
+            .all()
+        )
+
+    def get_document_artifacts(
+        self, document_id: str, user: User, context: WorkspaceContext
+    ) -> list[DocumentArtifact]:
+        document = self.get_document(document_id, user, context)
+        return (
+            self.db.query(DocumentArtifact)
+            .filter(DocumentArtifact.document_id == document.id)
+            .order_by(DocumentArtifact.created_at, DocumentArtifact.id)
             .all()
         )
 
@@ -278,7 +306,30 @@ class SmartImportService:
                 )
                 for item in parsed.pages
             ]
-            self.db.add_all(pages)
+            text_artifacts = [
+                DocumentArtifact(
+                    id=str(uuid4()),
+                    document_id=document.id,
+                    artifact_type="ocr_text",
+                    reference_id=page.id,
+                    mime_type="text/plain; charset=utf-8",
+                    size_bytes=len((page.text_content or "").encode("utf-8")),
+                    retention_class="evidence",
+                    expires_at=artifact_expiry("evidence"),
+                    metadata_json={
+                        "page_number": page.page_number,
+                        "source": (
+                            "ocr" if page.ocr_status == "completed" else "native_text"
+                        ),
+                    },
+                    **workspace,
+                )
+                for page in pages
+                if page.text_content
+            ]
+            # Keep prior evidence immutable across reparses; a newer created_at marks
+            # the current rendition while old review evidence remains auditable.
+            self.db.add_all([*pages, *text_artifacts])
             document.page_count = len(pages)
             document.status = "ready"
             document.metadata_json = {

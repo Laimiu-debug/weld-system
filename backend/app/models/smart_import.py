@@ -161,6 +161,60 @@ class DocumentPage(WorkspaceOwnedMixin, Base):
     )
 
 
+class DocumentArtifact(WorkspaceOwnedMixin, Base):
+    """Typed original, derived, evidence, and export artifacts."""
+
+    __tablename__ = "document_artifacts"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    document_id = Column(
+        String(36),
+        ForeignKey("source_documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    artifact_type = Column(String(30), nullable=False, index=True)
+    storage_key = Column(String(500))
+    reference_id = Column(String(100))
+    mime_type = Column(String(120))
+    size_bytes = Column(Integer, nullable=False, default=0)
+    sha256 = Column(String(64))
+    retention_class = Column(String(30), nullable=False)
+    expires_at = Column(DateTime, index=True)
+    status = Column(String(20), nullable=False, default="active", index=True)
+    metadata_json = Column(JSONB, nullable=False, default=dict)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        *_workspace_constraints("document_artifact"),
+        CheckConstraint(
+            "artifact_type IN ('original','page_preview','ocr_text','extraction_result','formal_export')",
+            name="ck_document_artifact_type",
+        ),
+        CheckConstraint(
+            "retention_class IN ('original','temporary','evidence','export')",
+            name="ck_document_artifact_retention",
+        ),
+        CheckConstraint(
+            "status IN ('active','expired','deleted','failed')",
+            name="ck_document_artifact_status",
+        ),
+        Index(
+            "ix_document_artifacts_document_type_status",
+            "document_id",
+            "artifact_type",
+            "status",
+        ),
+        Index(
+            "ix_document_artifacts_workspace_expiry",
+            "workspace_type",
+            "company_id",
+            "user_id",
+            "expires_at",
+        ),
+    )
+
+
 class ExtractionJob(WorkspaceOwnedMixin, Base):
     __tablename__ = "extraction_jobs"
 

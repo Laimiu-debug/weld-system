@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import hashlib
+import tempfile
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Protocol
+from typing import Any, BinaryIO, Protocol
 from uuid import uuid4
 
 from app.core.config import settings
@@ -48,6 +50,71 @@ class DocumentStorage(Protocol):
         ...
 
 
+def _validate_filename(original_filename: str, max_bytes: int) -> str:
+    if not original_filename or Path(original_filename).name != original_filename:
+        raise DocumentUploadError("文件名无效")
+    suffix = Path(original_filename).suffix.lower()
+    if suffix not in DOCUMENT_TYPES:
+        raise DocumentUploadError("仅支持 PDF、Word 和常见扫描图片")
+    if max_bytes <= 0:
+        raise DocumentUploadError("上传大小限制配置无效")
+    return suffix
+
+
+def _validate_payload(suffix: str, payload: BinaryIO) -> None:
+    payload.seek(0)
+    header = payload.read(16)
+    LocalDocumentStorage._validate_signature(suffix, header)
+    payload.seek(0)
+    if suffix == ".pdf":
+        dangerous = (b"/JavaScript", b"/JS ", b"/EmbeddedFile", b"/Launch")
+        overlap = b""
+        while True:
+            chunk = payload.read(1024 * 1024)
+            if not chunk:
+                break
+            searchable = overlap + chunk
+            if any(marker in searchable for marker in dangerous):
+                raise DocumentUploadError("PDF 包含脚本、附件或启动动作，已拒绝上传")
+            overlap = searchable[-32:]
+    elif suffix == ".docx":
+        try:
+            with zipfile.ZipFile(payload) as archive:
+                names = set(archive.namelist())
+                required = {"[Content_Types].xml", "word/document.xml"}
+                if not required.issubset(names):
+                    raise DocumentUploadError("DOCX 文件结构无效")
+                lowered = {name.lower() for name in names}
+                if "word/vbaproject.bin" in lowered:
+                    raise DocumentUploadError("DOCX 包含宏代码，已拒绝上传")
+        except zipfile.BadZipFile as exc:
+            raise DocumentUploadError("DOCX 文件结构无效") from exc
+    payload.seek(0)
+
+
+def _copy_and_validate(
+    stream: BinaryIO, destination: BinaryIO, suffix: str, max_bytes: int
+) -> tuple[str, int]:
+    digest = hashlib.sha256()
+    size = 0
+    while True:
+        chunk = stream.read(1024 * 1024)
+        if not chunk:
+            break
+        if not isinstance(chunk, bytes):
+            raise DocumentUploadError("上传内容无效")
+        size += len(chunk)
+        if size > max_bytes:
+            raise DocumentUploadError("文件超过系统允许的最大大小")
+        digest.update(chunk)
+        destination.write(chunk)
+    if size == 0:
+        raise DocumentUploadError("不能上传空文件")
+    destination.seek(0)
+    _validate_payload(suffix, destination)
+    return digest.hexdigest(), size
+
+
 class LocalDocumentStorage:
     """Local private storage; storage keys are opaque and never public URLs."""
 
@@ -61,38 +128,15 @@ class LocalDocumentStorage:
     def save_stream(
         self, stream: BinaryIO, original_filename: str, max_bytes: int
     ) -> StoredDocument:
-        if not original_filename or Path(original_filename).name != original_filename:
-            raise DocumentUploadError("文件名无效")
-        suffix = Path(original_filename).suffix.lower()
-        if suffix not in DOCUMENT_TYPES:
-            raise DocumentUploadError("仅支持 PDF、Word 和常见扫描图片")
-        if max_bytes <= 0:
-            raise DocumentUploadError("上传大小限制配置无效")
+        suffix = _validate_filename(original_filename, max_bytes)
 
         staging_path = self.staging_root / f"{uuid4().hex}.part"
-        digest = hashlib.sha256()
-        size = 0
-        header = b""
         try:
-            with staging_path.open("xb") as destination:
-                while True:
-                    chunk = stream.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    if not isinstance(chunk, bytes):
-                        raise DocumentUploadError("上传内容无效")
-                    size += len(chunk)
-                    if size > max_bytes:
-                        raise DocumentUploadError("文件超过系统允许的最大大小")
-                    if len(header) < 16:
-                        header += chunk[: 16 - len(header)]
-                    digest.update(chunk)
-                    destination.write(chunk)
-            if size == 0:
-                raise DocumentUploadError("不能上传空文件")
-            self._validate_signature(suffix, header)
+            with staging_path.open("x+b") as destination:
+                sha256, size = _copy_and_validate(
+                    stream, destination, suffix, max_bytes
+                )
 
-            sha256 = digest.hexdigest()
             target_dir = (self.document_root / sha256[:2]).resolve()
             target_dir.mkdir(parents=True, exist_ok=True)
             target = (target_dir / f"{uuid4().hex}{suffix}").resolve()
@@ -145,5 +189,82 @@ class LocalDocumentStorage:
             raise DocumentUploadError("文件内容与扩展名不匹配")
 
 
+class S3DocumentStorage:
+    """S3-compatible private object storage, including self-hosted MinIO."""
+
+    def __init__(
+        self,
+        client: Any | None = None,
+        bucket: str | None = None,
+        prefix: str | None = None,
+    ):
+        self.bucket = bucket or settings.DOCUMENT_STORAGE_S3_BUCKET
+        if not self.bucket:
+            raise RuntimeError("S3/MinIO 存储未配置 bucket")
+        self.prefix = (prefix or settings.DOCUMENT_STORAGE_S3_PREFIX).strip("/")
+        if not self.prefix or ".." in self.prefix.split("/"):
+            raise RuntimeError("S3/MinIO 存储前缀无效")
+        if client is None:
+            import boto3
+
+            client = boto3.client(
+                "s3",
+                endpoint_url=settings.DOCUMENT_STORAGE_S3_ENDPOINT_URL,
+                region_name=settings.DOCUMENT_STORAGE_S3_REGION,
+                aws_access_key_id=settings.DOCUMENT_STORAGE_S3_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.DOCUMENT_STORAGE_S3_SECRET_ACCESS_KEY,
+            )
+        self.client = client
+
+    def save_stream(
+        self, stream: BinaryIO, original_filename: str, max_bytes: int
+    ) -> StoredDocument:
+        suffix = _validate_filename(original_filename, max_bytes)
+        with tempfile.SpooledTemporaryFile(
+            max_size=min(max_bytes, 8 * 1024 * 1024)
+        ) as staged:
+            sha256, size = _copy_and_validate(stream, staged, suffix, max_bytes)
+            storage_key = f"{self.prefix}/{sha256[:2]}/{uuid4().hex}{suffix}"
+            staged.seek(0)
+            self.client.upload_fileobj(
+                staged,
+                self.bucket,
+                storage_key,
+                ExtraArgs={"ContentType": DOCUMENT_TYPES[suffix]},
+            )
+        return StoredDocument(
+            original_filename=original_filename,
+            storage_key=storage_key,
+            sha256=sha256,
+            size_bytes=size,
+            mime_type=DOCUMENT_TYPES[suffix],
+        )
+
+    def delete(self, storage_key: str) -> None:
+        self._validate_key(storage_key)
+        self.client.delete_object(Bucket=self.bucket, Key=storage_key)
+
+    def open_stream(self, storage_key: str) -> BinaryIO:
+        self._validate_key(storage_key)
+        destination = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024)
+        try:
+            self.client.download_fileobj(self.bucket, storage_key, destination)
+            destination.seek(0)
+            return destination
+        except Exception:
+            destination.close()
+            raise
+
+    def _validate_key(self, storage_key: str) -> None:
+        expected = f"{self.prefix}/"
+        if not storage_key.startswith(expected) or ".." in storage_key.split("/"):
+            raise DocumentUploadError("拒绝访问私有文档前缀之外的对象")
+
+
 def get_document_storage() -> DocumentStorage:
-    return LocalDocumentStorage()
+    backend = settings.DOCUMENT_STORAGE_BACKEND.strip().lower()
+    if backend == "local":
+        return LocalDocumentStorage()
+    if backend in {"s3", "minio"}:
+        return S3DocumentStorage()
+    raise RuntimeError(f"不支持的文档存储后端: {backend}")

@@ -16,7 +16,11 @@ celery_app = Celery(
     "weldsystem",
     broker=_broker_url(settings.CELERY_BROKER_URL),
     backend=_broker_url(settings.CELERY_RESULT_BACKEND),
-    include=["app.tasks.notification_tasks", "app.tasks.smart_import_tasks"],
+    include=[
+        "app.tasks.notification_tasks",
+        "app.tasks.smart_import_tasks",
+        "app.tasks.document_tasks",
+    ],
 )
 
 celery_app.conf.update(
@@ -36,6 +40,10 @@ celery_app.conf.update(
         "hourly-notifications": {
             "task": "notifications.hourly",
             "schedule": crontab(minute=0),
+        },
+        "daily-document-retention-cleanup": {
+            "task": "documents.purge_expired_artifacts",
+            "schedule": crontab(hour=2, minute=30),
         },
     },
 )
