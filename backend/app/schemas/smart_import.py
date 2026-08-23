@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator
 
 
 EntityType = Literal["wps", "pqr", "ppqr", "welder"]
@@ -122,6 +122,43 @@ class ExtractedEntityResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AIExtractionRequest(BaseModel):
+    mode: Literal["platform", "byok"] = "platform"
+    provider: Literal["openai_responses", "openai_compatible_chat"] | None = None
+    model: str | None = Field(None, min_length=1, max_length=120)
+    base_url: str | None = Field(None, min_length=8, max_length=500)
+    api_key: SecretStr | None = Field(None, repr=False)
+    template_id: str | None = Field(None, max_length=100)
+    module_id: str | None = Field(None, max_length=100)
+    run_ocr: bool = True
+
+
+class ExtractionJobResponse(BaseModel):
+    id: str
+    document_id: str
+    mode: str
+    provider: str | None
+    model: str | None
+    status: str
+    schema_version: str
+    request_trace_id: str | None
+    external_response_id: str | None
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    error_code: str | None
+    error_message: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AIExtractionResponse(BaseModel):
+    job: ExtractionJobResponse
+    entity: ExtractedEntityResponse
+    pages: list[DocumentPageResponse]
 
 
 class BatchDetailResponse(ImportBatchResponse):

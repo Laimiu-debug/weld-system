@@ -33,7 +33,7 @@
 
 迁移 `add_module_ai_metadata` 只为 `custom_modules` 增加 `schema_version`，旧字段在读取或更新时自动补齐默认 AI 元数据。字段定义发生更新后模块版本递增；未来的导入任务必须保存该版本，确保结果可重现。
 
-字段基础、动态 Schema、编辑入口、暂存数据层、私有原件上传和基础分页解析已经完成；尚未实现 OCR/模型调用、额度、审核发布与 PQR 闭环。
+字段基础、动态 Schema、编辑入口、暂存数据层、私有原件上传、分页解析、视觉 OCR 和动态结构化提取已经完成；尚未实现额度、审核发布与 PQR 正式闭环。
 
 ## 中间数据层
 
@@ -64,4 +64,16 @@
 - PDF 保留物理页码。含足够内嵌文字的页面标记为 `not_required`；图片型且文字不足的页面标记为 `pending`，等待后续 OCR 适配器处理。
 - DOCX 没有稳定的物理分页信息，因此只按显式分页符生成逻辑页，并在元数据中记录 `page_numbering=logical`。旧版 DOC 必须先转换为 DOCX 或 PDF。
 - PNG/JPEG 按单页、TIFF 按帧建立待 OCR 页面。解析层限制最大页数、单页文本、DOCX 解压规模与压缩比、图片像素，避免异常文件占用过多资源。
-- 重复解析会在成功后原子替换旧页面；解析失败保留原文件并记录失败状态，不产生半套页面数据。实际 OCR 将通过独立适配层接入，不与当前解析器绑定。
+- 重复解析会在成功后原子替换旧页面；解析失败保留原文件并记录失败状态，不产生半套页面数据。
+
+## 真实 OCR 与 AI 提取
+
+- `GET /api/v1/smart-import/ai-capabilities` 返回平台服务是否可用、允许的 BYOK 协议/域名和单任务限制，不返回任何密钥。
+- `POST /api/v1/smart-import/documents/{document_id}/extract` 接受当前模板或模块 ID。服务端重新生成并冻结动态 Schema，客户端不能提交任意 Schema 绕过字段权限。
+- 扫描页先在私有内存中渲染为 PNG，调用视觉模型转写；OCR 文本、置信度和供应商响应号写回 `document_pages`。页面图片不会生成公开 URL。
+- 全部页面文本随后作为不可信数据发送给统一 Provider，以 JSON Schema Structured Outputs 提取字段。文档内嵌指令不会作为系统指令执行。
+- 平台模式从服务端 `AI_PLATFORM_*` 环境变量读取配置。BYOK Key 只存在于本次请求，不写数据库、任务参数或日志；自定义域名必须在 `AI_BYOK_ALLOWED_HOSTS` 白名单内。
+- 当前支持 OpenAI Responses `/responses` 和 OpenAI-compatible `/chat/completions` 两种协议。平台管理员可配置私有模型地址，客户端不能直接访问内网地址。
+- 模型输出会再次执行本地 JSON Schema、类型、日期格式、枚举、证据页码和证据原文校验。业务必填字段缺失时允许留空，禁止为了满足 Schema 强迫模型编造。
+- 通过校验的结果只写 `extracted_entities`、`extracted_fields` 和 `field_evidence` 暂存层，状态为待审核，不调用正式 WPS/PQR 创建接口。
+- `extraction_jobs` 保存 Provider、模型、Prompt 版本、内部追踪号、外部响应号和 Token 用量。正式会员额度预占/结算账本仍是下一阶段。

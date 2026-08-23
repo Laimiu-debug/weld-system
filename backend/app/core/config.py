@@ -148,6 +148,18 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Hanxu"
     PROJECT_DESCRIPTION: str = "焊序API服务"
 
+    # 智能导入 AI 配置。平台密钥仅从服务端环境读取。
+    AI_PLATFORM_PROVIDER: str = "openai_responses"
+    AI_PLATFORM_BASE_URL: str = "https://api.openai.com/v1"
+    AI_PLATFORM_API_KEY: Optional[str] = None
+    AI_PLATFORM_MODEL: Optional[str] = None
+    AI_BYOK_ALLOWED_HOSTS: List[str] = ["api.openai.com"]
+    AI_ALLOW_PRIVATE_PLATFORM_URL: bool = False
+    AI_REQUEST_TIMEOUT_SECONDS: int = 90
+    AI_MAX_OUTPUT_TOKENS: int = 12000
+    AI_MAX_DOCUMENT_PAGES: int = 30
+    AI_MAX_INPUT_CHARS: int = 120000
+
     # 安全配置
     BCRYPT_ROUNDS: int = 12
 
@@ -373,6 +385,14 @@ class Settings(BaseSettings):
             return [i.strip() for i in v.split(",")]
         elif isinstance(v, (list, str)):
             return v
+        raise ValueError(v)
+
+    @field_validator("AI_BYOK_ALLOWED_HOSTS", mode="before")
+    def assemble_ai_hosts(cls, v: Union[str, List[str]]) -> List[str]:
+        if isinstance(v, str):
+            return [item.strip().lower() for item in v.split(",") if item.strip()]
+        if isinstance(v, list):
+            return [str(item).strip().lower() for item in v if str(item).strip()]
         raise ValueError(v)
 
 # 创建全局设置实例

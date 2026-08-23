@@ -41,6 +41,8 @@ werkzeug==3.0.1
 # 文档导出
 python-docx==1.1.0
 pypdf==6.10.0
+pypdfium2==4.30.0
+jsonschema==4.26.0
 weasyprint==60.1
 beautifulsoup4==4.12.2
 bleach[css]==6.2.0

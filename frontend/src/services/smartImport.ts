@@ -44,6 +44,19 @@ export interface DocumentPage {
   created_at: string
 }
 
+export interface AIExtractionJob {
+  id: string
+  status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled'
+  mode: 'platform' | 'byok'
+  provider?: string
+  model?: string
+  input_tokens: number
+  output_tokens: number
+  total_tokens: number
+  error_code?: string
+  error_message?: string
+}
+
 export interface ImportBatchDetail extends ImportBatch {
   documents: SourceDocument[]
 }
@@ -63,6 +76,19 @@ export interface ManualDraftField {
 }
 
 class SmartImportService {
+  async getAICapabilities(): Promise<{
+    platform_available: boolean
+    platform_provider: string
+    platform_model?: string
+    byok_providers: Array<'openai_responses' | 'openai_compatible_chat'>
+    byok_allowed_hosts: string[]
+    max_document_pages: number
+    max_input_chars: number
+  }> {
+    const response = await api.get('/smart-import/ai-capabilities')
+    return response.data
+  }
+
   async createBatch(data: {
     name: string
     target_entity_type: ImportEntityType
@@ -131,6 +157,30 @@ class SmartImportService {
 
   async listDocumentPages(documentId: string): Promise<DocumentPage[]> {
     const response = await api.get(`/smart-import/documents/${documentId}/pages`)
+    return response.data
+  }
+
+  async extractDocument(
+    documentId: string,
+    data: {
+      mode?: 'platform' | 'byok'
+      provider?: 'openai_responses' | 'openai_compatible_chat'
+      model?: string
+      base_url?: string
+      api_key?: string
+      template_id?: string
+      module_id?: string
+      run_ocr?: boolean
+    }
+  ): Promise<{
+    job: AIExtractionJob
+    entity: { id: string; status: string; version: number }
+    pages: DocumentPage[]
+  }> {
+    const response = await api.post(
+      `/smart-import/documents/${documentId}/extract`,
+      data
+    )
     return response.data
   }
 

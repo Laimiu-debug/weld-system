@@ -2,13 +2,17 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateTable
 
 from app.core.data_access import WorkspaceContext, WorkspaceType
-from app.api.v1.endpoints.smart_import import router
+from app.api.v1.endpoints.smart_import import (
+    router,
+    validate_ai_extraction_request,
+)
 from app.models.smart_import import (
     DocumentPage,
     EntityPublishRecord,
@@ -20,7 +24,11 @@ from app.models.smart_import import (
     ImportReviewRecord,
     SourceDocument,
 )
-from app.schemas.smart_import import ManualDraftCreate, SourceDocumentRegister
+from app.schemas.smart_import import (
+    AIExtractionRequest,
+    ManualDraftCreate,
+    SourceDocumentRegister,
+)
 from app.services.smart_import_service import SmartImportService
 
 
@@ -80,6 +88,20 @@ def test_manual_draft_does_not_require_ai_configuration() -> None:
     assert draft.fields[0].evidence[0].page_number == 1
 
 
+def test_temporary_byok_key_is_masked_and_validation_error_does_not_echo_it() -> None:
+    request = AIExtractionRequest(
+        mode="byok",
+        api_key="super-secret-key",
+        module_id="module-1",
+    )
+
+    assert "super-secret-key" not in repr(request)
+    assert "super-secret-key" not in request.model_dump_json()
+    with pytest.raises(HTTPException) as exc_info:
+        validate_ai_extraction_request(request)
+    assert "super-secret-key" not in str(exc_info.value.detail)
+
+
 def test_personal_scope_only_contains_current_user() -> None:
     db = Session()
     service = SmartImportService(db)
@@ -117,11 +139,13 @@ def test_staging_router_exposes_draft_flow_but_no_publish_endpoint() -> None:
     paths = {route.path for route in router.routes}
 
     assert "/batches" in paths
+    assert "/ai-capabilities" in paths
     assert "/batches/{batch_id}/documents" in paths
     assert "/batches/{batch_id}/upload" in paths
     assert "/documents/{document_id}/content" in paths
     assert "/documents/{document_id}/parse" in paths
     assert "/documents/{document_id}/pages" in paths
+    assert "/documents/{document_id}/extract" in paths
     assert "/documents/{document_id}/manual-drafts" in paths
     assert all("publish" not in path for path in paths)
 
