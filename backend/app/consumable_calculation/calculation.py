@@ -24,6 +24,11 @@ def _positive(value: float | None, label: str, required: bool = True) -> None:
         raise ConsumableCalculationError(f"{label}必须大于0")
 
 
+def _nonnegative_ratio(value: float, label: str) -> None:
+    if not math.isfinite(value) or value < 0 or value >= 1:
+        raise ConsumableCalculationError(f"{label}必须大于等于0且小于1")
+
+
 def calculate_consumable_operation(
     value: ConsumableOperationInput,
 ) -> ConsumableOperationResult:
@@ -53,12 +58,32 @@ def calculate_consumable_operation(
         raise ConsumableCalculationError("燃弧系数不能大于1")
     _positive(value.flux_wire_ratio, "焊剂/焊丝配比", required=False)
     _positive(value.gas_flow_l_min, "气体流量", required=False)
+    _nonnegative_ratio(value.electrode_stub_loss_ratio, "焊条头损耗率")
+    _nonnegative_ratio(value.spatter_loss_ratio, "飞溅损耗率")
+    _nonnegative_ratio(value.flux_loss_ratio, "焊剂损耗率")
+    _positive(value.enterprise_correction_factor, "企业修正系数")
+    _positive(value.package_size_kg, "包装规格", required=False)
 
     volume = value.area_mm2 * value.length_mm
     deposit_mass = volume * value.density_g_cm3 / 1_000_000.0
     primary = deposit_mass / value.deposition_efficiency
+    process_primary = primary * (
+        1 + value.electrode_stub_loss_ratio + value.spatter_loss_ratio
+    )
+    enterprise_primary = process_primary * value.enterprise_correction_factor
+    package_primary = (
+        math.ceil(enterprise_primary / value.package_size_kg) * value.package_size_kg
+        if value.package_size_kg is not None
+        else enterprise_primary
+    )
     flux = (
         primary * value.flux_wire_ratio if value.flux_wire_ratio is not None else None
+    )
+    process_flux = flux * (1 + value.flux_loss_ratio) if flux is not None else None
+    enterprise_flux = (
+        process_flux * value.enterprise_correction_factor
+        if process_flux is not None
+        else None
     )
     derived_arc = (
         deposit_mass / value.deposition_rate_kg_h
@@ -83,8 +108,14 @@ def calculate_consumable_operation(
         deposit_mass_kg=deposit_mass,
         deposition_efficiency=value.deposition_efficiency,
         primary_consumable_kg=primary,
+        process_primary_consumable_kg=process_primary,
+        enterprise_primary_consumable_kg=enterprise_primary,
+        package_rounded_primary_kg=package_primary,
+        suggested_primary_issue_kg=package_primary,
         flux_wire_ratio=value.flux_wire_ratio,
         flux_kg=flux,
+        process_flux_kg=process_flux,
+        enterprise_flux_kg=enterprise_flux,
         deposition_rate_kg_h=value.deposition_rate_kg_h,
         arc_time_h=arc_time,
         arc_time_ratio=value.arc_time_ratio,
@@ -93,5 +124,11 @@ def calculate_consumable_operation(
         gas_volume_l=gas,
         pass_count_description=value.pass_count_description,
         pass_count_mass_multiplier=1.0,
+        result_sources={
+            "deposit_mass_kg": "system_calculated",
+            "process_primary_consumable_kg": "enterprise_configured",
+            "package_rounded_primary_kg": "enterprise_configured",
+            "suggested_primary_issue_kg": "system_calculated",
+        },
         input_snapshot=asdict(value),
     )

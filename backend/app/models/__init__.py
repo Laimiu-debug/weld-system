@@ -87,7 +87,18 @@ from app.models.matching import (
     WPSMatchFreeze,
 )
 from app.models.sequence import StepDependency, WeldSequenceRevision, WeldSequenceStep
-from app.models.consumable import ConsumableGeometryInput, WeldConsumableOperation
+from app.models.consumable import (
+    ConsumableGeometryInput,
+    ConsumableGroovePreset,
+    ConsumableLegacyMigrationAudit,
+    ConsumableMethodParameter,
+    ConsumableQuotaOperation,
+    ConsumableQuotaOverrideAudit,
+    ConsumableQuotaRun,
+    ConsumableQuotaSummary,
+    ConsumableRuleSet,
+    WeldConsumableOperation,
+)
 from app.models.material import WeldingMaterial
 
 __all__ = [
@@ -175,6 +186,14 @@ __all__ = [
     "WeldSequenceStep",
     "StepDependency",
     "ConsumableGeometryInput",
+    "ConsumableGroovePreset",
+    "ConsumableLegacyMigrationAudit",
+    "ConsumableMethodParameter",
+    "ConsumableQuotaOperation",
+    "ConsumableQuotaOverrideAudit",
+    "ConsumableQuotaRun",
+    "ConsumableQuotaSummary",
+    "ConsumableRuleSet",
     "WeldConsumableOperation",
     "WeldingMaterial",
 ]

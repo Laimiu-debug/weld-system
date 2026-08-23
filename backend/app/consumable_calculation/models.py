@@ -35,6 +35,19 @@ class DiameterBasis(str, Enum):
     OUTER = "outer"
 
 
+class OperationRole(str, Enum):
+    FACE_FILL = "face_fill"
+    BACK_GOUGE_FILL = "back_gouge_fill"
+    TACK = "tack"
+    CUSTOM = "custom"
+
+
+class AreaSource(str, Enum):
+    FRONT_FILL = "front_fill"
+    BACK_GOUGE = "back_gouge"
+    INDEPENDENT = "independent"
+
+
 @dataclass(frozen=True)
 class GrooveGeometryInput:
     groove_type: GrooveType
@@ -112,6 +125,11 @@ class ConsumableOperationInput:
     arc_time_ratio: float | None = None
     flux_wire_ratio: float | None = None
     gas_flow_l_min: float | None = None
+    electrode_stub_loss_ratio: float = 0.0
+    spatter_loss_ratio: float = 0.0
+    flux_loss_ratio: float = 0.0
+    enterprise_correction_factor: float = 1.0
+    package_size_kg: float | None = None
     area_unit: str = "mm2"
     length_unit: str = "mm"
     density_unit: str = "g/cm3"
@@ -126,8 +144,14 @@ class ConsumableOperationResult:
     deposit_mass_kg: float
     deposition_efficiency: float
     primary_consumable_kg: float
+    process_primary_consumable_kg: float
+    enterprise_primary_consumable_kg: float
+    package_rounded_primary_kg: float
+    suggested_primary_issue_kg: float
     flux_wire_ratio: float | None
     flux_kg: float | None
+    process_flux_kg: float | None
+    enterprise_flux_kg: float | None
     deposition_rate_kg_h: float | None
     arc_time_h: float | None
     arc_time_ratio: float | None
@@ -136,5 +160,32 @@ class ConsumableOperationResult:
     gas_volume_l: float | None
     pass_count_description: int | None
     pass_count_mass_multiplier: float
+    result_sources: dict[str, str] = field(default_factory=dict)
     formula_version: str = FORMULA_VERSION
     input_snapshot: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ConsumableOperationPlan:
+    role: OperationRole
+    area_source: AreaSource
+    operation: ConsumableOperationInput
+    area_allocation_ratio: float = 1.0
+
+
+@dataclass(frozen=True)
+class ConsumableOperationsSummary:
+    operation_count: int
+    deposit_mass_kg: float
+    primary_consumable_kg: float
+    process_primary_consumable_kg: float
+    enterprise_primary_consumable_kg: float
+    package_rounded_primary_kg: float
+    suggested_primary_issue_kg: float
+    flux_kg: float
+    process_flux_kg: float
+    enterprise_flux_kg: float
+    gas_volume_l: float
+    arc_time_h: float
+    total_operation_time_h: float
+    formula_version: str = FORMULA_VERSION
