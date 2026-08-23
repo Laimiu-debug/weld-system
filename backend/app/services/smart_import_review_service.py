@@ -17,6 +17,7 @@ from app.models.smart_import import (
 )
 from app.models.user import User
 from app.schemas.pqr import PQRCreate
+from app.schemas.qualification import WPSPQRSupportCreate
 from app.schemas.smart_import import (
     BulkFieldAcceptRequest,
     FieldReviewRequest,
@@ -31,6 +32,7 @@ from app.domain.semantic_field_mapping import (
 )
 from app.services.membership_service import MembershipService
 from app.services.pqr_service import PQRService
+from app.services.qualification_service import QualificationService
 from app.services.smart_import_service import SmartImportService
 from app.services.smart_import_template_service import SmartImportTemplateService
 from app.services.wps_service import WPSService
@@ -276,6 +278,7 @@ class SmartImportReviewService:
 
         payload = dict(request.payload)
         payload["status"] = "draft"
+        matched_pqr_id = None
         if entity.entity_type == "wps":
             if request.supporting_pqr_decision not in {"matched", "no_match"}:
                 raise HTTPException(status_code=422, detail="请明确确认支持 PQR 或选择暂无匹配")
@@ -299,6 +302,7 @@ class SmartImportReviewService:
                         detail="所选 PQR 不可访问、未批准或不在当前匹配候选中",
                     )
                 payload["wpqr_number"] = match["pqr_number"]
+                matched_pqr_id = match["pqr_id"]
             modules = dict(payload.get("modules_data") or {})
             modules["_import_control"] = {
                 "moduleId": "_import_control",
@@ -367,6 +371,18 @@ class SmartImportReviewService:
             self.db.rollback()
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         record.target_entity_id = str(target.id)
+        if entity.entity_type == "wps" and matched_pqr_id is not None:
+            QualificationService(self.db).create_support_link(
+                target.id,
+                WPSPQRSupportCreate(
+                    pqr_id=matched_pqr_id,
+                    source="smart_import",
+                    confirmation_status="pending",
+                    confirmation_note="智能导入表单中选择，待绑定明确合格的资格计算结果后人工确认",
+                ),
+                user,
+                context,
+            )
         entity.status = "published"
         self.db.add(
             self._review_record(

@@ -368,6 +368,53 @@ def test_wps_existing_form_can_save_without_pqr_but_marks_capability_ineligible(
     assert record.target_entity_id == "303"
 
 
+def test_wps_form_publish_creates_pending_versioned_pqr_relation() -> None:
+    db = Mock()
+    entity = _entity("wps")
+    existing_query = Mock()
+    existing_query.filter.return_value.order_by.return_value.first.return_value = None
+    fields_query = Mock()
+    fields_query.filter.return_value.all.return_value = []
+    db.query.side_effect = [existing_query, fields_query]
+    service = SmartImportReviewService(db)
+    service.get_entity = Mock(return_value=entity)
+    service._check_formal_quota = Mock()
+    service._increment_formal_quota = Mock()
+    request = FormPublishRequest(
+        payload={"wps_number": "WPS-FORM-2", "title": "Imported form"},
+        supporting_pqr_decision="matched",
+        supporting_pqr_id=88,
+    )
+    candidates = [
+        {
+            "pqr_id": 88,
+            "pqr_number": "PQR-88",
+            "eligible": True,
+        }
+    ]
+
+    with (
+        patch(
+            "app.services.smart_import_review_service.SmartImportTemplateService.match_supporting_pqrs",
+            return_value=candidates,
+        ),
+        patch(
+            "app.services.smart_import_review_service.WPSService.create",
+            return_value=SimpleNamespace(id=304),
+        ),
+        patch(
+            "app.services.smart_import_review_service.QualificationService.create_support_link"
+        ) as create_link,
+    ):
+        service.publish_form(entity.id, request, _user(), _context())
+
+    link_request = create_link.call_args.args[1]
+    assert create_link.call_args.args[0] == 304
+    assert link_request.pqr_id == 88
+    assert link_request.source == "smart_import"
+    assert link_request.confirmation_status == "pending"
+
+
 def test_ai_entitlement_model_is_data_driven() -> None:
     columns = AIPlanEntitlement.__table__.columns
     assert {

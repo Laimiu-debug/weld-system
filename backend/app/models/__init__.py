@@ -63,6 +63,11 @@ from app.models.smart_import import (
     ImportReviewRecord,
     SourceDocument,
 )
+from app.models.qualification import (
+    QualificationRulePack,
+    PQRQualificationResult,
+    WPSPQRSupportLink,
+)
 
 __all__ = [
     "User",
@@ -128,4 +133,7 @@ __all__ = [
     "AIUsageLedger",
     "AIProviderConfig",
     "EnterpriseAIPolicy",
+    "QualificationRulePack",
+    "PQRQualificationResult",
+    "WPSPQRSupportLink",
 ]

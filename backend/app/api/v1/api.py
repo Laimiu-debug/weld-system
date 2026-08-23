@@ -41,6 +41,7 @@ from app.api.v1.endpoints import (
     approvals,
     business_mvp,
     feedback,
+    qualification,
     smart_import,
 )
 
@@ -62,7 +63,9 @@ api_router.include_router(admin_auth.router, prefix="/admin/auth", tags=["管理
 # 管理员路由（最高优先级） - 使用我们的新管理员API
 api_router.include_router(admin.router, prefix="/admin", tags=["管理员功能"])
 api_router.include_router(system_admin.router, prefix="/admin/system", tags=["系统管理"])
-api_router.include_router(membership_admin.router, prefix="/admin/membership", tags=["会员管理"])
+api_router.include_router(
+    membership_admin.router, prefix="/admin/membership", tags=["会员管理"]
+)
 
 # 用户管理路由
 api_router.include_router(users.router, prefix="/users", tags=["用户管理"])
@@ -78,10 +81,15 @@ api_router.include_router(notifications.router, prefix="/notifications", tags=["
 
 # 用户意见反馈
 api_router.include_router(feedback.router, prefix="/feedback", tags=["用户反馈"])
-api_router.include_router(feedback.admin_router, prefix="/admin/feedback", tags=["用户反馈管理"])
+api_router.include_router(
+    feedback.admin_router, prefix="/admin/feedback", tags=["用户反馈管理"]
+)
 
 # 智能导入中间层（草稿与证据，不直接发布正式业务数据）
 api_router.include_router(smart_import.router, prefix="/smart-import", tags=["智能导入"])
+api_router.include_router(
+    qualification.router, prefix="/qualification", tags=["焊接能力规则"]
+)
 
 # 角色权限管理路由
 api_router.include_router(roles.router, prefix="/roles", tags=["角色权限管理"])
@@ -93,13 +101,19 @@ api_router.include_router(wps.router, prefix="/wps", tags=["WPS管理"])
 api_router.include_router(wps_export.router, prefix="/wps", tags=["WPS导出"])
 
 # WPS模板管理路由
-api_router.include_router(wps_templates.router, prefix="/wps-templates", tags=["WPS模板管理"])
+api_router.include_router(
+    wps_templates.router, prefix="/wps-templates", tags=["WPS模板管理"]
+)
 
 # 自定义模块管理路由
-api_router.include_router(custom_modules.router, prefix="/custom-modules", tags=["自定义模块管理"])
+api_router.include_router(
+    custom_modules.router, prefix="/custom-modules", tags=["自定义模块管理"]
+)
 
 # 共享库路由
-api_router.include_router(shared_library.router, prefix="/shared-library", tags=["共享库管理"])
+api_router.include_router(
+    shared_library.router, prefix="/shared-library", tags=["共享库管理"]
+)
 
 # PQR管理路由
 api_router.include_router(pqr.router, prefix="/pqr", tags=["PQR管理"])
@@ -137,7 +151,9 @@ api_router.include_router(files.router, prefix="/files", tags=["文件管理"])
 # 企业管理路由
 api_router.include_router(enterprise.router, prefix="/enterprise", tags=["企业管理"])
 api_router.include_router(enterprise_org.router, prefix="/enterprise", tags=["企业组织"])
-api_router.include_router(enterprise_invitations.router, prefix="/enterprise", tags=["企业邀请"])
+api_router.include_router(
+    enterprise_invitations.router, prefix="/enterprise", tags=["企业邀请"]
+)
 
 # 企业角色管理路由
 api_router.include_router(company_roles.router, prefix="/enterprise", tags=["企业角色管理"])
