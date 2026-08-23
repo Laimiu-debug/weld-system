@@ -26,6 +26,11 @@ TECHNICAL_ERROR_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+SECRET_VALUE_PATTERN = re.compile(
+    r"(?:bearer\s+[a-z0-9._~+/=-]{8,}|(?:sk|xox[baprs]|AIza)[-_a-z0-9]{8,})",
+    re.IGNORECASE,
+)
+
 
 def error_body(code: str, message: str, **extra: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {"code": code, "message": message}
@@ -56,6 +61,35 @@ def redact_headers(headers: Any) -> dict[str, str]:
         else:
             redacted[key] = redact_value(str(value), max_len=80)
     return redacted
+
+
+def redact_sensitive_data(value: Any, parent_key: str = "") -> Any:
+    """Recursively remove credentials from validation, audit, and log payloads."""
+    if parent_key and SENSITIVE_PATTERN.search(parent_key):
+        return "[redacted]"
+    if isinstance(value, dict):
+        return {
+            str(key): redact_sensitive_data(item, str(key))
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [redact_sensitive_data(item) for item in value]
+    if isinstance(value, str) and SECRET_VALUE_PATTERN.search(value):
+        return "[redacted]"
+    return value
+
+
+def sanitize_validation_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    sanitized: list[dict[str, Any]] = []
+    for error in errors:
+        item = redact_sensitive_data(error)
+        location = error.get("loc") or ()
+        if any(SENSITIVE_PATTERN.search(str(part)) for part in location):
+            item["input"] = "[redacted]"
+            if "ctx" in item:
+                item["ctx"] = "[redacted]"
+        sanitized.append(item)
+    return sanitized
 
 
 def client_error_detail(exc: BaseException) -> str:
@@ -98,7 +132,7 @@ async def validation_exception_handler(
         content=error_body(
             "VALIDATION_ERROR",
             "请求参数无效",
-            errors=exc.errors(),
+            errors=sanitize_validation_errors(exc.errors()),
         ),
     )
 

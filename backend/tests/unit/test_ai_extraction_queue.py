@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from app.core.data_access import WorkspaceContext, WorkspaceType
 from app.models.smart_import import ExtractionJob, ImportBatch, SourceDocument
 from app.services.ai_extraction_queue_service import AIExtractionQueueService
+from app.api.v1.endpoints import smart_import as smart_import_endpoint
 
 
 def test_cancel_job_persists_terminal_state() -> None:
@@ -61,7 +62,9 @@ def test_batch_state_becomes_partial_success() -> None:
     ]
     job_query = Mock()
     job_query.filter.return_value.order_by.return_value.all.return_value = [
-        ExtractionJob(id="job-1", document_id="doc-1", status="completed", progress=100),
+        ExtractionJob(
+            id="job-1", document_id="doc-1", status="completed", progress=100
+        ),
         ExtractionJob(id="job-2", document_id="doc-2", status="failed", progress=40),
     ]
     entity_query = Mock()
@@ -74,3 +77,16 @@ def test_batch_state_becomes_partial_success() -> None:
     assert result.status == "partial_success"
     assert result.progress == 70
     db.commit.assert_called_once()
+
+
+def test_celery_dispatch_serializes_only_job_identifier(monkeypatch) -> None:
+    apply_async = Mock()
+    monkeypatch.setattr(
+        smart_import_endpoint.run_smart_import_extraction,
+        "apply_async",
+        apply_async,
+    )
+
+    smart_import_endpoint.dispatch_extraction_job(SimpleNamespace(id="job-safe-1"))
+
+    apply_async.assert_called_once_with(args=["job-safe-1"], task_id="job-safe-1")
