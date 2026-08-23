@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   Button,
@@ -53,7 +53,7 @@ import smartImportService, {
   ImportEntityType,
   SourceDocument,
 } from '@/services/smartImport'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import customModuleService, { CustomModuleSummary } from '@/services/customModules'
 import wpsTemplateService, { WPSTemplateSummary } from '@/services/wpsTemplates'
 import './smartImport.css'
@@ -67,6 +67,13 @@ interface ExtractionResult {
   job: AIExtractionJob
   entity: ExtractedEntity
   pages: DocumentPage[]
+}
+
+interface UploadResultItem {
+  id: string
+  filename: string
+  status: 'queued' | 'uploading' | 'completed' | 'failed'
+  message?: string
 }
 
 const entityLabels: Record<ImportEntityType, string> = {
@@ -137,10 +144,12 @@ function parseEditedValue(original: unknown, value: string): unknown {
 
 const SmartImportPage: React.FC = () => {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [batches, setBatches] = useState<ImportBatch[]>([])
   const [batch, setBatch] = useState<ImportBatchDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [uploadResults, setUploadResults] = useState<UploadResultItem[]>([])
   const [createOpen, setCreateOpen] = useState(false)
   const [extractOpen, setExtractOpen] = useState(false)
   const [extracting, setExtracting] = useState(false)
@@ -167,6 +176,8 @@ const SmartImportPage: React.FC = () => {
   const [providerForm] = Form.useForm()
   const [policyForm] = Form.useForm()
   const [rotateForm] = Form.useForm()
+  const uploadQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const pendingUploadCountRef = useRef(0)
   const extractionMode = Form.useWatch('mode', extractForm)
   const provider = Form.useWatch('provider', extractForm)
   const loadProviderSettings = useCallback(async () => {
@@ -218,6 +229,25 @@ const SmartImportPage: React.FC = () => {
   }, [])
 
   useEffect(() => {
+    const requestedType = searchParams.get('type') as ImportEntityType | null
+    if (
+      searchParams.get('new') === '1' &&
+      requestedType &&
+      Object.prototype.hasOwnProperty.call(entityLabels, requestedType)
+    ) {
+      createForm.setFieldsValue({
+        target_entity_type: requestedType,
+        access_level: 'private',
+        name: `${entityLabels[requestedType]} 历史文件导入`,
+      })
+      setCreateOpen(true)
+      const next = new URLSearchParams(searchParams)
+      next.delete('new')
+      setSearchParams(next, { replace: true })
+    }
+  }, [searchParams, setSearchParams, createForm])
+
+  useEffect(() => {
     if (!queuedJob || !['queued', 'processing'].includes(queuedJob.status)) return
     const timer = window.setInterval(async () => {
       try {
@@ -242,7 +272,12 @@ const SmartImportPage: React.FC = () => {
   }, [queuedJob?.id, queuedJob?.status, batch?.id, loadBatches])
 
   const selectBatch = async (id: string) => {
+    if (uploading) {
+      message.warning('文件队列处理完成后才能切换导入任务')
+      return
+    }
     setLoading(true)
+    setUploadResults([])
     try {
       const detail = await smartImportService.getBatch(id)
       setBatch(detail)
@@ -266,6 +301,7 @@ const SmartImportPage: React.FC = () => {
       const created = await smartImportService.createBatch(values)
       setCreateOpen(false)
       createForm.resetFields()
+      setUploadResults([])
       await loadBatches(created.id)
       message.success('导入任务已创建')
     } catch (error) {
@@ -273,25 +309,50 @@ const SmartImportPage: React.FC = () => {
     }
   }
 
-  const uploadFile = async (options: any) => {
+  const uploadFile = (options: any) => {
     if (!batch) return options.onError?.(new Error('请先创建导入任务'))
+    const file = options.file as File & { uid?: string }
+    const itemId = file.uid || `${file.name}-${Date.now()}`
+    const batchId = batch.id
+    const targetType = batch.target_entity_type
+    pendingUploadCountRef.current += 1
     setUploading(true)
-    try {
-      const document = await smartImportService.uploadDocument(
-        batch.id,
-        options.file as File,
-        batch.target_entity_type
-      )
-      await smartImportService.parseDocument(document.id)
-      await loadBatches(batch.id)
-      options.onSuccess?.(document)
-      message.success('文件已上传并完成分页解析')
-    } catch (error) {
-      options.onError?.(error)
-      message.error(errorMessage(error, '文件上传或解析失败'))
-    } finally {
-      setUploading(false)
-    }
+    setUploadResults(items => [
+      ...items,
+      { id: itemId, filename: file.name, status: 'queued' },
+    ])
+    uploadQueueRef.current = uploadQueueRef.current.then(async () => {
+      setUploadResults(items => items.map(item =>
+        item.id === itemId ? { ...item, status: 'uploading' } : item
+      ))
+      try {
+        const document = await smartImportService.uploadDocument(
+          batchId,
+          file,
+          targetType
+        )
+        await smartImportService.parseDocument(document.id)
+        options.onSuccess?.(document)
+        setUploadResults(items => items.map(item =>
+          item.id === itemId
+            ? { ...item, status: 'completed', message: `${document.page_count || 0} 页` }
+            : item
+        ))
+      } catch (error) {
+        options.onError?.(error)
+        setUploadResults(items => items.map(item =>
+          item.id === itemId
+            ? { ...item, status: 'failed', message: errorMessage(error, '上传或解析失败') }
+            : item
+        ))
+      } finally {
+        pendingUploadCountRef.current -= 1
+        if (pendingUploadCountRef.current === 0) {
+          setUploading(false)
+          await loadBatches(batchId)
+        }
+      }
+    })
   }
 
   const prepareExtraction = async (document: SourceDocument) => {
@@ -455,7 +516,7 @@ const SmartImportPage: React.FC = () => {
     setExtracting(true)
     try {
       const payload = {
-        mode: values.mode === 'platform' ? 'platform' : 'byok',
+        mode: (values.mode === 'platform' ? 'platform' : 'byok') as 'platform' | 'byok',
         provider: values.mode === 'byok' ? values.provider : undefined,
         model: values.mode === 'byok' ? values.model?.trim() : undefined,
         base_url: values.mode === 'byok' ? values.base_url?.trim() || undefined : undefined,
@@ -798,15 +859,31 @@ const SmartImportPage: React.FC = () => {
                 <Card title="上传已有工艺文件">
                   <Dragger
                     accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.docx"
-                    multiple={false}
+                    multiple
+                    maxCount={50}
                     showUploadList={false}
                     customRequest={uploadFile}
                     disabled={uploading}
                   >
                     <p className="ant-upload-drag-icon"><CloudUploadOutlined /></p>
-                    <p className="ant-upload-text">点击或拖入一个文件</p>
-                    <p className="ant-upload-hint">支持 PDF、扫描图片、TIFF 和 DOCX；上传后自动进行安全分页解析。</p>
+                    <p className="ant-upload-text">点击或拖入一个或多个文件</p>
+                    <p className="ant-upload-hint">支持 PDF、扫描图片、TIFF 和 DOCX；文件会依次上传，单个失败不影响其他文件。</p>
                   </Dragger>
+                  {uploadResults.length > 0 && (
+                    <List
+                      size="small"
+                      style={{ marginTop: 12 }}
+                      dataSource={uploadResults}
+                      renderItem={item => (
+                        <List.Item key={item.id}>
+                          <List.Item.Meta title={item.filename} description={item.message} />
+                          <Tag color={item.status === 'completed' ? 'success' : item.status === 'failed' ? 'error' : 'processing'}>
+                            {item.status === 'queued' ? '等待上传' : item.status === 'uploading' ? '上传解析中' : item.status === 'completed' ? '已完成' : '失败'}
+                          </Tag>
+                        </List.Item>
+                      )}
+                    />
+                  )}
                 </Card>
 
                 <Card

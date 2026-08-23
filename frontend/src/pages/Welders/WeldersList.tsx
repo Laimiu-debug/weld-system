@@ -25,6 +25,7 @@ import {
   UserOutlined,
   SafetyCertificateOutlined,
   WarningOutlined,
+  RobotOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import dayjs from 'dayjs'
@@ -368,6 +369,9 @@ const WeldersList: React.FC = () => {
             </Select>
           </div>
           <div className="toolbar-actions">
+            <Button icon={<RobotOutlined />} size="large" onClick={() => navigate('/smart-import?type=welder&new=1')}>
+              AI导入
+            </Button>
             <Button type="primary" icon={<PlusOutlined />} size="large" onClick={() => navigate('/welders/create')}>
               新增焊工
             </Button>

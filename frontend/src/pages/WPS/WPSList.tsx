@@ -39,6 +39,7 @@ import {
   ClockCircleOutlined,
   FileWordOutlined,
   FilePdfOutlined,
+  RobotOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -1027,6 +1028,13 @@ const WPSList: React.FC = () => {
             />
           </div>
           <div className="toolbar-actions">
+            <Button
+              icon={<RobotOutlined />}
+              size="large"
+              onClick={() => navigate('/smart-import?type=wps&new=1')}
+            >
+              AI导入
+            </Button>
             <Button
               type="primary"
               icon={<PlusOutlined />}

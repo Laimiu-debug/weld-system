@@ -37,6 +37,7 @@ import {
   CloseCircleOutlined,
   ClockCircleOutlined,
   SendOutlined,
+  RobotOutlined,
 } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -757,6 +758,13 @@ const PQRList: React.FC = () => {
             </Select>
           </div>
           <div className="toolbar-actions">
+            <Button
+              icon={<RobotOutlined />}
+              size="large"
+              onClick={() => navigate('/smart-import?type=pqr&new=1')}
+            >
+              AI导入
+            </Button>
             <Button
               type="primary"
               icon={<PlusOutlined />}
