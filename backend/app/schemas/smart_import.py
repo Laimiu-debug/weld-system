@@ -209,11 +209,26 @@ class AIQuotaStatusResponse(BaseModel):
     tier_key: str
     workspace_type: str
     monthly_points: int
+    daily_points: int
+    daily_used_points: int
+    daily_remaining_points: int
     used_points: int
     reserved_or_used_points: int
     remaining_points: int
     max_points_per_task: int
     max_pages_per_task: int
+    max_tasks_per_day: int
+    max_tasks_per_month: int
+    max_concurrent_tasks: int
+    max_user_tasks_per_day: int
+    max_user_tasks_per_month: int
+    max_user_concurrent_tasks: int
+    tasks_today: int
+    tasks_month: int
+    active_tasks: int
+    user_tasks_today: int
+    user_tasks_month: int
+    user_active_tasks: int
     period_start: date
     platform_enabled: bool
     estimated_points: int | None = None

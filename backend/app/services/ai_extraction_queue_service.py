@@ -17,15 +17,17 @@ from app.models.smart_import import (
 )
 from app.models.user import User
 from app.services.smart_import_service import SmartImportService
+from app.services.ai_quota_service import AIQuotaError, AIQuotaService
 
 
 ACTIVE_JOB_STATUSES = ("queued", "processing")
 
 
 class AIExtractionQueueService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, quota_service: AIQuotaService | None = None):
         self.db = db
         self.smart_import = SmartImportService(db)
+        self.quota = quota_service or AIQuotaService(db)
 
     def get_job(
         self, job_id: str, user: User, context: WorkspaceContext
@@ -123,6 +125,12 @@ class AIExtractionQueueService:
         document = self.smart_import.get_document(document_id, user, context)
         if document.status not in {"ready", "failed"}:
             raise HTTPException(status_code=422, detail="请先完成文档分页解析")
+        try:
+            self.quota.enforce_task_limits(
+                user, context, max(1, int(getattr(document, "page_count", 0) or 0))
+            )
+        except AIQuotaError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
         duplicate = (
             self.smart_import._scope_query(
                 self.db.query(ExtractionJob), ExtractionJob, user, context

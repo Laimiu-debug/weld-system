@@ -70,12 +70,14 @@ def test_platform_quota_reserves_points_and_rejects_overage() -> None:
     service._get_entitlement = Mock(
         return_value=SimpleNamespace(
             is_enabled=True,
+            daily_points=20,
             monthly_points=100,
             max_points_per_task=30,
             max_pages_per_task=30,
         )
     )
     service._used_points = Mock(return_value=92)
+    service._used_points_since = Mock(return_value=4)
     job = ExtractionJob(id="job-1", mode="platform", provider="openai", model="m")
 
     points = service.reserve(job, _user(), _context(), 5)
@@ -91,6 +93,45 @@ def test_platform_quota_reserves_points_and_rejects_overage() -> None:
     with pytest.raises(AIQuotaError) as exc_info:
         service.reserve(ExtractionJob(id="job-2"), _user(), _context(), 5)
     assert exc_info.value.code == "ai_quota_exhausted"
+
+
+def test_workspace_and_enterprise_user_task_limits_apply_to_byok_too() -> None:
+    service = AIQuotaService(Mock())
+    service._get_entitlement = Mock(
+        return_value=SimpleNamespace(
+            is_enabled=True,
+            max_pages_per_task=30,
+            max_tasks_per_day=100,
+            max_tasks_per_month=1000,
+            max_concurrent_tasks=10,
+            max_user_tasks_per_day=20,
+            max_user_tasks_per_month=200,
+            max_user_concurrent_tasks=2,
+        )
+    )
+    enterprise = WorkspaceContext(
+        user_id=7,
+        workspace_type=WorkspaceType.ENTERPRISE,
+        company_id=3,
+    )
+    service._job_count = Mock(side_effect=[10, 50, 3, 5, 40, 2])
+
+    with pytest.raises(AIQuotaError) as exc_info:
+        service.enforce_task_limits(_user(), enterprise, pages=5)
+
+    assert exc_info.value.code == "ai_user_concurrent_limit"
+
+
+def test_single_task_page_limit_is_shared_by_platform_and_byok() -> None:
+    service = AIQuotaService(Mock())
+    service._get_entitlement = Mock(
+        return_value=SimpleNamespace(is_enabled=True, max_pages_per_task=3)
+    )
+
+    with pytest.raises(AIQuotaError) as exc_info:
+        service.enforce_task_limits(_user(), _context(), pages=4)
+
+    assert exc_info.value.code == "ai_task_limit_exceeded"
 
 
 def test_quota_settlement_records_tokens_without_charging_byok() -> None:
@@ -324,7 +365,12 @@ def test_wps_publish_uses_existing_wps_service() -> None:
 
 def test_ai_entitlement_model_is_data_driven() -> None:
     columns = AIPlanEntitlement.__table__.columns
-    assert {"tier_key", "monthly_points", "max_points_per_task"}.issubset(
-        columns.keys()
-    )
+    assert {
+        "tier_key",
+        "daily_points",
+        "monthly_points",
+        "max_points_per_task",
+        "max_tasks_per_day",
+        "max_user_concurrent_tasks",
+    }.issubset(columns.keys())
     assert date(2026, 1, 1).day == 1

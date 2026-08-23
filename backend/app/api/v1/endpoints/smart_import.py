@@ -175,6 +175,13 @@ def get_ai_quota(
             result["platform_enabled"]
             and estimated_pages <= result["max_pages_per_task"]
             and result["estimated_points"] <= result["remaining_points"]
+            and result["estimated_points"] <= result["daily_remaining_points"]
+            and result["tasks_today"] < result["max_tasks_per_day"]
+            and result["tasks_month"] < result["max_tasks_per_month"]
+            and result["active_tasks"] < result["max_concurrent_tasks"]
+            and result["user_tasks_today"] < result["max_user_tasks_per_day"]
+            and result["user_tasks_month"] < result["max_user_tasks_per_month"]
+            and result["user_active_tasks"] < result["max_user_concurrent_tasks"]
         )
     return result
 

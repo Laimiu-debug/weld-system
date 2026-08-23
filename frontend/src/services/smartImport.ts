@@ -101,11 +101,26 @@ export interface AIQuotaStatus {
   tier_key: string
   workspace_type: 'personal' | 'enterprise'
   monthly_points: number
+  daily_points: number
+  daily_used_points: number
+  daily_remaining_points: number
   used_points: number
   reserved_or_used_points: number
   remaining_points: number
   max_points_per_task: number
   max_pages_per_task: number
+  max_tasks_per_day: number
+  max_tasks_per_month: number
+  max_concurrent_tasks: number
+  max_user_tasks_per_day: number
+  max_user_tasks_per_month: number
+  max_user_concurrent_tasks: number
+  tasks_today: number
+  tasks_month: number
+  active_tasks: number
+  user_tasks_today: number
+  user_tasks_month: number
+  user_active_tasks: number
   period_start: string
   platform_enabled: boolean
   estimated_points?: number

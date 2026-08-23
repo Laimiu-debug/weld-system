@@ -176,6 +176,11 @@ class AIExtractionService:
                 "too_many_pages",
                 f"单次 AI 提取最多支持 {settings.AI_MAX_DOCUMENT_PAGES} 页",
             )
+        if existing_job is None:
+            try:
+                self.quota.enforce_task_limits(user, context, len(pages))
+            except AIQuotaError as exc:
+                raise AIExtractionRunError(exc.code, str(exc), exc.status_code) from exc
 
         workspace = _resource_workspace(document)
         if existing_job is None:

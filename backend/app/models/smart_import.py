@@ -445,9 +445,16 @@ class AIPlanEntitlement(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     tier_key = Column(String(50), nullable=False)
     workspace_type = Column(String(20), nullable=False)
+    daily_points = Column(Integer, nullable=False, default=0)
     monthly_points = Column(Integer, nullable=False, default=0)
     max_points_per_task = Column(Integer, nullable=False, default=0)
     max_pages_per_task = Column(Integer, nullable=False, default=0)
+    max_tasks_per_day = Column(Integer, nullable=False, default=0)
+    max_tasks_per_month = Column(Integer, nullable=False, default=0)
+    max_concurrent_tasks = Column(Integer, nullable=False, default=0)
+    max_user_tasks_per_day = Column(Integer, nullable=False, default=0)
+    max_user_tasks_per_month = Column(Integer, nullable=False, default=0)
+    max_user_concurrent_tasks = Column(Integer, nullable=False, default=0)
     is_enabled = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(
@@ -460,7 +467,11 @@ class AIPlanEntitlement(Base):
             name="ck_ai_entitlement_workspace_type",
         ),
         CheckConstraint(
-            "monthly_points >= 0 AND max_points_per_task >= 0 AND max_pages_per_task >= 0",
+            "daily_points >= 0 AND monthly_points >= 0 AND max_points_per_task >= 0 "
+            "AND max_pages_per_task >= 0 AND max_tasks_per_day >= 0 "
+            "AND max_tasks_per_month >= 0 AND max_concurrent_tasks >= 0 "
+            "AND max_user_tasks_per_day >= 0 AND max_user_tasks_per_month >= 0 "
+            "AND max_user_concurrent_tasks >= 0",
             name="ck_ai_entitlement_nonnegative",
         ),
         Index(

@@ -31,11 +31,29 @@ class AIQuotaService:
     def get_status(self, user: User, context: WorkspaceContext) -> dict[str, Any]:
         entitlement = self._get_entitlement(user, context, lock=False)
         used = self._used_points(user, context, self._period_start())
+        daily_used = self._used_points_since(user, context, self._day_start())
+        day_start = self._day_start()
+        month_start = datetime.combine(self._period_start(), datetime.min.time())
+        tasks_today = self._job_count(context, user.id, day_start)
+        tasks_month = self._job_count(context, user.id, month_start)
+        active_tasks = self._job_count(context, user.id, None, active_only=True)
+        user_tasks_today = self._job_count(context, user.id, day_start, user_only=True)
+        user_tasks_month = self._job_count(
+            context, user.id, month_start, user_only=True
+        )
+        user_active_tasks = self._job_count(
+            context, user.id, None, active_only=True, user_only=True
+        )
         monthly = entitlement.monthly_points if entitlement else 0
         return {
             "tier_key": self._tier_key(user, context),
             "workspace_type": str(context.workspace_type),
             "monthly_points": monthly,
+            "daily_points": entitlement.daily_points if entitlement else 0,
+            "daily_used_points": daily_used,
+            "daily_remaining_points": max(
+                0, (entitlement.daily_points if entitlement else 0) - daily_used
+            ),
             "used_points": used,
             "reserved_or_used_points": used,
             "remaining_points": max(0, monthly - used),
@@ -43,9 +61,79 @@ class AIQuotaService:
                 entitlement.max_points_per_task if entitlement else 0
             ),
             "max_pages_per_task": entitlement.max_pages_per_task if entitlement else 0,
+            "max_tasks_per_day": entitlement.max_tasks_per_day if entitlement else 0,
+            "max_tasks_per_month": entitlement.max_tasks_per_month
+            if entitlement
+            else 0,
+            "max_concurrent_tasks": entitlement.max_concurrent_tasks
+            if entitlement
+            else 0,
+            "max_user_tasks_per_day": entitlement.max_user_tasks_per_day
+            if entitlement
+            else 0,
+            "max_user_tasks_per_month": entitlement.max_user_tasks_per_month
+            if entitlement
+            else 0,
+            "max_user_concurrent_tasks": entitlement.max_user_concurrent_tasks
+            if entitlement
+            else 0,
+            "tasks_today": tasks_today,
+            "tasks_month": tasks_month,
+            "active_tasks": active_tasks,
+            "user_tasks_today": user_tasks_today,
+            "user_tasks_month": user_tasks_month,
+            "user_active_tasks": user_active_tasks,
             "period_start": self._period_start(),
             "platform_enabled": bool(entitlement and entitlement.is_enabled),
         }
+
+    def enforce_task_limits(
+        self, user: User, context: WorkspaceContext, pages: int
+    ) -> None:
+        entitlement = self._get_entitlement(user, context, lock=True)
+        if entitlement is None or not entitlement.is_enabled:
+            raise AIQuotaError("ai_plan_not_enabled", "当前会员套餐未开通 AI 功能", 403)
+        if pages > entitlement.max_pages_per_task:
+            raise AIQuotaError(
+                "ai_task_limit_exceeded",
+                f"单次最多解析 {entitlement.max_pages_per_task} 页",
+                422,
+            )
+        day_start = self._day_start()
+        month_start = datetime.combine(self._period_start(), datetime.min.time())
+        if (
+            self._job_count(context, user.id, day_start)
+            >= entitlement.max_tasks_per_day
+        ):
+            raise AIQuotaError("ai_daily_task_limit", "当前工作区今日 AI 任务数已达上限", 429)
+        if (
+            self._job_count(context, user.id, month_start)
+            >= entitlement.max_tasks_per_month
+        ):
+            raise AIQuotaError("ai_monthly_task_limit", "当前工作区本月 AI 任务数已达上限", 429)
+        if (
+            self._job_count(context, user.id, None, active_only=True)
+            >= entitlement.max_concurrent_tasks
+        ):
+            raise AIQuotaError("ai_concurrent_task_limit", "当前工作区并发 AI 任务数已达上限", 429)
+        if context.workspace_type == WorkspaceType.ENTERPRISE:
+            if (
+                self._job_count(context, user.id, day_start, user_only=True)
+                >= entitlement.max_user_tasks_per_day
+            ):
+                raise AIQuotaError("ai_user_daily_task_limit", "您今日的 AI 任务数已达上限", 429)
+            if (
+                self._job_count(context, user.id, month_start, user_only=True)
+                >= entitlement.max_user_tasks_per_month
+            ):
+                raise AIQuotaError("ai_user_monthly_task_limit", "您本月的 AI 任务数已达上限", 429)
+            if (
+                self._job_count(
+                    context, user.id, None, active_only=True, user_only=True
+                )
+                >= entitlement.max_user_concurrent_tasks
+            ):
+                raise AIQuotaError("ai_user_concurrent_limit", "您的并发 AI 任务数已达上限", 429)
 
     def reserve(
         self,
@@ -71,6 +159,12 @@ class AIQuotaService:
                 422,
             )
         used = self._used_points(user, context, self._period_start())
+        daily_used = self._used_points_since(user, context, self._day_start())
+        if daily_used + points > entitlement.daily_points:
+            raise AIQuotaError(
+                "ai_daily_quota_exhausted",
+                f"平台 AI 点数不足，今日剩余 {max(0, entitlement.daily_points - daily_used)} 点",
+            )
         if used + points > entitlement.monthly_points:
             raise AIQuotaError(
                 "ai_quota_exhausted",
@@ -192,6 +286,42 @@ class AIQuotaService:
             query = query.filter(AIUsageLedger.user_id == user.id)
         return max(0, -int(query.scalar() or 0))
 
+    def _used_points_since(
+        self, user: User, context: WorkspaceContext, since: datetime
+    ) -> int:
+        query = self.db.query(
+            func.coalesce(func.sum(AIUsageLedger.balance_delta), 0)
+        ).filter(
+            AIUsageLedger.source == "platform",
+            AIUsageLedger.created_at >= since,
+            AIUsageLedger.workspace_type == str(context.workspace_type),
+        )
+        if context.workspace_type == WorkspaceType.ENTERPRISE:
+            query = query.filter(AIUsageLedger.company_id == context.company_id)
+        else:
+            query = query.filter(AIUsageLedger.user_id == user.id)
+        return max(0, -int(query.scalar() or 0))
+
+    def _job_count(
+        self,
+        context: WorkspaceContext,
+        user_id: int,
+        since: datetime | None,
+        *,
+        active_only: bool = False,
+        user_only: bool = False,
+    ) -> int:
+        query = self.db.query(func.count(ExtractionJob.id))
+        if context.workspace_type == WorkspaceType.ENTERPRISE and not user_only:
+            query = query.filter(ExtractionJob.company_id == context.company_id)
+        else:
+            query = query.filter(ExtractionJob.user_id == user_id)
+        if since is not None:
+            query = query.filter(ExtractionJob.created_at >= since)
+        if active_only:
+            query = query.filter(ExtractionJob.status.in_(("queued", "processing")))
+        return int(query.scalar() or 0)
+
     def _ledger(self, key: str) -> AIUsageLedger | None:
         return (
             self.db.query(AIUsageLedger)
@@ -240,3 +370,8 @@ class AIQuotaService:
     def _period_start() -> date:
         now = datetime.now(UTC)
         return date(now.year, now.month, 1)
+
+    @staticmethod
+    def _day_start() -> datetime:
+        now = datetime.now(UTC).replace(tzinfo=None)
+        return now.replace(hour=0, minute=0, second=0, microsecond=0)
