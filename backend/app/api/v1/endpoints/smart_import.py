@@ -23,6 +23,8 @@ from app.models.company import CompanyEmployee
 from app.models.user import User
 from app.schemas.smart_import import (
     BatchDetailResponse,
+    DocumentPageResponse,
+    DocumentParseResponse,
     ExtractedEntityResponse,
     ImportBatchCreate,
     ImportBatchResponse,
@@ -30,6 +32,7 @@ from app.schemas.smart_import import (
     SourceDocumentRegister,
     SourceDocumentResponse,
 )
+from app.services.document_parser_service import DefaultDocumentParser, DocumentParser
 from app.services.document_storage_service import (
     DocumentStorage,
     DocumentUploadError,
@@ -40,6 +43,10 @@ from app.services.system_config_service import get_max_upload_bytes
 
 
 router = APIRouter()
+
+
+def get_document_parser() -> DocumentParser:
+    return DefaultDocumentParser()
 
 
 def resolve_workspace(
@@ -217,6 +224,40 @@ def download_document(
         media_type=document.mime_type or "application/octet-stream",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
     )
+
+
+@router.post("/documents/{document_id}/parse", response_model=DocumentParseResponse)
+def parse_document(
+    document_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+    storage: DocumentStorage = Depends(get_document_storage),
+    parser: DocumentParser = Depends(get_document_parser),
+) -> DocumentParseResponse:
+    """Extract page text and queue scanned pages for a later OCR provider."""
+    enforce_rate_limit(
+        f"smart-import-parse:{current_user.id}", limit=10, window_seconds=60
+    )
+    context = resolve_workspace(db, current_user, workspace_id)
+    document, pages = SmartImportService(db).parse_document(
+        document_id, current_user, context, storage, parser
+    )
+    return DocumentParseResponse(
+        document=SourceDocumentResponse.model_validate(document),
+        pages=[DocumentPageResponse.model_validate(page) for page in pages],
+    )
+
+
+@router.get("/documents/{document_id}/pages", response_model=list[DocumentPageResponse])
+def list_document_pages(
+    document_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> list[DocumentPageResponse]:
+    context = resolve_workspace(db, current_user, workspace_id)
+    return SmartImportService(db).get_document_pages(document_id, current_user, context)
 
 
 @router.post(

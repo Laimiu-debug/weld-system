@@ -69,6 +69,23 @@ class SourceDocumentResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DocumentPageResponse(BaseModel):
+    id: str
+    document_id: str
+    page_number: int
+    text_content: str | None
+    ocr_status: str
+    page_metadata: dict[str, Any]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DocumentParseResponse(BaseModel):
+    document: SourceDocumentResponse
+    pages: list[DocumentPageResponse]
+
+
 class EvidenceDraft(BaseModel):
     page_number: int = Field(ge=1)
     text: str = Field(min_length=1, max_length=2000)

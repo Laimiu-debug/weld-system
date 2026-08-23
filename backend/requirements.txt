@@ -37,6 +37,7 @@ werkzeug==3.0.1
 
 # 文档导出
 python-docx==1.1.0
+pypdf==6.10.0
 weasyprint==60.1
 beautifulsoup4==4.12.2
 bleach[css]==6.2.0
@@ -58,6 +59,7 @@ isort==5.12.0
 mypy==1.7.1
 flake8==6.1.0
 pre-commit==3.5.0
+reportlab==4.4.4
 
 # 监控和日志
 structlog==23.2.0

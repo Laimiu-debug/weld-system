@@ -1,0 +1,252 @@
+"""Provider-neutral page extraction for smart-import source documents."""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, BinaryIO, Protocol
+from zipfile import BadZipFile, ZipFile
+
+from docx import Document
+from docx.oxml.ns import qn
+from PIL import Image
+from pypdf import PdfReader
+
+
+MAX_DOCUMENT_PAGES = 500
+MAX_PAGE_TEXT_CHARS = 200_000
+MIN_MEANINGFUL_TEXT_CHARS = 20
+MAX_DOCX_ENTRIES = 5_000
+MAX_DOCX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
+MAX_DOCX_COMPRESSION_RATIO = 200
+MAX_IMAGE_PIXELS = 50_000_000
+
+
+class DocumentParseError(ValueError):
+    """A safe, user-facing document parsing error."""
+
+
+@dataclass(frozen=True)
+class ParsedPage:
+    page_number: int
+    text_content: str
+    ocr_status: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ParsedDocument:
+    pages: list[ParsedPage]
+    parser: str
+    page_numbering: str = "physical"
+
+
+class DocumentParser(Protocol):
+    def parse(
+        self, stream: BinaryIO, original_filename: str, mime_type: str | None = None
+    ) -> ParsedDocument:
+        ...
+
+
+class DefaultDocumentParser:
+    """Extract embedded text and identify pages that need a later OCR pass."""
+
+    def parse(
+        self, stream: BinaryIO, original_filename: str, mime_type: str | None = None
+    ) -> ParsedDocument:
+        del mime_type
+        suffix = Path(original_filename).suffix.lower()
+        try:
+            if suffix == ".pdf":
+                return self._parse_pdf(stream)
+            if suffix == ".docx":
+                return self._parse_docx(stream)
+            if suffix in {".png", ".jpg", ".jpeg", ".tif", ".tiff"}:
+                return self._parse_image(stream, suffix)
+            if suffix == ".doc":
+                raise DocumentParseError("旧版 DOC 暂不支持直接解析，请先转换为 DOCX 或 PDF")
+            raise DocumentParseError("该文件类型暂不支持分页解析")
+        except DocumentParseError:
+            raise
+        except Exception as exc:
+            raise DocumentParseError("文档损坏、加密或格式无法识别") from exc
+
+    def _parse_pdf(self, stream: BinaryIO) -> ParsedDocument:
+        reader = PdfReader(stream, strict=False)
+        if reader.is_encrypted:
+            try:
+                unlocked = reader.decrypt("")
+            except Exception as exc:
+                raise DocumentParseError("加密 PDF 无法解析，请先移除密码") from exc
+            if not unlocked:
+                raise DocumentParseError("加密 PDF 无法解析，请先移除密码")
+        if len(reader.pages) > MAX_DOCUMENT_PAGES:
+            raise DocumentParseError(f"文档页数不能超过 {MAX_DOCUMENT_PAGES} 页")
+
+        pages: list[ParsedPage] = []
+        for number, page in enumerate(reader.pages, start=1):
+            text = _clean_text(page.extract_text() or "")
+            has_images = _pdf_page_has_images(page)
+            meaningful_chars = len("".join(text.split()))
+            needs_ocr = has_images and meaningful_chars < MIN_MEANINGFUL_TEXT_CHARS
+            pages.append(
+                ParsedPage(
+                    page_number=number,
+                    text_content=_bounded_text(text),
+                    ocr_status="pending" if needs_ocr else "not_required",
+                    metadata={
+                        "source_format": "pdf",
+                        "text_chars": len(text),
+                        "has_images": has_images,
+                        "is_scanned_candidate": needs_ocr,
+                        "width_points": _as_float(page.mediabox.width),
+                        "height_points": _as_float(page.mediabox.height),
+                    },
+                )
+            )
+        return ParsedDocument(pages=pages, parser="pypdf")
+
+    def _parse_docx(self, stream: BinaryIO) -> ParsedDocument:
+        _validate_docx_archive(stream)
+        document = Document(stream)
+        logical_pages: list[list[str]] = [[]]
+
+        for block in document.element.body.iterchildren():
+            if block.tag == qn("w:p"):
+                segments = _docx_paragraph_segments(block)
+                for index, segment in enumerate(segments):
+                    if segment:
+                        logical_pages[-1].append(segment)
+                    if index < len(segments) - 1:
+                        logical_pages.append([])
+            elif block.tag == qn("w:tbl"):
+                table_text = _docx_table_text(block)
+                if table_text:
+                    logical_pages[-1].append(table_text)
+
+        if len(logical_pages) > MAX_DOCUMENT_PAGES:
+            raise DocumentParseError(f"文档逻辑页数不能超过 {MAX_DOCUMENT_PAGES} 页")
+        pages = [
+            ParsedPage(
+                page_number=number,
+                text_content=_bounded_text(_clean_text("\n".join(parts))),
+                ocr_status="not_required",
+                metadata={
+                    "source_format": "docx",
+                    "page_numbering": "logical",
+                    "text_chars": len(_clean_text("\n".join(parts))),
+                },
+            )
+            for number, parts in enumerate(logical_pages, start=1)
+        ]
+        return ParsedDocument(
+            pages=pages, parser="python-docx", page_numbering="logical"
+        )
+
+    def _parse_image(self, stream: BinaryIO, suffix: str) -> ParsedDocument:
+        with Image.open(stream) as image:
+            frame_count = getattr(image, "n_frames", 1)
+            if frame_count > MAX_DOCUMENT_PAGES:
+                raise DocumentParseError(f"图像页数不能超过 {MAX_DOCUMENT_PAGES} 页")
+            pages: list[ParsedPage] = []
+            for number in range(1, frame_count + 1):
+                image.seek(number - 1)
+                if image.width * image.height > MAX_IMAGE_PIXELS:
+                    raise DocumentParseError("扫描图片像素尺寸超过系统安全限制")
+                pages.append(
+                    ParsedPage(
+                        page_number=number,
+                        text_content="",
+                        ocr_status="pending",
+                        metadata={
+                            "source_format": suffix.lstrip("."),
+                            "has_images": True,
+                            "is_scanned_candidate": True,
+                            "width_pixels": image.width,
+                            "height_pixels": image.height,
+                        },
+                    )
+                )
+        return ParsedDocument(pages=pages, parser="pillow")
+
+
+def _validate_docx_archive(stream: BinaryIO) -> None:
+    try:
+        stream.seek(0)
+        with ZipFile(stream) as archive:
+            entries = archive.infolist()
+            if len(entries) > MAX_DOCX_ENTRIES:
+                raise DocumentParseError("DOCX 文件条目数量超过系统安全限制")
+            total_size = sum(entry.file_size for entry in entries)
+            compressed_size = sum(max(entry.compress_size, 1) for entry in entries)
+            if total_size > MAX_DOCX_UNCOMPRESSED_BYTES:
+                raise DocumentParseError("DOCX 解压后大小超过系统安全限制")
+            if total_size / max(compressed_size, 1) > MAX_DOCX_COMPRESSION_RATIO:
+                raise DocumentParseError("DOCX 压缩比例异常，已拒绝解析")
+    except BadZipFile as exc:
+        raise DocumentParseError("DOCX 文件损坏或格式无法识别") from exc
+    finally:
+        stream.seek(0)
+
+
+def _pdf_page_has_images(page: Any) -> bool:
+    try:
+        resources = page.get("/Resources") or {}
+        resources = (
+            resources.get_object() if hasattr(resources, "get_object") else resources
+        )
+        xobjects = resources.get("/XObject") or {}
+        xobjects = (
+            xobjects.get_object() if hasattr(xobjects, "get_object") else xobjects
+        )
+        for value in xobjects.values():
+            obj = value.get_object() if hasattr(value, "get_object") else value
+            if obj.get("/Subtype") == "/Image":
+                return True
+        # Some scanners encode the page as an inline image rather than an XObject.
+        return len(page.images) > 0
+    except Exception:
+        return False
+
+
+def _docx_paragraph_segments(paragraph: Any) -> list[str]:
+    segments = [""]
+    for element in paragraph.iter():
+        if element.tag == qn("w:t") and element.text:
+            segments[-1] += element.text
+        elif element.tag == qn("w:tab"):
+            segments[-1] += "\t"
+        elif element.tag == qn("w:br"):
+            if element.get(qn("w:type")) == "page":
+                segments.append("")
+            else:
+                segments[-1] += "\n"
+    return segments
+
+
+def _docx_table_text(table: Any) -> str:
+    rows: list[str] = []
+    for row in table.iterchildren(qn("w:tr")):
+        cells: list[str] = []
+        for cell in row.iterchildren(qn("w:tc")):
+            text = "".join(node.text or "" for node in cell.iter(qn("w:t")))
+            cells.append(text.strip())
+        rows.append("\t".join(cells).rstrip())
+    return "\n".join(rows).strip()
+
+
+def _clean_text(text: str) -> str:
+    lines = [line.rstrip() for line in text.replace("\x00", "").splitlines()]
+    return "\n".join(lines).strip()
+
+
+def _bounded_text(text: str) -> str:
+    if len(text) > MAX_PAGE_TEXT_CHARS:
+        raise DocumentParseError("单页文本内容异常，超过系统安全限制")
+    return text
+
+
+def _as_float(value: Any) -> float | None:
+    try:
+        return round(float(value), 2)
+    except (TypeError, ValueError):
+        return None

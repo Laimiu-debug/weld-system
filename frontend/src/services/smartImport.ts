@@ -34,6 +34,16 @@ export interface SourceDocument {
   created_at: string
 }
 
+export interface DocumentPage {
+  id: string
+  document_id: string
+  page_number: number
+  text_content?: string
+  ocr_status: 'pending' | 'processing' | 'completed' | 'failed' | 'not_required'
+  page_metadata: Record<string, unknown>
+  created_at: string
+}
+
 export interface ImportBatchDetail extends ImportBatch {
   documents: SourceDocument[]
 }
@@ -109,6 +119,18 @@ class SmartImportService {
       `/smart-import/documents/${documentId}/content`,
       { responseType: 'blob' }
     )
+    return response.data
+  }
+
+  async parseDocument(
+    documentId: string
+  ): Promise<{ document: SourceDocument; pages: DocumentPage[] }> {
+    const response = await api.post(`/smart-import/documents/${documentId}/parse`)
+    return response.data
+  }
+
+  async listDocumentPages(documentId: string): Promise<DocumentPage[]> {
+    const response = await api.get(`/smart-import/documents/${documentId}/pages`)
     return response.data
   }
 

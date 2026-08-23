@@ -1,5 +1,5 @@
 """Transactional service for staged document imports."""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, TypeVar
 from uuid import uuid4
 
@@ -15,6 +15,7 @@ from app.core.data_access import (
     WorkspaceType,
 )
 from app.models.smart_import import (
+    DocumentPage,
     ExtractedEntity,
     ExtractedField,
     ExtractionJob,
@@ -28,6 +29,11 @@ from app.schemas.smart_import import (
     ManualDraftCreate,
     SourceDocumentRegister,
 )
+from app.services.document_parser_service import (
+    DocumentParseError,
+    DocumentParser,
+)
+from app.services.document_storage_service import DocumentStorage, DocumentUploadError
 
 
 T = TypeVar("T")
@@ -194,6 +200,108 @@ class SmartImportService:
             raise HTTPException(status_code=404, detail="原始文档不存在")
         self._check_view(document, user, context)
         return document
+
+    def get_document_pages(
+        self, document_id: str, user: User, context: WorkspaceContext
+    ) -> list[DocumentPage]:
+        document = self.get_document(document_id, user, context)
+        return (
+            self.db.query(DocumentPage)
+            .filter(DocumentPage.document_id == document.id)
+            .order_by(DocumentPage.page_number)
+            .all()
+        )
+
+    def parse_document(
+        self,
+        document_id: str,
+        user: User,
+        context: WorkspaceContext,
+        storage: DocumentStorage,
+        parser: DocumentParser,
+    ) -> tuple[SourceDocument, list[DocumentPage]]:
+        """Parse an original into replaceable staging pages without publishing data."""
+        document = self.get_document(document_id, user, context)
+        if not document.storage_key:
+            raise HTTPException(status_code=409, detail="该记录没有可解析的私有原件")
+        if document.status == "parsing":
+            raise HTTPException(status_code=409, detail="文档正在解析，请勿重复提交")
+
+        document.status = "parsing"
+        self.db.commit()
+        try:
+            with storage.open_stream(document.storage_key) as stream:
+                parsed = parser.parse(
+                    stream, document.original_filename, document.mime_type
+                )
+            if not parsed.pages:
+                raise DocumentParseError("文档中没有可解析的页面")
+        except (DocumentParseError, DocumentUploadError) as exc:
+            self.db.rollback()
+            document.status = "failed"
+            document.metadata_json = {
+                **(document.metadata_json or {}),
+                "parsing": {"status": "failed", "message": str(exc)},
+            }
+            self.db.commit()
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as exc:
+            self.db.rollback()
+            document.status = "failed"
+            document.metadata_json = {
+                **(document.metadata_json or {}),
+                "parsing": {"status": "failed", "message": "文档解析失败"},
+            }
+            self.db.commit()
+            raise HTTPException(status_code=500, detail="文档解析失败") from exc
+
+        workspace = {
+            "user_id": document.user_id,
+            "workspace_type": document.workspace_type,
+            "company_id": document.company_id,
+            "factory_id": document.factory_id,
+            "access_level": document.access_level,
+        }
+        try:
+            self.db.query(DocumentPage).filter(
+                DocumentPage.document_id == document.id
+            ).delete(synchronize_session=False)
+            pages = [
+                DocumentPage(
+                    id=str(uuid4()),
+                    document_id=document.id,
+                    page_number=item.page_number,
+                    text_content=item.text_content,
+                    ocr_status=item.ocr_status,
+                    page_metadata=item.metadata,
+                    **workspace,
+                )
+                for item in parsed.pages
+            ]
+            self.db.add_all(pages)
+            document.page_count = len(pages)
+            document.status = "ready"
+            document.metadata_json = {
+                **(document.metadata_json or {}),
+                "parsing": {
+                    "status": "completed",
+                    "parser": parsed.parser,
+                    "page_numbering": parsed.page_numbering,
+                    "parsed_at": datetime.now(timezone.utc).isoformat(),
+                },
+            }
+            self.db.commit()
+            self.db.refresh(document)
+            return document, pages
+        except Exception:
+            self.db.rollback()
+            document.status = "failed"
+            document.metadata_json = {
+                **(document.metadata_json or {}),
+                "parsing": {"status": "failed", "message": "页面记录保存失败"},
+            }
+            self.db.commit()
+            raise
 
     def create_manual_draft(
         self,

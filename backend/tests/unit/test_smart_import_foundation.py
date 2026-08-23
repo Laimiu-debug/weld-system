@@ -120,6 +120,8 @@ def test_staging_router_exposes_draft_flow_but_no_publish_endpoint() -> None:
     assert "/batches/{batch_id}/documents" in paths
     assert "/batches/{batch_id}/upload" in paths
     assert "/documents/{document_id}/content" in paths
+    assert "/documents/{document_id}/parse" in paths
+    assert "/documents/{document_id}/pages" in paths
     assert "/documents/{document_id}/manual-drafts" in paths
     assert all("publish" not in path for path in paths)
 
