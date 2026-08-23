@@ -23,6 +23,7 @@ from app.api.v1.endpoints import (
     materials,
     equipment,
     production,
+    production_release,
     quality,
     reports,
     files,
@@ -146,6 +147,9 @@ api_router.include_router(equipment.router, prefix="/equipment", tags=["设备�
 
 # 生产管理路由
 api_router.include_router(production.router, prefix="/production", tags=["生产管理"])
+api_router.include_router(
+    production_release.router, prefix="/production-release", tags=["焊序生产下发"]
+)
 
 # 质量管理路由
 api_router.include_router(quality.router, prefix="/quality", tags=["质量管理"])

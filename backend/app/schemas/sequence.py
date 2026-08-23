@@ -39,6 +39,7 @@ class SequenceReorder(BaseModel):
 class SequenceRecalculate(BaseModel):
     strategies: dict[str, bool] | None = None
     change_summary: str = Field(default="按当前数据重新计算", max_length=1000)
+    change_request_id: str | None = None
 
 
 class SequenceSubmit(BaseModel):

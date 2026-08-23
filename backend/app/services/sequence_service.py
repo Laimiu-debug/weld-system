@@ -29,6 +29,10 @@ from app.models.engineering import (
 )
 from app.models.matching import WPSMatchFreeze, WPSMatchRun
 from app.models.sequence import StepDependency, WeldSequenceRevision, WeldSequenceStep
+from app.models.production_release import (
+    ProductionReleaseBatch,
+    ProductionSequenceChangeRequest,
+)
 from app.models.user import User
 from app.services.approval_service import ApprovalService
 from app.services.engineering_service import workspace_values
@@ -42,6 +46,15 @@ DEFAULT_STRATEGIES = {
     "skip_weld": False,
     "closed_space_first": True,
 }
+
+
+def change_request_allows_recalculation(release_id: str, request) -> bool:
+    """Only an approved request for the exact release unlocks recalculation."""
+    return bool(
+        request
+        and request.production_release_id == release_id
+        and request.status == "approved"
+    )
 
 
 def snapshot_hash(value: Any) -> str:
@@ -510,8 +523,31 @@ class WeldSequenceService:
         context: WorkspaceContext,
         parent_id: str | None = None,
         change_summary: str | None = None,
+        change_request_id: str | None = None,
     ) -> WeldSequenceRevision:
         revision = self._get(ProductRevision, revision_id, user, context, True)
+        approved_change = None
+        if parent_id:
+            released = (
+                self.db.query(ProductionReleaseBatch)
+                .filter(ProductionReleaseBatch.sequence_revision_id == parent_id)
+                .first()
+            )
+            if released:
+                approved_change = (
+                    self.db.query(ProductionSequenceChangeRequest)
+                    .filter(
+                        ProductionSequenceChangeRequest.id == change_request_id,
+                        ProductionSequenceChangeRequest.production_release_id
+                        == released.id,
+                        ProductionSequenceChangeRequest.status == "approved",
+                    )
+                    .first()
+                )
+                if not change_request_allows_recalculation(
+                    released.id, approved_change
+                ):
+                    raise HTTPException(409, "已发布焊序重算必须绑定已批准的变更申请")
         if revision.status != "approved":
             raise HTTPException(409, "产品图纸版本批准后才能生成正式候选焊序")
         product = (
@@ -580,6 +616,9 @@ class WeldSequenceService:
         )
         self.db.add(sequence)
         self.db.flush()
+        if approved_change is not None:
+            approved_change.proposed_sequence_revision_id = sequence.id
+            approved_change.status = "applied"
         step_by_code = {}
         for item in steps:
             step = WeldSequenceStep(

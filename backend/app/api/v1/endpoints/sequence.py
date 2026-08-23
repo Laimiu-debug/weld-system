@@ -152,6 +152,7 @@ def recalculate(
             context,
             parent_id=parent.id,
             change_summary=data.change_summary,
+            change_request_id=data.change_request_id,
         )
     )
 

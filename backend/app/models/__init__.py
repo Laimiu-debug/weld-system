@@ -44,6 +44,13 @@ from app.models.approval import (
 )
 from app.models.equipment import Equipment, EquipmentMaintenance, EquipmentUsage
 from app.models.production import ProductionTask, ProductionRecord, ProductionPlan
+from app.models.production_release import (
+    ProductionExecutionTrace,
+    ProductionQualityNode,
+    ProductionReleaseBatch,
+    ProductionResourceAuthorization,
+    ProductionSequenceChangeRequest,
+)
 from app.models.quality import QualityInspection, QualityStandard
 from app.models.business_extensions import EmployeePerformance, ReportTemplate
 from app.models.feedback import UserFeedback

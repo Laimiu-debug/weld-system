@@ -1,0 +1,590 @@
+"""P7 approved-sequence release and immutable production execution layer."""
+from __future__ import annotations
+
+import hashlib
+import json
+from datetime import date, datetime
+from typing import Any
+from uuid import uuid4
+
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
+
+from app.core.data_access import (
+    DataAccessAction,
+    DataAccessMiddleware,
+    WorkspaceContext,
+)
+from app.models.approval import ApprovalStatus
+from app.models.consumable import ConsumableActualUsageEvent, ConsumableIssueList
+from app.models.engineering import ProductRevision, WeldJoint
+from app.models.equipment import Equipment
+from app.models.production import ProductionTask
+from app.models.production_release import (
+    ProductionExecutionTrace,
+    ProductionQualityNode,
+    ProductionReleaseBatch,
+    ProductionResourceAuthorization,
+    ProductionSequenceChangeRequest,
+)
+from app.models.quality import QualityInspection
+from app.models.sequence import WeldSequenceRevision, WeldSequenceStep
+from app.models.user import User
+from app.models.welder import Welder, WelderCertification
+from app.models.wps import WPS
+from app.services.approval_service import ApprovalService
+
+
+def canonical_hash(value: Any) -> str:
+    raw = json.dumps(
+        value, sort_keys=True, ensure_ascii=False, default=str, separators=(",", ":")
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def sequence_step_to_task_kind(step_type: str) -> str:
+    """Stable P7 conversion contract used by API and tests."""
+    return {
+        "assembly": "assembly",
+        "weld": "welding",
+        "nde": "quality_nde",
+        "pwht": "process_pwht",
+        "inspection": "quality_inspection",
+        "closure": "quality_closure",
+    }[step_type]
+
+
+def _tokens(value: str | None) -> set[str]:
+    if not value:
+        return set()
+    try:
+        parsed = json.loads(value)
+        values = parsed if isinstance(parsed, list) else [parsed]
+    except (TypeError, ValueError):
+        values = value.replace(";", ",").split(",")
+    return {str(item).strip().upper() for item in values if str(item).strip()}
+
+
+def evaluate_welder_qualification(
+    welder: Welder,
+    certifications: list[WelderCertification],
+    wps: WPS,
+    position: str | None,
+    today: date | None = None,
+) -> dict:
+    """Conservative qualification gate: unknown scope is not silently accepted."""
+    today = today or date.today()
+    reasons: list[str] = []
+    if not welder.is_active or str(welder.status) != "active":
+        reasons.append("焊工状态不可用")
+    if welder.primary_expiry_date and welder.primary_expiry_date < today:
+        reasons.append("焊工主证书已过期")
+    valid = [
+        item
+        for item in certifications
+        if item.is_active
+        and str(item.status) in {"valid", "expiring_soon"}
+        and (item.expiry_date is None or item.expiry_date >= today)
+    ]
+    process = str(wps.welding_process or "").strip().upper()
+    requested_position = str(position or "").strip().upper()
+    process_ok = (
+        not process
+        or process in _tokens(welder.qualified_processes)
+        or any(process in _tokens(item.qualified_process) for item in valid)
+    )
+    position_ok = (
+        not requested_position
+        or requested_position in _tokens(welder.qualified_positions)
+        or any(requested_position in _tokens(item.qualified_position) for item in valid)
+    )
+    if not process_ok:
+        reasons.append(f"缺少 {process or '指定'} 焊接方法资格")
+    if not position_ok:
+        reasons.append(f"缺少 {requested_position} 焊位资格")
+    if not valid and not (
+        _tokens(welder.qualified_processes) or _tokens(welder.qualified_positions)
+    ):
+        reasons.append("没有可验证的有效资格范围")
+    return {
+        "qualified": not reasons,
+        "reasons": reasons,
+        "wps_id": wps.id,
+        "wps_number": wps.wps_number,
+        "welding_process": process or None,
+        "welding_position": requested_position or None,
+        "welder_id": welder.id,
+        "certification_ids": [item.id for item in valid],
+        "evaluated_on": today.isoformat(),
+    }
+
+
+class ProductionReleaseService:
+    def __init__(self, db: Session):
+        self.db = db
+        self.access = DataAccessMiddleware(db)
+
+    @staticmethod
+    def _scope(source: Any, user_id: int) -> dict:
+        return {
+            "user_id": source.user_id,
+            "workspace_type": source.workspace_type,
+            "company_id": source.company_id,
+            "factory_id": source.factory_id,
+            "access_level": source.access_level,
+            "created_by": user_id,
+        }
+
+    def _get(self, model, item_id, user: User, context: WorkspaceContext, edit=False):
+        item = self.db.query(model).filter(model.id == item_id).first()
+        if item is None:
+            raise HTTPException(404, "生产发布数据不存在")
+        self.access.check_access(
+            user,
+            item,
+            DataAccessAction.EDIT if edit else DataAccessAction.VIEW,
+            context,
+        )
+        return item
+
+    @staticmethod
+    def _step_snapshot(step: WeldSequenceStep) -> dict:
+        return {
+            "id": step.id,
+            "step_code": step.step_code,
+            "step_type": step.step_type,
+            "title": step.title,
+            "order_index": step.order_index,
+            "phase": step.phase,
+            "weld_joint_id": step.weld_joint_id,
+            "match_freeze_id": step.match_freeze_id,
+            "process_parameters": step.process_parameters,
+            "inspection_node": step.inspection_node,
+            "source_snapshot": step.source_snapshot,
+        }
+
+    def release(
+        self,
+        sequence_id: str,
+        issue_list_id: str | None,
+        user: User,
+        context: WorkspaceContext,
+    ):
+        sequence = self._get(WeldSequenceRevision, sequence_id, user, context, True)
+        if (
+            sequence.status != "approved"
+            or not sequence.frozen_hash
+            or not sequence.frozen_snapshot
+        ):
+            raise HTTPException(409, "只有已批准且已冻结的焊序可以下发生产")
+        product = self._get(
+            ProductRevision, sequence.product_revision_id, user, context
+        )
+        if product.data_version != sequence.source_data_version:
+            raise HTTPException(409, "产品数据已变化，当前批准焊序不能下发")
+        issue_list = None
+        if issue_list_id:
+            issue_list = self._get(ConsumableIssueList, issue_list_id, user, context)
+            if (
+                issue_list.sequence_revision_id != sequence.id
+                or issue_list.status not in {"approved", "issued", "closed"}
+            ):
+                raise HTTPException(409, "焊材领用单未批准或不属于当前焊序")
+        idem = canonical_hash(
+            {"sequence_id": sequence.id, "frozen_hash": sequence.frozen_hash}
+        )
+        existing = (
+            self.db.query(ProductionReleaseBatch)
+            .filter(ProductionReleaseBatch.idempotency_key == idem)
+            .first()
+        )
+        if existing:
+            return existing, False
+        scope = self._scope(sequence, user.id)
+        batch = ProductionReleaseBatch(
+            id=str(uuid4()),
+            product_revision_id=product.id,
+            sequence_revision_id=sequence.id,
+            consumable_issue_list_id=issue_list.id if issue_list else None,
+            idempotency_key=idem,
+            sequence_frozen_hash=sequence.frozen_hash,
+            source_snapshot={
+                "sequence": sequence.frozen_snapshot,
+                "issue_list_hash": getattr(issue_list, "snapshot_hash", None),
+            },
+            released_by=user.id,
+            **scope,
+        )
+        self.db.add(batch)
+        steps = (
+            self.db.query(WeldSequenceStep)
+            .filter(WeldSequenceStep.sequence_revision_id == sequence.id)
+            .order_by(WeldSequenceStep.order_index)
+            .all()
+        )
+        for step in steps:
+            snapshot = self._step_snapshot(step)
+            wps_data = (step.process_parameters or {}).get("wps") or {}
+            pqr_data = (step.process_parameters or {}).get("pqr") or {}
+            task = ProductionTask(
+                user_id=sequence.user_id,
+                workspace_type=sequence.workspace_type,
+                company_id=sequence.company_id,
+                factory_id=sequence.factory_id,
+                access_level=sequence.access_level,
+                task_number=f"SEQ-{sequence.id[:8]}-{step.order_index:04d}",
+                task_name=step.title,
+                task_type=sequence_step_to_task_kind(step.step_type),
+                wps_id=wps_data.get("id"),
+                pqr_id=pqr_data.get("id"),
+                status="pending",
+                priority="normal",
+                progress_percentage=0,
+                is_active=True,
+                quality_inspection_required=step.step_type
+                in {"nde", "pwht", "inspection", "closure"},
+                technical_requirements=json.dumps(
+                    step.process_parameters or {}, ensure_ascii=False
+                ),
+                quality_requirements=json.dumps(
+                    step.inspection_node or {}, ensure_ascii=False
+                ),
+                work_description=step.explanation,
+                created_by=user.id,
+                source_product_revision_id=product.id,
+                source_sequence_revision_id=sequence.id,
+                source_sequence_step_id=step.id,
+                source_weld_joint_id=step.weld_joint_id,
+                source_match_freeze_id=step.match_freeze_id,
+                production_release_id=batch.id,
+                consumable_issue_list_id=issue_list.id if issue_list else None,
+                source_sequence_frozen_hash=sequence.frozen_hash,
+                source_step_snapshot=snapshot,
+            )
+            self.db.add(task)
+            self.db.flush()
+            if step.step_type in {"nde", "pwht", "inspection", "closure"}:
+                joint = (
+                    self.db.query(WeldJoint)
+                    .filter(WeldJoint.id == step.weld_joint_id)
+                    .first()
+                    if step.weld_joint_id
+                    else None
+                )
+                inspection = QualityInspection(
+                    owner_id=user.id,
+                    company_id=sequence.company_id,
+                    factory_id=sequence.factory_id,
+                    inspection_number=f"QI-{sequence.id[:8]}-{step.order_index:04d}",
+                    inspection_type=step.step_type,
+                    inspection_result="pending",
+                    production_task_id=task.id,
+                    weld_joint_number=getattr(joint, "weld_number", None),
+                    status="pending",
+                    notes=json.dumps(step.inspection_node or {}, ensure_ascii=False),
+                )
+                self.db.add(inspection)
+                self.db.flush()
+                self.db.add(
+                    ProductionQualityNode(
+                        id=str(uuid4()),
+                        production_release_id=batch.id,
+                        production_task_id=task.id,
+                        sequence_step_id=step.id,
+                        quality_inspection_id=inspection.id,
+                        node_type=step.step_type,
+                        frozen_snapshot=snapshot,
+                        **scope,
+                    )
+                )
+        self.db.commit()
+        self.db.refresh(batch)
+        return batch, True
+
+    def detail(self, release_id: str, user: User, context: WorkspaceContext) -> dict:
+        batch = self._get(ProductionReleaseBatch, release_id, user, context)
+        tasks = (
+            self.db.query(ProductionTask)
+            .filter(ProductionTask.production_release_id == batch.id)
+            .order_by(ProductionTask.id)
+            .all()
+        )
+        return {
+            "release": self._row(batch),
+            "tasks": [self._row(item) for item in tasks],
+        }
+
+    @staticmethod
+    def _row(item) -> dict:
+        return {
+            column.name: getattr(item, column.name) for column in item.__table__.columns
+        }
+
+    def assign(
+        self,
+        task_id: int,
+        welder_id: int,
+        equipment_id: int | None,
+        override_reason: str | None,
+        user: User,
+        context: WorkspaceContext,
+    ):
+        task = (
+            self.db.query(ProductionTask).filter(ProductionTask.id == task_id).first()
+        )
+        if not task or not task.production_release_id:
+            raise HTTPException(404, "P7 生产任务不存在")
+        self.access.check_access(user, task, DataAccessAction.EDIT, context)
+        if task.task_type != "welding" or not task.wps_id:
+            raise HTTPException(409, "只有绑定批准 WPS 的焊接任务需要焊工资格分配")
+        wps = self.db.query(WPS).filter(WPS.id == task.wps_id).first()
+        welder = self.db.query(Welder).filter(Welder.id == welder_id).first()
+        if not wps or wps.status != "approved" or not welder:
+            raise HTTPException(409, "WPS 未批准或焊工不存在")
+        equipment = (
+            self.db.query(Equipment).filter(Equipment.id == equipment_id).first()
+            if equipment_id
+            else None
+        )
+        if equipment_id and (
+            not equipment
+            or not equipment.is_active
+            or str(equipment.status) not in {"operational", "idle"}
+        ):
+            raise HTTPException(409, "设备不可用")
+        if (
+            equipment
+            and equipment.calibration_due_date
+            and equipment.calibration_due_date < date.today()
+        ):
+            raise HTTPException(409, "设备校准已过期")
+        certs = (
+            self.db.query(WelderCertification)
+            .filter(WelderCertification.welder_id == welder.id)
+            .all()
+        )
+        position = (
+            ((task.source_step_snapshot or {}).get("process_parameters") or {})
+            .get("requirement", {})
+            .get("weld_position")
+        )
+        result = evaluate_welder_qualification(welder, certs, wps, position)
+        status = "qualified" if result["qualified"] else "pending_override"
+        authorization = ProductionResourceAuthorization(
+            id=str(uuid4()),
+            production_task_id=task.id,
+            welder_id=welder.id,
+            equipment_id=equipment_id,
+            wps_id=wps.id,
+            qualification_status=status,
+            qualification_snapshot=result,
+            override_reason=override_reason,
+            **self._scope(
+                self._get(
+                    ProductionReleaseBatch, task.production_release_id, user, context
+                ),
+                user.id,
+            ),
+        )
+        self.db.add(authorization)
+        if result["qualified"]:
+            task.assigned_welder_id = welder.id
+            task.assigned_equipment_id = equipment_id
+        elif not override_reason:
+            self.db.rollback()
+            raise HTTPException(
+                409, {"message": "焊工资格不满足，任务未分配", "qualification": result}
+            )
+        self.db.commit()
+        self.db.refresh(authorization)
+        return authorization
+
+    def authorize_override(
+        self,
+        authorization_id: str,
+        approve: bool,
+        user: User,
+        context: WorkspaceContext,
+    ):
+        item = self._get(
+            ProductionResourceAuthorization, authorization_id, user, context, True
+        )
+        if item.qualification_status != "pending_override":
+            raise HTTPException(409, "当前资格记录无需授权")
+        item.qualification_status = "authorized" if approve else "rejected"
+        item.authorized_by = user.id
+        item.authorized_at = datetime.utcnow()
+        if approve:
+            task = (
+                self.db.query(ProductionTask)
+                .filter(ProductionTask.id == item.production_task_id)
+                .one()
+            )
+            task.assigned_welder_id, task.assigned_equipment_id = (
+                item.welder_id,
+                item.equipment_id,
+            )
+        self.db.commit()
+        self.db.refresh(item)
+        return item
+
+    def record_execution(
+        self, task_id: int, payload: dict, user: User, context: WorkspaceContext
+    ):
+        task = (
+            self.db.query(ProductionTask).filter(ProductionTask.id == task_id).first()
+        )
+        if not task or not task.production_release_id:
+            raise HTTPException(404, "P7 生产任务不存在")
+        self.access.check_access(user, task, DataAccessAction.EDIT, context)
+        key = payload["idempotency_key"]
+        existing = (
+            self.db.query(ProductionExecutionTrace)
+            .filter(ProductionExecutionTrace.idempotency_key == key)
+            .first()
+        )
+        if existing:
+            return existing, False
+        event_ids = payload.get("consumable_usage_event_ids", [])
+        events = (
+            self.db.query(ConsumableActualUsageEvent)
+            .filter(ConsumableActualUsageEvent.id.in_(event_ids))
+            .all()
+            if event_ids
+            else []
+        )
+        if len(events) != len(set(event_ids)) or any(
+            event.issue_list_id != task.consumable_issue_list_id for event in events
+        ):
+            raise HTTPException(409, "实际焊材记录不属于本任务关联的领用单")
+        trace = ProductionExecutionTrace(
+            id=str(uuid4()),
+            production_release_id=task.production_release_id,
+            production_task_id=task.id,
+            sequence_revision_id=task.source_sequence_revision_id,
+            sequence_step_id=task.source_sequence_step_id,
+            weld_joint_id=task.source_weld_joint_id,
+            welder_id=task.assigned_welder_id,
+            equipment_id=task.assigned_equipment_id,
+            wps_id=task.wps_id,
+            status=payload.get("status", "recorded"),
+            design_snapshot_hash=task.source_sequence_frozen_hash,
+            actual_parameters=payload.get("actual_parameters", {}),
+            consumable_usage_event_ids=event_ids,
+            repair_snapshot=payload.get("repair_snapshot", {}),
+            quality_snapshot=payload.get("quality_snapshot", {}),
+            idempotency_key=key,
+            recorded_by=user.id,
+            **self._scope(
+                self._get(
+                    ProductionReleaseBatch, task.production_release_id, user, context
+                ),
+                user.id,
+            ),
+        )
+        self.db.add(trace)
+        if trace.status == "completed":
+            task.status, task.progress_percentage = "completed", 100
+        self.db.commit()
+        self.db.refresh(trace)
+        return trace, True
+
+    def request_change(
+        self,
+        release_id: str,
+        reason: str,
+        impact: dict,
+        workflow_id: int | None,
+        user: User,
+        context: WorkspaceContext,
+    ):
+        batch = self._get(ProductionReleaseBatch, release_id, user, context, True)
+        snapshot = {
+            "release_id": batch.id,
+            "sequence_revision_id": batch.sequence_revision_id,
+            "sequence_frozen_hash": batch.sequence_frozen_hash,
+            "reason": reason,
+            "impact": impact,
+        }
+        item = ProductionSequenceChangeRequest(
+            id=str(uuid4()),
+            production_release_id=batch.id,
+            source_sequence_revision_id=batch.sequence_revision_id,
+            reason=reason,
+            impact_snapshot=impact,
+            requested_by=user.id,
+            **self._scope(batch, user.id),
+        )
+        self.db.add(item)
+        self.db.flush()
+        approval = ApprovalService(self.db)
+        if approval.should_require_approval("production", context):
+            instance = approval.submit_for_approval(
+                document_type="production",
+                document_id=item.id,
+                document_number=f"PCR-{item.id[:8]}",
+                document_title="已发布焊序变更申请",
+                current_user=user,
+                workspace_context=context,
+                workflow_id=workflow_id,
+                notes=reason,
+                version_snapshot=snapshot,
+                version_key=f"{item.id}:v1",
+            )
+            item.approval_instance_id = instance.id
+        else:
+            item.status, item.decided_by, item.decided_at = (
+                "approved",
+                user.id,
+                datetime.utcnow(),
+            )
+        self.db.commit()
+        self.db.refresh(item)
+        return item
+
+    def apply_change(
+        self,
+        request_id: str,
+        proposed_sequence_id: str,
+        user: User,
+        context: WorkspaceContext,
+    ):
+        item = self._get(
+            ProductionSequenceChangeRequest, request_id, user, context, True
+        )
+        if item.approval_instance_id:
+            from app.models.approval import ApprovalInstance
+
+            instance = (
+                self.db.query(ApprovalInstance)
+                .filter(ApprovalInstance.id == item.approval_instance_id)
+                .first()
+            )
+            status = (
+                instance.status.value
+                if instance and hasattr(instance.status, "value")
+                else str(getattr(instance, "status", ""))
+            )
+            if status == ApprovalStatus.APPROVED.value:
+                item.status, item.decided_by, item.decided_at = (
+                    "approved",
+                    instance.final_approver_id,
+                    instance.completed_at,
+                )
+        if item.status != "approved":
+            raise HTTPException(409, "焊序变更尚未批准")
+        proposed = self._get(WeldSequenceRevision, proposed_sequence_id, user, context)
+        if (
+            proposed.id == item.source_sequence_revision_id
+            or proposed.product_revision_id
+            != self.db.query(ProductionReleaseBatch)
+            .filter(ProductionReleaseBatch.id == item.production_release_id)
+            .one()
+            .product_revision_id
+        ):
+            raise HTTPException(422, "新焊序必须是同一产品的新版本")
+        item.proposed_sequence_revision_id, item.status = proposed.id, "applied"
+        # Old production tasks and their frozen provenance remain untouched.
+        self.db.commit()
+        self.db.refresh(item)
+        return item

@@ -5,7 +5,8 @@ Production models for the welding system backend.
 from datetime import datetime, date
 from typing import Optional
 
-from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, Date, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, Date, ForeignKey, Enum as SQLEnum, Index, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 import enum
 
@@ -72,6 +73,17 @@ class ProductionTask(Base):
     # ==================== 关联信息 ====================
     wps_id = Column(Integer, ForeignKey("wps.id"), comment="WPS ID")
     pqr_id = Column(Integer, ForeignKey("pqr.id"), comment="PQR ID")
+    # P7: immutable engineering-design provenance. Production updates must never
+    # write back to these source rows or replace this frozen snapshot.
+    source_product_revision_id = Column(String(36), ForeignKey("product_revisions.id", ondelete="RESTRICT"), nullable=True)
+    source_sequence_revision_id = Column(String(36), ForeignKey("weld_sequence_revisions.id", ondelete="RESTRICT"), nullable=True)
+    source_sequence_step_id = Column(String(36), ForeignKey("weld_sequence_steps.id", ondelete="RESTRICT"), nullable=True)
+    source_weld_joint_id = Column(String(36), ForeignKey("weld_joints.id", ondelete="RESTRICT"), nullable=True)
+    source_match_freeze_id = Column(String(36), ForeignKey("wps_match_freezes.id", ondelete="RESTRICT"), nullable=True)
+    production_release_id = Column(String(36), ForeignKey("production_release_batches.id", ondelete="RESTRICT"), nullable=True)
+    consumable_issue_list_id = Column(String(36), ForeignKey("consumable_issue_lists.id", ondelete="RESTRICT"), nullable=True)
+    source_sequence_frozen_hash = Column(String(64), nullable=True)
+    source_step_snapshot = Column(JSONB, nullable=True)
     customer_name = Column(String(255), comment="客户名称")
     customer_code = Column(String(100), comment="客户编号")
     
@@ -142,6 +154,15 @@ class ProductionTask(Base):
     updated_by = Column(Integer, ForeignKey("users.id"), nullable=True, comment="更新人ID")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "source_sequence_revision_id",
+            "source_sequence_step_id",
+            name="uq_production_task_sequence_step",
+        ),
+        Index("ix_production_task_release", "production_release_id", "source_sequence_step_id"),
+    )
     
     # ==================== 关系 ====================
     # owner = relationship("User", foreign_keys=[user_id], back_populates="production_tasks")
