@@ -1,0 +1,111 @@
+import api from './api'
+
+export type ImportEntityType = 'wps' | 'pqr' | 'ppqr' | 'welder'
+
+export interface ImportBatch {
+  id: string
+  name: string
+  source_type: 'upload' | 'manual' | 'migration'
+  target_entity_type: ImportEntityType
+  status: 'draft' | 'queued' | 'processing' | 'review' | 'completed' | 'failed' | 'cancelled'
+  progress: number
+  total_documents: number
+  processed_documents: number
+  workspace_type: 'personal' | 'enterprise'
+  company_id?: number
+  factory_id?: number
+  access_level: 'private' | 'factory' | 'company'
+  created_at: string
+  updated_at: string
+}
+
+export interface SourceDocument {
+  id: string
+  batch_id: string
+  original_filename: string
+  sha256: string
+  mime_type?: string
+  size_bytes: number
+  document_type: ImportEntityType | 'unknown'
+  document_version?: string
+  page_count?: number
+  status: string
+  metadata_json: Record<string, unknown>
+  created_at: string
+}
+
+export interface ImportBatchDetail extends ImportBatch {
+  documents: SourceDocument[]
+}
+
+export interface ManualDraftField {
+  field_key: string
+  value: unknown
+  module_id?: string
+  instance_id?: string
+  field_id?: string
+  canonical_field_key?: string
+  evidence?: Array<{
+    page_number: number
+    text: string
+    bbox?: [number, number, number, number]
+  }>
+}
+
+class SmartImportService {
+  async createBatch(data: {
+    name: string
+    target_entity_type: ImportEntityType
+    source_type?: 'upload' | 'manual' | 'migration'
+    access_level?: 'private' | 'factory' | 'company'
+  }): Promise<ImportBatch> {
+    const response = await api.post('/smart-import/batches', data)
+    return response.data
+  }
+
+  async listBatches(): Promise<ImportBatch[]> {
+    const response = await api.get('/smart-import/batches')
+    return response.data
+  }
+
+  async getBatch(id: string): Promise<ImportBatchDetail> {
+    const response = await api.get(`/smart-import/batches/${id}`)
+    return response.data
+  }
+
+  async registerDocument(
+    batchId: string,
+    data: {
+      original_filename: string
+      sha256: string
+      document_type: ImportEntityType | 'unknown'
+      mime_type?: string
+      size_bytes?: number
+      document_version?: string
+      storage_key?: string
+      metadata?: Record<string, unknown>
+    }
+  ): Promise<SourceDocument> {
+    const response = await api.post(`/smart-import/batches/${batchId}/documents`, data)
+    return response.data
+  }
+
+  async createManualDraft(
+    documentId: string,
+    data: {
+      entity_type: ImportEntityType
+      schema_version: string
+      schema_snapshot?: Record<string, unknown>
+      draft_data?: Record<string, unknown>
+      fields?: ManualDraftField[]
+    }
+  ): Promise<{ id: string; status: string; version: number }> {
+    const response = await api.post(
+      `/smart-import/documents/${documentId}/manual-drafts`,
+      data
+    )
+    return response.data
+  }
+}
+
+export default new SmartImportService()

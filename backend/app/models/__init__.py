@@ -43,6 +43,17 @@ from app.models.production import ProductionTask, ProductionRecord, ProductionPl
 from app.models.quality import QualityInspection, QualityStandard
 from app.models.business_extensions import EmployeePerformance, ReportTemplate
 from app.models.feedback import UserFeedback
+from app.models.smart_import import (
+    DocumentPage,
+    EntityPublishRecord,
+    ExtractedEntity,
+    ExtractedField,
+    ExtractionJob,
+    FieldEvidence,
+    ImportBatch,
+    ImportReviewRecord,
+    SourceDocument,
+)
 
 __all__ = [
     "User",
@@ -94,4 +105,13 @@ __all__ = [
     "EmployeePerformance",
     "ReportTemplate",
     "UserFeedback",
+    "ImportBatch",
+    "SourceDocument",
+    "DocumentPage",
+    "ExtractionJob",
+    "ExtractedEntity",
+    "ExtractedField",
+    "FieldEvidence",
+    "ImportReviewRecord",
+    "EntityPublishRecord",
 ]

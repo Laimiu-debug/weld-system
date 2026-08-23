@@ -33,4 +33,18 @@
 
 迁移 `add_module_ai_metadata` 只为 `custom_modules` 增加 `schema_version`，旧字段在读取或更新时自动补齐默认 AI 元数据。字段定义发生更新后模块版本递增；未来的导入任务必须保存该版本，确保结果可重现。
 
-当前阶段只完成字段基础、动态 Schema 和编辑入口，尚未实现文件上传、模型调用、额度、审核发布与 PQR 闭环。
+字段基础、动态 Schema、编辑入口和暂存数据层已经完成；尚未实现文件二进制上传、模型调用、额度、审核发布与 PQR 闭环。
+
+## 中间数据层
+
+智能导入使用独立的暂存数据，不直接写入正式 WPS/PQR 表：
+
+- `import_batches` 管理批次、目标类型、状态和进度。
+- `source_documents` 与 `document_pages` 保存文件元数据、哈希、页码和 OCR 状态。
+- `extraction_jobs` 同时记录平台模型、BYOK、离线模型和手工模式，冻结 Schema 快照。
+- `extracted_entities`、`extracted_fields` 与 `field_evidence` 保存版本化草稿、字段值及原文证据。
+- `import_review_records` 与 `entity_publish_records` 分别记录人工修改和最终正式实体映射。
+
+所有中间表都带个人/企业/工厂工作区字段。手工录入也会创建 `mode=manual` 的已完成任务，因此手工与 AI 不会形成两套业务数据。重复提交手工草稿会关闭旧的当前版本并生成新版本，不覆盖历史结果。
+
+当前开放的基础接口位于 `/api/v1/smart-import`，支持创建/查询批次、登记带 SHA-256 的文档，以及创建手工草稿。文件二进制存储、OCR/模型调用、审核和正式发布仍属于后续切片。

@@ -41,6 +41,7 @@ from app.api.v1.endpoints import (
     approvals,
     business_mvp,
     feedback,
+    smart_import,
 )
 
 api_router = APIRouter()
@@ -78,6 +79,9 @@ api_router.include_router(notifications.router, prefix="/notifications", tags=["
 # 用户意见反馈
 api_router.include_router(feedback.router, prefix="/feedback", tags=["用户反馈"])
 api_router.include_router(feedback.admin_router, prefix="/admin/feedback", tags=["用户反馈管理"])
+
+# 智能导入中间层（草稿与证据，不直接发布正式业务数据）
+api_router.include_router(smart_import.router, prefix="/smart-import", tags=["智能导入"])
 
 # 角色权限管理路由
 api_router.include_router(roles.router, prefix="/roles", tags=["角色权限管理"])

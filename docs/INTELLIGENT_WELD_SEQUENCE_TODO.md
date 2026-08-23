@@ -52,17 +52,17 @@
 
 ### 3. 智能导入中间数据层
 
-- [ ] 新建 `import_batches`：批次、来源、所有者、状态和整体进度。
-- [ ] 新建 `source_documents`：原文件、哈希、类型、版本、租户和存储位置。
-- [ ] 新建 `document_pages`：页码、文本/OCR状态和页面元数据。
-- [ ] 新建 `extraction_jobs`：任务、模型、Schema 版本、状态、重试和错误。
-- [ ] 新建 `extracted_entities`：WPS/PQR/焊工等识别草稿。
-- [ ] 新建 `extracted_fields`：识别值、规范化值、置信度和审核状态。
-- [ ] 新建 `field_evidence`：页码、区域坐标、原文片段及证据类型。
-- [ ] 新建 `import_review_records`：原值、修改值、修改人和修改原因。
-- [ ] 新建 `entity_publish_records`：草稿到正式业务实体的发布映射。
-- [ ] 所有新表接入现有 `workspace_type/company_id/factory_id` 数据隔离。
-- [ ] 为批次、文档哈希、状态、租户和目标实体建立必要索引。
+- [x] 新建 `import_batches`：批次、来源、所有者、状态和整体进度。
+- [x] 新建 `source_documents`：原文件、哈希、类型、版本、租户和存储位置。
+- [x] 新建 `document_pages`：页码、文本/OCR状态和页面元数据。
+- [x] 新建 `extraction_jobs`：任务、模型、Schema 版本、状态、重试和错误。
+- [x] 新建 `extracted_entities`：WPS/PQR/焊工等识别草稿。
+- [x] 新建 `extracted_fields`：识别值、规范化值、置信度和审核状态。
+- [x] 新建 `field_evidence`：页码、区域坐标、原文片段及证据类型。
+- [x] 新建 `import_review_records`：原值、修改值、修改人和修改原因。
+- [x] 新建 `entity_publish_records`：草稿到正式业务实体的发布映射。
+- [x] 所有新表接入现有 `workspace_type/company_id/factory_id` 数据隔离。
+- [x] 为批次、文档哈希、状态、租户和目标实体建立必要索引。
 
 ### 4. 文件与对象存储
 
