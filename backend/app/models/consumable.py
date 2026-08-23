@@ -144,6 +144,9 @@ class WeldConsumableOperation(WorkspaceMixin, Base):
     flux_material_id = Column(
         Integer, ForeignKey("welding_materials.id", ondelete="RESTRICT")
     )
+    gas_material_id = Column(
+        Integer, ForeignKey("welding_materials.id", ondelete="RESTRICT")
+    )
     area_source = Column(String(30), nullable=False)
     area_allocation_ratio = Column(Float, nullable=False, default=1)
     area_mm2 = Column(Float, nullable=False)
@@ -409,6 +412,9 @@ class ConsumableQuotaOperation(WorkspaceMixin, Base):
     flux_material_id = Column(
         Integer, ForeignKey("welding_materials.id", ondelete="RESTRICT")
     )
+    gas_material_id = Column(
+        Integer, ForeignKey("welding_materials.id", ondelete="RESTRICT")
+    )
     theoretical_deposit_kg = Column(Float, nullable=False)
     process_primary_kg = Column(Float, nullable=False)
     enterprise_primary_kg = Column(Float, nullable=False)
@@ -511,5 +517,155 @@ class ConsumableLegacyMigrationAudit(WorkspaceMixin, Base):
     __table_args__ = (
         UniqueConstraint(
             "source_type", "source_id", name="uq_consumable_legacy_migration_source"
+        ),
+    )
+
+
+class ConsumableIssueList(WorkspaceMixin, Base):
+    """Frozen product-level suggestion/formal issue list; generation never deducts stock."""
+
+    __tablename__ = "consumable_issue_lists"
+    id = Column(String(36), primary_key=True, default=_uuid)
+    quota_run_id = Column(
+        String(36),
+        ForeignKey("consumable_quota_runs.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    product_revision_id = Column(
+        String(36),
+        ForeignKey("product_revisions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    sequence_revision_id = Column(
+        String(36),
+        ForeignKey("weld_sequence_revisions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    document_number = Column(String(100), nullable=False)
+    version_number = Column(Integer, nullable=False, default=1)
+    status = Column(String(20), nullable=False, default="suggested")
+    generated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    approved_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    approved_at = Column(DateTime)
+    issued_at = Column(DateTime)
+    source_snapshot = Column(JSONB, nullable=False, default=dict)
+    summary_snapshot = Column(JSONB, nullable=False, default=dict)
+    snapshot_hash = Column(String(64), nullable=False)
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('suggested','approved','issued','closed','superseded')",
+            name="ck_consumable_issue_list_status",
+        ),
+        UniqueConstraint(
+            "quota_run_id", "version_number", name="uq_consumable_issue_list_version"
+        ),
+        UniqueConstraint(
+            "workspace_type",
+            "company_id",
+            "user_id",
+            "document_number",
+            name="uq_consumable_issue_list_document",
+        ),
+        Index(
+            "ix_consumable_issue_list_product",
+            "product_revision_id",
+            "sequence_revision_id",
+            "status",
+        ),
+    )
+
+
+class ConsumableIssueItem(WorkspaceMixin, Base):
+    __tablename__ = "consumable_issue_items"
+    id = Column(String(36), primary_key=True, default=_uuid)
+    issue_list_id = Column(
+        String(36),
+        ForeignKey("consumable_issue_lists.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    line_number = Column(Integer, nullable=False)
+    category = Column(String(30), nullable=False)
+    material_id = Column(
+        Integer, ForeignKey("welding_materials.id", ondelete="RESTRICT"), nullable=False
+    )
+    material_code = Column(String(100), nullable=False)
+    material_name = Column(String(255), nullable=False)
+    specification = Column(String(255))
+    batch_requirement = Column(String(255), nullable=False)
+    unit = Column(String(20), nullable=False)
+    theoretical_quantity = Column(Float, nullable=False)
+    quota_quantity = Column(Float, nullable=False)
+    suggested_quantity = Column(Float, nullable=False)
+    available_stock_snapshot = Column(Float, nullable=False)
+    shortage_quantity = Column(Float, nullable=False)
+    actual_issued_quantity = Column(Float, nullable=False, default=0)
+    actual_returned_quantity = Column(Float, nullable=False, default=0)
+    actual_consumed_quantity = Column(Float, nullable=False, default=0)
+    trace_snapshot = Column(JSONB, nullable=False, default=dict)
+    __table_args__ = (
+        CheckConstraint(
+            "category IN ('solid_consumable','flux','shielding_gas')",
+            name="ck_consumable_issue_item_category",
+        ),
+        UniqueConstraint(
+            "issue_list_id", "line_number", name="uq_consumable_issue_item_line"
+        ),
+        Index(
+            "ix_consumable_issue_item_material",
+            "issue_list_id",
+            "material_id",
+            "category",
+        ),
+    )
+
+
+class ConsumableActualUsageEvent(WorkspaceMixin, Base):
+    """Actual issue/return/consume event; consume is informational after issue."""
+
+    __tablename__ = "consumable_actual_usage_events"
+    id = Column(String(36), primary_key=True, default=_uuid)
+    issue_list_id = Column(
+        String(36),
+        ForeignKey("consumable_issue_lists.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    issue_item_id = Column(
+        String(36),
+        ForeignKey("consumable_issue_items.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    quota_operation_id = Column(
+        String(36), ForeignKey("consumable_quota_operations.id", ondelete="RESTRICT")
+    )
+    material_id = Column(
+        Integer, ForeignKey("welding_materials.id", ondelete="RESTRICT"), nullable=False
+    )
+    material_transaction_id = Column(
+        Integer, ForeignKey("material_transactions.id", ondelete="RESTRICT")
+    )
+    event_type = Column(String(20), nullable=False)
+    quantity = Column(Float, nullable=False)
+    unit = Column(String(20), nullable=False)
+    batch_number = Column(String(100))
+    idempotency_key = Column(String(64), nullable=False)
+    source = Column(String(30), nullable=False, default="manual")
+    notes = Column(Text)
+    recorded_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    recorded_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    trace_snapshot = Column(JSONB, nullable=False, default=dict)
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('issue','return','consume')",
+            name="ck_consumable_actual_usage_event_type",
+        ),
+        CheckConstraint("quantity > 0", name="ck_consumable_actual_usage_quantity"),
+        UniqueConstraint(
+            "idempotency_key", name="uq_consumable_actual_usage_idempotency"
+        ),
+        Index(
+            "ix_consumable_actual_usage_trace",
+            "issue_list_id",
+            "issue_item_id",
+            "event_type",
         ),
     )

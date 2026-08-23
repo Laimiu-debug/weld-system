@@ -88,9 +88,12 @@ from app.models.matching import (
 )
 from app.models.sequence import StepDependency, WeldSequenceRevision, WeldSequenceStep
 from app.models.consumable import (
+    ConsumableActualUsageEvent,
     ConsumableGeometryInput,
     ConsumableGroovePreset,
     ConsumableLegacyMigrationAudit,
+    ConsumableIssueItem,
+    ConsumableIssueList,
     ConsumableMethodParameter,
     ConsumableQuotaOperation,
     ConsumableQuotaOverrideAudit,
@@ -186,8 +189,11 @@ __all__ = [
     "WeldSequenceStep",
     "StepDependency",
     "ConsumableGeometryInput",
+    "ConsumableActualUsageEvent",
     "ConsumableGroovePreset",
     "ConsumableLegacyMigrationAudit",
+    "ConsumableIssueItem",
+    "ConsumableIssueList",
     "ConsumableMethodParameter",
     "ConsumableQuotaOperation",
     "ConsumableQuotaOverrideAudit",
