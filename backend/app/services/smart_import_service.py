@@ -173,6 +173,7 @@ class SmartImportService:
             document_type=data.document_type,
             document_version=data.document_version,
             metadata_json=data.metadata,
+            status="stored" if data.storage_key else "registered",
             **self._workspace_values(user, context, batch.access_level),
         )
         batch.total_documents = (batch.total_documents or 0) + 1

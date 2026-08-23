@@ -90,6 +90,28 @@ class SmartImportService {
     return response.data
   }
 
+  async uploadDocument(
+    batchId: string,
+    file: File,
+    documentType?: ImportEntityType | 'unknown',
+    documentVersion?: string
+  ): Promise<SourceDocument> {
+    const form = new FormData()
+    form.append('file', file)
+    if (documentType) form.append('document_type', documentType)
+    if (documentVersion) form.append('document_version', documentVersion)
+    const response = await api.post(`/smart-import/batches/${batchId}/upload`, form)
+    return response.data
+  }
+
+  async downloadDocument(documentId: string): Promise<Blob> {
+    const response = await api.get(
+      `/smart-import/documents/${documentId}/content`,
+      { responseType: 'blob' }
+    )
+    return response.data
+  }
+
   async createManualDraft(
     documentId: string,
     data: {
