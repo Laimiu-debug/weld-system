@@ -124,6 +124,37 @@ class ExtractedEntityResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class FieldEvidenceResponse(BaseModel):
+    id: str
+    page_number: int
+    evidence_type: str
+    text_excerpt: str
+    bbox: list[float] | None
+
+    model_config = {"from_attributes": True}
+
+
+class ExtractedFieldResponse(BaseModel):
+    id: str
+    module_id: str | None
+    instance_id: str | None
+    field_id: str | None
+    field_key: str
+    canonical_field_key: str | None
+    raw_value: Any
+    normalized_value: Any
+    confidence: float | None
+    review_status: str
+    schema_version: str
+    evidence: list[FieldEvidenceResponse] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}
+
+
+class ExtractedEntityDetailResponse(ExtractedEntityResponse):
+    fields: list[ExtractedFieldResponse] = Field(default_factory=list)
+
+
 class AIExtractionRequest(BaseModel):
     mode: Literal["platform", "byok"] = "platform"
     provider: Literal["openai_responses", "openai_compatible_chat"] | None = None
@@ -157,7 +188,7 @@ class ExtractionJobResponse(BaseModel):
 
 class AIExtractionResponse(BaseModel):
     job: ExtractionJobResponse
-    entity: ExtractedEntityResponse
+    entity: ExtractedEntityDetailResponse
     pages: list[DocumentPageResponse]
 
 

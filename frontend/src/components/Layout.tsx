@@ -235,6 +235,18 @@ const Layout: React.FC<LayoutProps> = () => {
       label: '仪表盘',
     },
     {
+      key: 'smart-welding-group',
+      icon: <ThunderboltOutlined />,
+      label: '智能焊序',
+      children: [
+        {
+          key: '/smart-import',
+          label: '企业能力建库',
+        },
+      ],
+      hidden: isGuestMode,
+    },
+    {
       key: 'resource-library-group',
       icon: <ProductIcon kind="library" />,
       label: '资源库',
@@ -528,6 +540,7 @@ const Layout: React.FC<LayoutProps> = () => {
       '/feedback',
       '/profile',
       '/enterprise',
+      '/smart-import',
     ]
     for (const base of candidates) {
       if (pathname === base || pathname.startsWith(`${base}/`)) {

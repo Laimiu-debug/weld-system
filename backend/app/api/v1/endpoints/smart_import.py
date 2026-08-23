@@ -21,6 +21,7 @@ from app.core.data_access import WorkspaceContext, WorkspaceType
 from app.core.config import settings
 from app.core.rate_limit import enforce_rate_limit
 from app.models.company import CompanyEmployee
+from app.models.smart_import import ExtractedEntity, ExtractedField, FieldEvidence
 from app.models.user import User
 from app.schemas.smart_import import (
     AIExtractionRequest,
@@ -28,7 +29,10 @@ from app.schemas.smart_import import (
     BatchDetailResponse,
     DocumentPageResponse,
     DocumentParseResponse,
+    ExtractedEntityDetailResponse,
     ExtractedEntityResponse,
+    ExtractedFieldResponse,
+    FieldEvidenceResponse,
     ImportBatchCreate,
     ImportBatchResponse,
     ManualDraftCreate,
@@ -57,6 +61,43 @@ from app.services.wps_template_service import WPSTemplateService
 
 
 router = APIRouter()
+
+
+def build_entity_detail(
+    db: Session, entity: ExtractedEntity
+) -> ExtractedEntityDetailResponse:
+    fields = (
+        db.query(ExtractedField)
+        .filter(ExtractedField.entity_id == entity.id)
+        .order_by(ExtractedField.created_at, ExtractedField.id)
+        .all()
+    )
+    evidence_by_field: dict[str, list[FieldEvidenceResponse]] = {}
+    if fields:
+        evidence_rows = (
+            db.query(FieldEvidence)
+            .filter(
+                FieldEvidence.extracted_field_id.in_([field.id for field in fields])
+            )
+            .order_by(FieldEvidence.page_number, FieldEvidence.created_at)
+            .all()
+        )
+        for item in evidence_rows:
+            evidence_by_field.setdefault(item.extracted_field_id, []).append(
+                FieldEvidenceResponse.model_validate(item)
+            )
+    return ExtractedEntityDetailResponse(
+        **ExtractedEntityResponse.model_validate(entity).model_dump(),
+        fields=[
+            ExtractedFieldResponse(
+                **ExtractedFieldResponse.model_validate(field).model_dump(
+                    exclude={"evidence"}
+                ),
+                evidence=evidence_by_field.get(field.id, []),
+            )
+            for field in fields
+        ],
+    )
 
 
 def get_document_parser() -> DocumentParser:
@@ -371,7 +412,7 @@ def extract_document(
         )
         return AIExtractionResponse(
             job=job,
-            entity=entity,
+            entity=build_entity_detail(db, entity),
             pages=pages,
         )
     except AIExtractionRunError as exc:
@@ -382,6 +423,27 @@ def extract_document(
     finally:
         if provider is not None:
             provider.close()
+
+
+@router.get("/entities/{entity_id}", response_model=ExtractedEntityDetailResponse)
+def get_extracted_entity(
+    entity_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> ExtractedEntityDetailResponse:
+    context = resolve_workspace(db, current_user, workspace_id)
+    service = SmartImportService(db)
+    entity = (
+        service._scope_query(
+            db.query(ExtractedEntity), ExtractedEntity, current_user, context
+        )
+        .filter(ExtractedEntity.id == entity_id)
+        .first()
+    )
+    if entity is None:
+        raise HTTPException(status_code=404, detail="提取草稿不存在或无权访问")
+    return build_entity_detail(db, entity)
 
 
 @router.post(

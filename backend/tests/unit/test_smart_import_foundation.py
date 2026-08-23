@@ -1,3 +1,4 @@
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -10,6 +11,7 @@ from sqlalchemy.schema import CreateTable
 
 from app.core.data_access import WorkspaceContext, WorkspaceType
 from app.api.v1.endpoints.smart_import import (
+    build_entity_detail,
     router,
     validate_ai_extraction_request,
 )
@@ -146,8 +148,61 @@ def test_staging_router_exposes_draft_flow_but_no_publish_endpoint() -> None:
     assert "/documents/{document_id}/parse" in paths
     assert "/documents/{document_id}/pages" in paths
     assert "/documents/{document_id}/extract" in paths
+    assert "/entities/{entity_id}" in paths
     assert "/documents/{document_id}/manual-drafts" in paths
     assert all("publish" not in path for path in paths)
+
+
+def test_entity_detail_contains_field_confidence_and_evidence() -> None:
+    entity = ExtractedEntity(
+        id="entity-1",
+        document_id="document-1",
+        entity_type="pqr",
+        source_mode="ai",
+        status="draft",
+        draft_data={"pqr_number": "PQR-001"},
+        version=1,
+        user_id=7,
+        workspace_type="personal",
+        access_level="private",
+        created_at=datetime(2026, 1, 1),
+    )
+    field = ExtractedField(
+        id="field-1",
+        entity_id=entity.id,
+        field_key="pqr_number",
+        normalized_value="PQR-001",
+        confidence=0.96,
+        review_status="pending",
+        schema_version="1.0",
+        user_id=7,
+        workspace_type="personal",
+        access_level="private",
+    )
+    evidence = FieldEvidence(
+        id="evidence-1",
+        extracted_field_id=field.id,
+        page_number=1,
+        evidence_type="ocr",
+        text_excerpt="PQR No. PQR-001",
+        user_id=7,
+        workspace_type="personal",
+        access_level="private",
+    )
+    field_query = Mock()
+    field_query.filter.return_value.order_by.return_value.all.return_value = [field]
+    evidence_query = Mock()
+    evidence_query.filter.return_value.order_by.return_value.all.return_value = [
+        evidence
+    ]
+    db = Mock()
+    db.query.side_effect = [field_query, evidence_query]
+
+    detail = build_entity_detail(db, entity)
+
+    assert detail.fields[0].confidence == 0.96
+    assert detail.fields[0].evidence[0].page_number == 1
+    assert detail.fields[0].evidence[0].text_excerpt == "PQR No. PQR-001"
 
 
 def test_creator_can_view_own_enterprise_batch_without_new_role_definition() -> None:

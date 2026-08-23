@@ -107,13 +107,14 @@ class ApiService {
               console.error('请求的资源不存在:', error.config?.url)
               break
             case 422:
-              console.error('[API] 422验证错误 - 完整响应:', response)
-              console.error('[API] 422验证错误 - 响应数据:', response.data)
-              console.error('[API] 422验证错误 - 请求URL:', error.config?.url)
-              console.error('[API] 422验证错误 - 请求参数:', error.config?.params)
-              console.error('[API] 422验证错误 - 请求headers:', error.config?.headers)
-
               const validationErrors = response.data?.detail
+              // 不输出完整 Axios 响应或请求配置，避免 BYOK Key 等请求正文进入控制台。
+              console.error('[API] 422验证错误:', {
+                url: error.config?.url,
+                validationErrorCount: Array.isArray(validationErrors)
+                  ? validationErrors.length
+                  : 1,
+              })
               if (Array.isArray(validationErrors)) {
                 const firstError = validationErrors[0]
                 console.error('[API] 422验证错误 - 第一个错误:', firstError)

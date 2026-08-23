@@ -24,6 +24,7 @@ const RefundPolicy = React.lazy(() => import('@/pages/Legal/RefundPolicy'))
 const PricingTerms = React.lazy(() => import('@/pages/Legal/PricingTerms'))
 
 const Dashboard = React.lazy(() => import('@/pages/Dashboard'))
+const SmartImport = React.lazy(() => import('@/pages/SmartImport'))
 
 const WPSList = React.lazy(() => import('@/pages/WPS/WPSList'))
 const WPSCreate = React.lazy(() => import('@/pages/WPS/WPSCreate'))
@@ -254,6 +255,14 @@ const App: React.FC = () => {
           />
 
           {/* 资源库 */}
+          <Route
+            path="smart-import"
+            element={
+              <ProtectedRoute>
+                <SmartImport />
+              </ProtectedRoute>
+            }
+          />
           {/* 模块管理 */}
           <Route
             path="modules"

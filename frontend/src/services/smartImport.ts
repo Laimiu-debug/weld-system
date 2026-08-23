@@ -57,6 +57,42 @@ export interface AIExtractionJob {
   error_message?: string
 }
 
+export interface FieldEvidence {
+  id: string
+  page_number: number
+  evidence_type: 'text' | 'ocr' | 'table' | 'visual' | 'manual'
+  text_excerpt: string
+  bbox?: [number, number, number, number]
+}
+
+export interface ExtractedField {
+  id: string
+  module_id?: string
+  instance_id?: string
+  field_id?: string
+  field_key: string
+  canonical_field_key?: string
+  raw_value: unknown
+  normalized_value: unknown
+  confidence?: number
+  review_status: 'pending' | 'accepted' | 'corrected' | 'rejected' | 'not_required'
+  schema_version: string
+  evidence: FieldEvidence[]
+}
+
+export interface ExtractedEntity {
+  id: string
+  document_id: string
+  job_id?: string
+  entity_type: ImportEntityType
+  source_mode: 'ai' | 'manual' | 'mixed'
+  status: 'draft' | 'review' | 'approved' | 'published' | 'rejected'
+  draft_data: Record<string, unknown>
+  version: number
+  created_at: string
+  fields: ExtractedField[]
+}
+
 export interface ImportBatchDetail extends ImportBatch {
   documents: SourceDocument[]
 }
@@ -174,13 +210,18 @@ class SmartImportService {
     }
   ): Promise<{
     job: AIExtractionJob
-    entity: { id: string; status: string; version: number }
+    entity: ExtractedEntity
     pages: DocumentPage[]
   }> {
     const response = await api.post(
       `/smart-import/documents/${documentId}/extract`,
       data
     )
+    return response.data
+  }
+
+  async getExtractedEntity(entityId: string): Promise<ExtractedEntity> {
+    const response = await api.get(`/smart-import/entities/${entityId}`)
     return response.data
   }
 
