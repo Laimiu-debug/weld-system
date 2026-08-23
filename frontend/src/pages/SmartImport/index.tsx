@@ -17,6 +17,7 @@ import {
   Select,
   Space,
   Spin,
+  Switch,
   Table,
   Tag,
   Typography,
@@ -35,11 +36,15 @@ import {
   RobotOutlined,
   SendOutlined,
   WalletOutlined,
+  SettingOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import smartImportService, {
   AIExtractionJob,
   AIQuotaStatus,
+  AIProviderConfig,
+  EnterpriseAIPolicy,
   DocumentPage,
   ExtractedEntity,
   ExtractedField,
@@ -146,11 +151,33 @@ const SmartImportPage: React.FC = () => {
   const [reviewField, setReviewField] = useState<ExtractedField | null>(null)
   const [reviewing, setReviewing] = useState(false)
   const [publishing, setPublishing] = useState(false)
+  const [providerOpen, setProviderOpen] = useState(false)
+  const [providerConfigs, setProviderConfigs] = useState<AIProviderConfig[]>([])
+  const [enterprisePolicy, setEnterprisePolicy] = useState<EnterpriseAIPolicy | null>(null)
+  const [providerSaving, setProviderSaving] = useState(false)
+  const [rotateConfig, setRotateConfig] = useState<AIProviderConfig | null>(null)
   const [createForm] = Form.useForm()
   const [extractForm] = Form.useForm()
   const [reviewForm] = Form.useForm()
+  const [providerForm] = Form.useForm()
+  const [policyForm] = Form.useForm()
+  const [rotateForm] = Form.useForm()
   const extractionMode = Form.useWatch('mode', extractForm)
   const provider = Form.useWatch('provider', extractForm)
+  const loadProviderSettings = useCallback(async () => {
+    const configs = await smartImportService.listAIProviderConfigs()
+    setProviderConfigs(configs)
+    try {
+      const policy = await smartImportService.getEnterpriseAIPolicy()
+      setEnterprisePolicy(policy)
+      policyForm.setFieldsValue({
+        ...policy,
+        allowed_hosts_text: policy.allowed_hosts.join(', '),
+      })
+    } catch {
+      setEnterprisePolicy(null)
+    }
+  }, [policyForm])
 
   const loadBatches = useCallback(async (preferredId?: string) => {
     setLoading(true)
@@ -171,6 +198,7 @@ const SmartImportPage: React.FC = () => {
     void loadBatches()
     smartImportService.getAICapabilities().then(setCapabilities).catch(() => undefined)
     smartImportService.getAIQuota().then(setQuota).catch(() => undefined)
+    void loadProviderSettings()
   }, [])
 
   const selectBatch = async (id: string) => {
@@ -336,11 +364,12 @@ const SmartImportPage: React.FC = () => {
     setExtracting(true)
     try {
       const response = await smartImportService.extractDocument(activeDocument.id, {
-        mode: values.mode,
-        provider: values.provider,
+        mode: values.mode === 'platform' ? 'platform' : 'byok',
+        provider: values.mode === 'byok' ? values.provider : undefined,
         model: values.mode === 'byok' ? values.model?.trim() : undefined,
         base_url: values.mode === 'byok' ? values.base_url?.trim() || undefined : undefined,
         api_key: values.mode === 'byok' ? values.api_key : undefined,
+        provider_config_id: values.mode === 'saved' ? values.provider_config_id : undefined,
         template_id: sourceType === 'template' ? sourceId : undefined,
         module_id: sourceType === 'module' ? sourceId : undefined,
         run_ocr: values.run_ocr,
@@ -354,6 +383,52 @@ const SmartImportPage: React.FC = () => {
       message.error(errorMessage(error, 'AI 提取失败'))
     } finally {
       setExtracting(false)
+    }
+  }
+
+  const createProviderConfig = async () => {
+    const values = await providerForm.validateFields()
+    setProviderSaving(true)
+    try {
+      await smartImportService.createAIProviderConfig(values)
+      providerForm.resetFields()
+      await loadProviderSettings()
+      message.success('模型配置已加密保存')
+    } catch (error) {
+      message.error(errorMessage(error, '保存模型配置失败'))
+    } finally {
+      setProviderSaving(false)
+    }
+  }
+
+  const saveEnterprisePolicy = async () => {
+    const values = await policyForm.validateFields()
+    try {
+      const policy = await smartImportService.updateEnterpriseAIPolicy({
+        allow_ai: values.allow_ai,
+        allow_external_providers: values.allow_external_providers,
+        allow_personal_keys: values.allow_personal_keys,
+        require_enterprise_key: values.require_enterprise_key,
+        allowed_hosts: String(values.allowed_hosts_text || '').split(/[，,\s]+/).filter(Boolean),
+      })
+      setEnterprisePolicy(policy)
+      message.success('企业 AI 使用策略已更新')
+    } catch (error) {
+      message.error(errorMessage(error, '更新企业策略失败'))
+    }
+  }
+
+  const rotateProviderKey = async () => {
+    if (!rotateConfig) return
+    const values = await rotateForm.validateFields()
+    try {
+      await smartImportService.rotateAIProviderKey(rotateConfig.id, values.api_key)
+      rotateForm.resetFields()
+      setRotateConfig(null)
+      await loadProviderSettings()
+      message.success('API Key 已轮换，旧密钥立即失效')
+    } catch (error) {
+      message.error(errorMessage(error, '轮换 API Key 失败'))
     }
   }
 
@@ -514,14 +589,17 @@ const SmartImportPage: React.FC = () => {
           <Title level={2}>企业能力建库 · 智能导入</Title>
           <Paragraph type="secondary">上传已有 WPS、PQR 或焊工资质文件，AI 只生成带证据的待审核草稿，不会直接写入正式数据。</Paragraph>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建导入任务</Button>
+        <Space>
+          <Button icon={<SettingOutlined />} onClick={() => { setProviderOpen(true); void loadProviderSettings() }}>模型配置</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建导入任务</Button>
+        </Space>
       </div>
 
       <Alert
         showIcon
         type="info"
         message="AI 是可选输入方式"
-        description="可使用平台额度或临时填写自己的 API Key。自己的 Key 只用于本次请求，不会保存；也可以继续使用原有手工新建功能。"
+        description="可使用平台额度、临时 API Key 或后端加密保存的个人/企业配置；也可以继续使用原有手工新建功能。"
       />
 
       {quota && (
@@ -659,6 +737,7 @@ const SmartImportPage: React.FC = () => {
           <Form.Item name="mode" label="费用来源" rules={[{ required: true }]}>
             <Radio.Group>
               <Radio value="platform" disabled={!capabilities?.platform_available}>使用平台额度{!capabilities?.platform_available && '（管理员未配置）'}</Radio>
+              <Radio value="saved" disabled={!providerConfigs.length}>使用已保存配置{!providerConfigs.length && '（暂无）'}</Radio>
               <Radio value="byok">使用自己的 API Key</Radio>
             </Radio.Group>
           </Form.Item>
@@ -692,9 +771,95 @@ const SmartImportPage: React.FC = () => {
               )}
             </>
           )}
+          {extractionMode === 'saved' && (
+            <Form.Item name="provider_config_id" label="已保存模型配置" rules={[{ required: true, message: '请选择模型配置' }]}>
+              <Select
+                options={providerConfigs.map(item => ({
+                  value: item.id,
+                  label: `${item.scope_type === 'enterprise' ? '企业' : '个人'} · ${item.name} · ${item.model} · ${item.masked_api_key}`,
+                }))}
+              />
+            </Form.Item>
+          )}
           <Form.Item name="run_ocr" label="扫描页处理">
             <Radio.Group options={[{ value: true, label: '自动 OCR' }, { value: false, label: '只使用已有文本' }]} />
           </Form.Item>
+        </Form>
+      </Modal>
+
+      <Drawer
+        title={<Space><SettingOutlined />模型与 API Key 配置</Space>}
+        open={providerOpen}
+        onClose={() => setProviderOpen(false)}
+        width="min(720px, 96vw)"
+      >
+        <Alert
+          type="info"
+          showIcon
+          message="API Key 只以密文保存在后端"
+          description="页面仅显示末四位。保存后可连接测试、轮换或立即停用，浏览器不会再次取得完整 Key。"
+          className="smart-import__modal-alert"
+        />
+        <Card title="已保存配置" size="small">
+          <List
+            dataSource={providerConfigs}
+            locale={{ emptyText: '暂无已保存配置' }}
+            renderItem={item => (
+              <List.Item actions={[
+                <Button key="test" size="small" onClick={async () => {
+                  try {
+                    const tested = await smartImportService.testAIProviderConfig(item.id)
+                    await loadProviderSettings()
+                    tested.last_test_status === 'success' ? message.success('连接测试成功') : message.error(tested.last_error || '连接测试失败')
+                  } catch (error) { message.error(errorMessage(error, '连接测试失败')) }
+                }}>测试</Button>,
+                <Button key="rotate" size="small" onClick={() => setRotateConfig(item)}>轮换 Key</Button>,
+                <Button key="disable" size="small" danger icon={<DeleteOutlined />} onClick={() => Modal.confirm({
+                  title: `停用“${item.name}”？`,
+                  content: '停用后现有提取任务不能再使用该配置。',
+                  onOk: async () => { await smartImportService.disableAIProviderConfig(item.id); await loadProviderSettings() },
+                })}>停用</Button>,
+              ]}>
+                <List.Item.Meta
+                  title={<Space><Text strong>{item.name}</Text><Tag>{item.scope_type === 'enterprise' ? '企业' : '个人'}</Tag><Tag color={item.last_test_status === 'success' ? 'success' : item.last_test_status === 'failed' ? 'error' : 'default'}>{item.last_test_status === 'success' ? '连接正常' : item.last_test_status === 'failed' ? '连接失败' : '未测试'}</Tag></Space>}
+                  description={`${item.provider} · ${item.model} · ${item.masked_api_key}`}
+                />
+              </List.Item>
+            )}
+          />
+        </Card>
+        <Card title="新增配置" size="small" style={{ marginTop: 16 }}>
+          <Form form={providerForm} layout="vertical" initialValues={{ scope_type: 'personal', provider: 'openai_responses', base_url: 'https://api.openai.com/v1' }}>
+            <Row gutter={12}>
+              <Col span={12}><Form.Item name="scope_type" label="使用范围" rules={[{ required: true }]}><Select options={[{ value: 'personal', label: '仅自己' }, { value: 'enterprise', label: '当前企业（需管理员）' }]} /></Form.Item></Col>
+              <Col span={12}><Form.Item name="name" label="配置名称" rules={[{ required: true }]}><Input maxLength={100} /></Form.Item></Col>
+            </Row>
+            <Row gutter={12}>
+              <Col span={12}><Form.Item name="provider" label="接口协议" rules={[{ required: true }]}><Select options={[{ value: 'openai_responses', label: 'OpenAI Responses' }, { value: 'openai_compatible_chat', label: '兼容 Chat Completions' }]} /></Form.Item></Col>
+              <Col span={12}><Form.Item name="model" label="模型名称" rules={[{ required: true }]}><Input maxLength={120} /></Form.Item></Col>
+            </Row>
+            <Form.Item name="base_url" label="接口地址" rules={[{ required: true }]}><Input maxLength={500} /></Form.Item>
+            <Form.Item name="api_key" label="API Key" rules={[{ required: true }]}><Input.Password autoComplete="new-password" maxLength={500} /></Form.Item>
+            <Button type="primary" loading={providerSaving} onClick={() => void createProviderConfig()}>加密保存</Button>
+          </Form>
+        </Card>
+        {enterprisePolicy && (
+          <Card title="企业 AI 使用策略" size="small" style={{ marginTop: 16 }}>
+            <Form form={policyForm} layout="vertical">
+              <Form.Item name="allow_ai" label="允许使用 AI" valuePropName="checked"><Switch /></Form.Item>
+              <Form.Item name="allow_personal_keys" label="允许员工使用个人或临时 Key" valuePropName="checked"><Switch /></Form.Item>
+              <Form.Item name="allow_external_providers" label="允许外部模型服务" valuePropName="checked"><Switch /></Form.Item>
+              <Form.Item name="require_enterprise_key" label="强制使用企业统一配置" valuePropName="checked"><Switch /></Form.Item>
+              <Form.Item name="allowed_hosts_text" label="额外允许域名" extra="多个域名用逗号分隔"><Input placeholder="例如：ai.example.com" /></Form.Item>
+              <Button onClick={() => void saveEnterprisePolicy()}>保存企业策略</Button>
+            </Form>
+          </Card>
+        )}
+      </Drawer>
+
+      <Modal title={`轮换 ${rotateConfig?.name || ''} 的 API Key`} open={Boolean(rotateConfig)} onCancel={() => setRotateConfig(null)} onOk={() => void rotateProviderKey()} okText="确认轮换">
+        <Form form={rotateForm} layout="vertical">
+          <Form.Item name="api_key" label="新 API Key" rules={[{ required: true }]} extra="保存后旧密钥立即从本系统失效。"><Input.Password autoComplete="new-password" maxLength={500} /></Form.Item>
         </Form>
       </Modal>
 

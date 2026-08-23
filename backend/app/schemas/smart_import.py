@@ -2,7 +2,7 @@
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 
 
 EntityType = Literal["wps", "pqr", "ppqr", "welder"]
@@ -209,9 +209,71 @@ class AIExtractionRequest(BaseModel):
     model: str | None = Field(None, min_length=1, max_length=120)
     base_url: str | None = Field(None, min_length=8, max_length=500)
     api_key: SecretStr | None = Field(None, repr=False)
+    provider_config_id: str | None = Field(None, max_length=36)
     template_id: str | None = Field(None, max_length=100)
     module_id: str | None = Field(None, max_length=100)
     run_ocr: bool = True
+
+    @model_validator(mode="after")
+    def validate_credential_source(self):
+        if self.mode == "byok" and self.provider_config_id and self.api_key:
+            raise ValueError("已保存配置与临时 API Key 不能同时使用")
+        return self
+
+
+class AIProviderConfigCreate(BaseModel):
+    scope_type: Literal["personal", "enterprise"] = "personal"
+    name: str = Field(min_length=1, max_length=100)
+    provider: Literal["openai_responses", "openai_compatible_chat"]
+    base_url: str = Field(
+        default="https://api.openai.com/v1", min_length=8, max_length=500
+    )
+    model: str = Field(min_length=1, max_length=120)
+    api_key: SecretStr = Field(repr=False)
+    is_default: bool = False
+
+
+class AIProviderConfigUpdate(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=100)
+    provider: Literal["openai_responses", "openai_compatible_chat"] | None = None
+    base_url: str | None = Field(None, min_length=8, max_length=500)
+    model: str | None = Field(None, min_length=1, max_length=120)
+    is_default: bool | None = None
+
+
+class AIProviderKeyRotate(BaseModel):
+    api_key: SecretStr = Field(repr=False)
+
+
+class AIProviderConfigResponse(BaseModel):
+    id: str
+    scope_type: str
+    name: str
+    provider: str
+    base_url: str
+    model: str
+    masked_api_key: str
+    key_version: int
+    is_active: bool
+    is_default: bool
+    last_test_status: str
+    last_tested_at: datetime | None
+    last_error: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class EnterpriseAIPolicyUpdate(BaseModel):
+    allow_ai: bool = True
+    allow_external_providers: bool = True
+    allow_personal_keys: bool = True
+    require_enterprise_key: bool = False
+    allowed_hosts: list[str] = Field(default_factory=list, max_length=50)
+
+
+class EnterpriseAIPolicyResponse(EnterpriseAIPolicyUpdate):
+    company_id: int
+    updated_at: datetime | None = None
 
 
 class ExtractionJobResponse(BaseModel):

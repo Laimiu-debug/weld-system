@@ -154,6 +154,9 @@ class Settings(BaseSettings):
     AI_PLATFORM_API_KEY: Optional[str] = None
     AI_PLATFORM_MODEL: Optional[str] = None
     AI_BYOK_ALLOWED_HOSTS: List[str] = ["api.openai.com"]
+    # Fernet key used only for saved AI credentials. When absent, temporary BYOK
+    # and the platform provider still work, but credentials cannot be persisted.
+    AI_CREDENTIAL_ENCRYPTION_KEY: Optional[str] = None
     AI_ALLOW_PRIVATE_PLATFORM_URL: bool = False
     AI_REQUEST_TIMEOUT_SECONDS: int = 90
     AI_MAX_OUTPUT_TOKENS: int = 12000

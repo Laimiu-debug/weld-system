@@ -72,7 +72,11 @@ class AIExtractionRunError(RuntimeError):
         self.status_code = status_code
 
 
-def build_provider(request: AIExtractionRequest) -> OpenAICompatibleProvider:
+def build_provider(
+    request: AIExtractionRequest,
+    saved_config: Any | None = None,
+    saved_api_key: str | None = None,
+) -> OpenAICompatibleProvider:
     if request.mode == "platform":
         if not settings.AI_PLATFORM_API_KEY or not settings.AI_PLATFORM_MODEL:
             raise AIExtractionRunError("platform_not_configured", "平台 AI 服务尚未配置", 503)
@@ -91,6 +95,11 @@ def build_provider(request: AIExtractionRequest) -> OpenAICompatibleProvider:
             ) from exc
         api_key = settings.AI_PLATFORM_API_KEY
         model = settings.AI_PLATFORM_MODEL
+    elif saved_config is not None and saved_api_key is not None:
+        provider = saved_config.provider
+        base_url = saved_config.base_url
+        api_key = saved_api_key
+        model = saved_config.model
     else:
         provider = request.provider or "openai_responses"
         base_url = request.base_url or "https://api.openai.com/v1"
@@ -142,6 +151,7 @@ class AIExtractionService:
         run_ocr: bool,
         user: User,
         context: WorkspaceContext,
+        provider_config_id: str | None = None,
     ) -> tuple[ExtractionJob, ExtractedEntity, list[DocumentPage]]:
         document = self.smart_import.get_document(document_id, user, context)
         batch = self.smart_import.get_batch(document.batch_id, user, context)
@@ -169,6 +179,7 @@ class AIExtractionService:
             mode=mode,
             provider=self.provider.provider_name,
             model=self.provider.model_name,
+            provider_config_id=provider_config_id,
             schema_version=str(schema_snapshot.get("schema_version") or "1.0"),
             schema_snapshot=schema_snapshot,
             prompt_version="smart-import-v1",

@@ -175,6 +175,11 @@ class ExtractionJob(WorkspaceOwnedMixin, Base):
     mode = Column(String(20), nullable=False, default="platform")
     provider = Column(String(80))
     model = Column(String(120))
+    provider_config_id = Column(
+        String(36),
+        ForeignKey("ai_provider_configs.id", ondelete="SET NULL"),
+        index=True,
+    )
     schema_version = Column(String(40), nullable=False)
     schema_snapshot = Column(JSONB, nullable=False, default=dict)
     prompt_version = Column(String(40))
@@ -402,6 +407,77 @@ class AIPlanEntitlement(Base):
             "workspace_type",
             unique=True,
         ),
+    )
+
+
+class AIProviderConfig(Base):
+    """Encrypted user/company credentials; ciphertext is never exposed by schemas."""
+
+    __tablename__ = "ai_provider_configs"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    scope_type = Column(String(20), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    company_id = Column(
+        Integer, ForeignKey("companies.id", ondelete="CASCADE"), index=True
+    )
+    name = Column(String(100), nullable=False)
+    provider = Column(String(80), nullable=False)
+    base_url = Column(String(500), nullable=False)
+    model = Column(String(120), nullable=False)
+    encrypted_api_key = Column(Text, nullable=False)
+    key_last_four = Column(String(8), nullable=False)
+    key_version = Column(Integer, nullable=False, default=1)
+    is_active = Column(Boolean, nullable=False, default=True)
+    is_default = Column(Boolean, nullable=False, default=False)
+    last_test_status = Column(String(20), nullable=False, default="untested")
+    last_tested_at = Column(DateTime)
+    last_error = Column(String(300))
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "scope_type IN ('personal','enterprise','platform')",
+            name="ck_ai_provider_config_scope",
+        ),
+        CheckConstraint(
+            "(scope_type = 'personal' AND user_id IS NOT NULL AND company_id IS NULL) OR "
+            "(scope_type = 'enterprise' AND user_id IS NULL AND company_id IS NOT NULL) OR "
+            "(scope_type = 'platform' AND user_id IS NULL AND company_id IS NULL)",
+            name="ck_ai_provider_config_owner",
+        ),
+        CheckConstraint(
+            "last_test_status IN ('untested','success','failed')",
+            name="ck_ai_provider_config_test_status",
+        ),
+    )
+
+
+class EnterpriseAIPolicy(Base):
+    __tablename__ = "enterprise_ai_policies"
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    company_id = Column(
+        Integer,
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    allow_ai = Column(Boolean, nullable=False, default=True)
+    allow_external_providers = Column(Boolean, nullable=False, default=True)
+    allow_personal_keys = Column(Boolean, nullable=False, default=True)
+    require_enterprise_key = Column(Boolean, nullable=False, default=False)
+    allowed_hosts = Column(JSONB, nullable=False, default=list)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    updated_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
 

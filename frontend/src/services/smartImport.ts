@@ -108,6 +108,32 @@ export interface AIQuotaStatus {
   can_run_estimate?: boolean
 }
 
+export interface AIProviderConfig {
+  id: string
+  scope_type: 'personal' | 'enterprise'
+  name: string
+  provider: 'openai_responses' | 'openai_compatible_chat'
+  base_url: string
+  model: string
+  masked_api_key: string
+  key_version: number
+  is_active: boolean
+  is_default: boolean
+  last_test_status: 'untested' | 'success' | 'failed'
+  last_tested_at?: string
+  last_error?: string
+}
+
+export interface EnterpriseAIPolicy {
+  company_id: number
+  allow_ai: boolean
+  allow_external_providers: boolean
+  allow_personal_keys: boolean
+  require_enterprise_key: boolean
+  allowed_hosts: string[]
+  updated_at?: string
+}
+
 export interface EntityPublishResult {
   entity_id: string
   target_entity_type: 'wps' | 'pqr'
@@ -135,6 +161,48 @@ export interface ManualDraftField {
 }
 
 class SmartImportService {
+  async listAIProviderConfigs(): Promise<AIProviderConfig[]> {
+    const response = await api.get('/smart-import/ai-provider-configs')
+    return response.data
+  }
+
+  async createAIProviderConfig(data: {
+    scope_type: 'personal' | 'enterprise'
+    name: string
+    provider: 'openai_responses' | 'openai_compatible_chat'
+    base_url?: string
+    model: string
+    api_key: string
+    is_default?: boolean
+  }): Promise<AIProviderConfig> {
+    const response = await api.post('/smart-import/ai-provider-configs', data)
+    return response.data
+  }
+
+  async testAIProviderConfig(id: string): Promise<AIProviderConfig> {
+    const response = await api.post(`/smart-import/ai-provider-configs/${id}/test`)
+    return response.data
+  }
+
+  async rotateAIProviderKey(id: string, apiKey: string): Promise<AIProviderConfig> {
+    const response = await api.post(`/smart-import/ai-provider-configs/${id}/rotate`, { api_key: apiKey })
+    return response.data
+  }
+
+  async disableAIProviderConfig(id: string): Promise<void> {
+    await api.delete(`/smart-import/ai-provider-configs/${id}`)
+  }
+
+  async getEnterpriseAIPolicy(): Promise<EnterpriseAIPolicy> {
+    const response = await api.get('/smart-import/enterprise-ai-policy')
+    return response.data
+  }
+
+  async updateEnterpriseAIPolicy(data: Omit<EnterpriseAIPolicy, 'company_id' | 'updated_at'>): Promise<EnterpriseAIPolicy> {
+    const response = await api.put('/smart-import/enterprise-ai-policy', data)
+    return response.data
+  }
+
   async getAICapabilities(): Promise<{
     platform_available: boolean
     platform_provider: string
@@ -234,6 +302,7 @@ class SmartImportService {
       model?: string
       base_url?: string
       api_key?: string
+      provider_config_id?: string
       template_id?: string
       module_id?: string
       run_ocr?: boolean

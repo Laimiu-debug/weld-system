@@ -48,6 +48,8 @@ from app.models.quality import QualityInspection, QualityStandard
 from app.models.business_extensions import EmployeePerformance, ReportTemplate
 from app.models.feedback import UserFeedback
 from app.models.smart_import import (
+    AIProviderConfig,
+    EnterpriseAIPolicy,
     AIPlanEntitlement,
     AIUsageLedger,
     DocumentPage,
@@ -122,4 +124,6 @@ __all__ = [
     "EntityPublishRecord",
     "AIPlanEntitlement",
     "AIUsageLedger",
+    "AIProviderConfig",
+    "EnterpriseAIPolicy",
 ]
