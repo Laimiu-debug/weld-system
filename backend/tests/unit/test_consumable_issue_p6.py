@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
+from fastapi import FastAPI
 from fastapi import HTTPException
 
 from app.api.v1.api import api_router
@@ -539,9 +540,9 @@ def test_models_and_api_expose_issue_trace_inventory_and_actual_usage():
         "actual_returned_quantity",
         "actual_consumed_quantity",
     } <= set(ConsumableIssueItem.__table__.columns.keys())
-    paths = {
-        route.path for route in api_router.routes if hasattr(route, "path")
-    }
+    probe = FastAPI()
+    probe.include_router(api_router)
+    paths = set(probe.openapi()["paths"])
     assert "/consumables/quota-runs/{run_id}/issue-list" in paths
     assert "/consumables/issue-items/{issue_item_id}/actual-events" in paths
     assert "/consumables/issue-lists/{issue_list_id}/export/{export_type}" in paths

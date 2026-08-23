@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 
 from app.api.v1.api import api_router
 from app.core.config import settings
@@ -231,9 +231,9 @@ def test_offline_model_uses_local_endpoint_and_blocks_external_policy(monkeypatc
 
 
 def test_p8_api_exposes_dashboard_health_privacy_backup_and_lifecycle():
-    paths = {
-        route.path for route in api_router.routes if hasattr(route, "path")
-    }
+    probe = FastAPI()
+    probe.include_router(api_router)
+    paths = set(probe.openapi()["paths"])
     assert {
         "/operations/dashboard",
         "/operations/alerts/detect",
