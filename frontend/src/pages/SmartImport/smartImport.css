@@ -54,7 +54,91 @@
   background: #fffbe6;
   border-left: 3px solid #faad14;
   display: block;
+  height: auto;
+  line-height: 1.5;
   padding: 4px 8px;
+  text-align: left;
+  white-space: normal;
+}
+
+.smart-import__field-link {
+  font-weight: 600;
+  height: auto;
+  padding: 0;
+  text-align: left;
+}
+
+.smart-import__review-workbench {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(360px, 42%) minmax(0, 1fr);
+}
+
+.smart-import__source-pane {
+  align-self: start;
+  position: sticky;
+  top: 0;
+}
+
+.smart-import__form-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.smart-import__page-preview {
+  background: #e2e8f0;
+  border: 1px solid #cbd5e1;
+  max-height: calc(100vh - 250px);
+  overflow: auto;
+  position: relative;
+}
+
+.smart-import__page-preview img {
+  display: block;
+  height: auto;
+  width: 100%;
+}
+
+.smart-import__evidence-box {
+  background: rgb(249 115 22 / 18%);
+  border: 2px solid #f97316;
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 75%);
+  pointer-events: none;
+  position: absolute;
+}
+
+.smart-import__source-text {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  margin: 0;
+  max-height: calc(100vh - 300px);
+  min-height: 420px;
+  overflow: auto;
+  padding: 16px;
+  white-space: pre-wrap;
+}
+
+.smart-import__active-evidence {
+  margin-top: 12px;
+}
+
+.smart-import__validation-card {
+  border-color: #cbd5e1;
+}
+
+.smart-import__validation-card .ant-divider {
+  margin: 10px 0;
+}
+
+.smart-import__issue-icon {
+  color: #f97316;
+}
+
+.smart-import__module-card {
+  border-color: #e2e8f0;
 }
 
 .smart-import__modal-alert,
@@ -66,5 +150,25 @@
   .smart-import__header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .smart-import__review-workbench {
+    grid-template-columns: 1fr;
+  }
+
+  .smart-import__source-pane {
+    position: static;
+  }
+
+  .smart-import__page-preview,
+  .smart-import__source-text {
+    max-height: 55vh;
+    min-height: 280px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .smart-import__batch {
+    transition: none;
   }
 }

@@ -1,0 +1,442 @@
+"""Local review-workbench validation and unmapped-field binding."""
+from __future__ import annotations
+
+import json
+import re
+from collections import defaultdict
+from typing import Any
+from uuid import uuid4
+
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
+
+from app.core.data_access import WorkspaceContext
+from app.models.smart_import import (
+    ExtractedEntity,
+    ExtractedField,
+    ExtractionJob,
+    ImportReviewRecord,
+)
+from app.models.user import User
+from app.models.pqr import PQR
+from app.models.wps import WPS
+from app.schemas.custom_module import CustomModuleCreate, CustomModuleUpdate
+from app.schemas.smart_import import UnmappedFieldBindRequest
+from app.services.custom_module_service import CustomModuleService
+from app.services.smart_import_review_service import SmartImportReviewService
+
+
+class SmartImportWorkbenchService:
+    def __init__(self, db: Session):
+        self.db = db
+        self.review = SmartImportReviewService(db)
+
+    def validate(
+        self, entity_id: str, user: User, context: WorkspaceContext
+    ) -> dict[str, Any]:
+        entity = self.review.get_entity(entity_id, user, context)
+        fields = (
+            self.db.query(ExtractedField)
+            .filter(ExtractedField.entity_id == entity.id)
+            .all()
+        )
+        job = (
+            self.db.query(ExtractionJob)
+            .filter(ExtractionJob.id == entity.job_id)
+            .first()
+        )
+        snapshot = job.schema_snapshot or {} if job else {}
+        bindings = [
+            {**binding, **self._schema_metadata(snapshot, binding)}
+            for binding in snapshot.get("field_bindings", [])
+        ]
+        by_identity = {
+            (binding.get("instance_id"), binding.get("field_key")): binding
+            for binding in bindings
+        }
+        issues: list[dict[str, Any]] = []
+        states: dict[str, dict[str, Any]] = {}
+        active = [field for field in fields if field.review_status != "rejected"]
+
+        for field in fields:
+            confidence = field.confidence if field.confidence is not None else 0
+            states[field.id] = {
+                "confidence_level": "high"
+                if confidence >= 0.85
+                else "medium"
+                if confidence >= 0.6
+                else "low",
+                "conflicts": [],
+                "is_unmapped": field.module_id == "unmapped",
+                "label": (
+                    by_identity.get((field.instance_id, field.field_key)) or {}
+                ).get("label")
+                or field.field_key,
+            }
+
+        grouped: dict[tuple[str | None, str], list[ExtractedField]] = defaultdict(list)
+        canonical: dict[str, list[ExtractedField]] = defaultdict(list)
+        for field in active:
+            grouped[(field.instance_id, field.field_key)].append(field)
+            if field.canonical_field_key:
+                canonical[field.canonical_field_key].append(field)
+            binding = by_identity.get((field.instance_id, field.field_key)) or {}
+            self._validate_value(field, binding, issues, states)
+
+        for key, duplicates in grouped.items():
+            if len(duplicates) > 1:
+                self._issue(
+                    issues,
+                    states,
+                    "duplicate_field",
+                    "error",
+                    [item.id for item in duplicates],
+                    f"字段 {key[1]} 出现多条待发布值",
+                )
+        for key, values in canonical.items():
+            distinct = {
+                json.dumps(
+                    item.normalized_value,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    default=str,
+                )
+                for item in values
+            }
+            if len(distinct) > 1:
+                self._issue(
+                    issues,
+                    states,
+                    "semantic_conflict",
+                    "error",
+                    [item.id for item in values],
+                    f"关联字段 {key} 的值不一致",
+                )
+
+        present = {
+            (field.instance_id, field.field_key): field
+            for field in active
+            if field.normalized_value not in (None, "", [])
+        }
+        for binding in bindings:
+            if (
+                binding.get("required")
+                and (binding.get("instance_id"), binding.get("field_key"))
+                not in present
+            ):
+                issues.append(
+                    {
+                        "code": "required_missing",
+                        "severity": "error",
+                        "field_ids": [],
+                        "message": f"必填项未填写：{binding.get('label') or binding.get('field_key')}",
+                    }
+                )
+
+        number_key = (
+            "pqr_number"
+            if entity.entity_type == "pqr"
+            else "wps_number"
+            if entity.entity_type == "wps"
+            else None
+        )
+        if number_key:
+            number_field = next(
+                (
+                    field
+                    for field in active
+                    if field.field_key == number_key and field.normalized_value
+                ),
+                None,
+            )
+            if number_field:
+                model = PQR if entity.entity_type == "pqr" else WPS
+                column = PQR.pqr_number if model is PQR else WPS.wps_number
+                duplicate = (
+                    self.review.smart_import._scope_query(
+                        self.db.query(model), model, user, context
+                    )
+                    .filter(column == str(number_field.normalized_value))
+                    .first()
+                )
+                if duplicate:
+                    self._issue(
+                        issues,
+                        states,
+                        "existing_record_duplicate",
+                        "error",
+                        [number_field.id],
+                        f"正式库中已存在编号 {number_field.normalized_value}",
+                    )
+
+        pending = [field for field in fields if field.review_status == "pending"]
+        for field in pending:
+            states[field.id]["conflicts"].append("unconfirmed")
+        unmapped = [field for field in active if field.module_id == "unmapped"]
+        for field in unmapped:
+            self._issue(
+                issues,
+                states,
+                "unmapped",
+                "error",
+                [field.id],
+                f"未映射字段尚未处理：{field.field_key}",
+            )
+
+        counts = {
+            "required_missing": sum(
+                item["code"] == "required_missing" for item in issues
+            ),
+            "duplicates": sum(
+                item["code"] in {"duplicate_field", "existing_record_duplicate"}
+                for item in issues
+            ),
+            "rule_conflicts": sum(
+                item["code"]
+                in {"semantic_conflict", "range_violation", "option_violation"}
+                for item in issues
+            ),
+            "unconfirmed": len(pending),
+            "unmapped": len(unmapped),
+        }
+        return {
+            "entity_id": entity.id,
+            "can_publish": not any(item["severity"] == "error" for item in issues)
+            and not pending,
+            "counts": counts,
+            "issues": issues,
+            "field_states": states,
+            "binding_options": [
+                {
+                    "field_id": binding.get("field_id"),
+                    "module_id": binding.get("module_id"),
+                    "instance_id": binding.get("instance_id"),
+                    "field_key": binding.get("field_key"),
+                    "label": binding.get("label") or binding.get("field_key"),
+                    "field_type": binding.get("field_type", "text"),
+                }
+                for binding in bindings
+                if binding.get("ai_extract_mode") != "derived"
+            ],
+        }
+
+    def bind_unmapped(
+        self,
+        entity_id: str,
+        field_id: str,
+        request: UnmappedFieldBindRequest,
+        user: User,
+        context: WorkspaceContext,
+    ) -> ExtractedEntity:
+        entity = self.review.get_entity(entity_id, user, context)
+        self.review._ensure_editable(entity)
+        field = (
+            self.db.query(ExtractedField)
+            .filter(
+                ExtractedField.id == field_id,
+                ExtractedField.entity_id == entity.id,
+            )
+            .first()
+        )
+        if field is None or field.module_id != "unmapped":
+            raise HTTPException(status_code=422, detail="只能绑定未映射字段")
+        job = (
+            self.db.query(ExtractionJob)
+            .filter(ExtractionJob.id == entity.job_id)
+            .first()
+        )
+        if request.action == "bind_existing":
+            bindings = (
+                (job.schema_snapshot or {}).get("field_bindings", []) if job else []
+            )
+            target = next(
+                (
+                    item
+                    for item in bindings
+                    if (
+                        request.target_field_id
+                        and item.get("field_id") == request.target_field_id
+                    )
+                    or (
+                        item.get("module_id") == request.target_module_id
+                        and item.get("field_key") == request.target_field_key
+                        and item.get("instance_id") == request.target_instance_id
+                    )
+                ),
+                None,
+            )
+            if target is None:
+                raise HTTPException(status_code=404, detail="目标字段不存在于本次导入 Schema")
+        else:
+            target = self._create_custom_binding(entity, request, user, context)
+            if job:
+                snapshot = dict(job.schema_snapshot or {})
+                snapshot["field_bindings"] = [
+                    *(snapshot.get("field_bindings") or []),
+                    target,
+                ]
+                job.schema_snapshot = snapshot
+        previous = {"module_id": field.module_id, "field_key": field.field_key}
+        field.module_id = target.get("module_id")
+        field.instance_id = target.get("instance_id")
+        field.field_id = target.get("field_id")
+        field.field_key = target["field_key"]
+        field.canonical_field_key = target.get("canonical_field_key")
+        field.review_status = "pending"
+        entity.source_mode = "mixed"
+        workspace = self.review._workspace(entity)
+        self.db.add(
+            ImportReviewRecord(
+                id=str(uuid4()),
+                entity_id=entity.id,
+                extracted_field_id=field.id,
+                action="correct",
+                previous_value=previous,
+                new_value=target,
+                reason="未映射字段绑定到模块字段",
+                reviewer_id=user.id,
+                **workspace,
+            )
+        )
+        self.db.commit()
+        self.db.refresh(entity)
+        return entity
+
+    def _create_custom_binding(self, entity, request, user, context):
+        if entity.entity_type not in {"wps", "pqr", "ppqr"}:
+            raise HTTPException(status_code=422, detail="当前类型暂不支持创建模块字段，请绑定已有字段")
+        service = CustomModuleService(self.db)
+        key = (
+            re.sub(
+                r"[^a-zA-Z0-9_]+",
+                "_",
+                request.field_key or request.field_label or "field",
+            )
+            .strip("_")
+            .lower()[:120]
+        )
+        if not key:
+            key = f"imported_{uuid4().hex[:8]}"
+        definition = {
+            "label": request.field_label,
+            "type": request.field_type,
+            "ai_extract_mode": "auto",
+            "aliases": [],
+        }
+        if request.existing_custom_module_id:
+            module = service.get_module(
+                request.existing_custom_module_id, user, context
+            )
+            if module is None:
+                raise HTTPException(status_code=404, detail="自定义模块不存在或无权修改")
+            fields = dict(module.fields or {})
+            if key in fields:
+                raise HTTPException(status_code=409, detail="模块中已存在同名字段")
+            fields[key] = definition
+            module = service.update_module(
+                module.id, CustomModuleUpdate(fields=fields), user, context
+            )
+        else:
+            module = service.create_module(
+                CustomModuleCreate(
+                    name=request.module_name or "导入发现字段",
+                    description="由智能导入审核工作台创建",
+                    module_type=entity.entity_type,
+                    category="basic",
+                    repeatable=False,
+                    fields={key: definition},
+                    is_shared=context.is_enterprise(),
+                    access_level="shared" if context.is_enterprise() else "private",
+                ),
+                user,
+                context,
+            )
+        field_def = module.fields[key]
+        return {
+            "module_id": module.id,
+            "instance_id": f"imported_{module.id}",
+            "field_id": field_def["field_id"],
+            "field_key": key,
+            "label": request.field_label,
+            "field_type": request.field_type,
+            "required": False,
+            "canonical_field_key": None,
+            "ai_extract_mode": "auto",
+            "extractable": True,
+        }
+
+    @staticmethod
+    def _validate_value(field, binding, issues, states):
+        value = field.normalized_value
+        minimum, maximum = binding.get("minimum"), binding.get("maximum")
+        if isinstance(value, (int, float)) and minimum is not None and value < minimum:
+            SmartImportWorkbenchService._issue(
+                issues,
+                states,
+                "range_violation",
+                "error",
+                [field.id],
+                f"{binding.get('label') or field.field_key} 低于最小值 {minimum}",
+            )
+        if isinstance(value, (int, float)) and maximum is not None and value > maximum:
+            SmartImportWorkbenchService._issue(
+                issues,
+                states,
+                "range_violation",
+                "error",
+                [field.id],
+                f"{binding.get('label') or field.field_key} 超过最大值 {maximum}",
+            )
+        options = binding.get("options") or []
+        if options and value not in options:
+            SmartImportWorkbenchService._issue(
+                issues,
+                states,
+                "option_violation",
+                "error",
+                [field.id],
+                f"{binding.get('label') or field.field_key} 不在允许选项中",
+            )
+
+    @staticmethod
+    def _schema_metadata(
+        snapshot: dict[str, Any], binding: dict[str, Any]
+    ) -> dict[str, Any]:
+        root = snapshot.get("json_schema") or {}
+        container = root
+        instance_id = binding.get("instance_id")
+        if instance_id:
+            container = (root.get("properties") or {}).get(instance_id) or {}
+        payload = (container.get("properties") or {}).get(
+            binding.get("field_key")
+        ) or {}
+        value_schema = (payload.get("properties") or {}).get("value") or {}
+        return {
+            "label": binding.get("label")
+            or payload.get("title")
+            or binding.get("field_key"),
+            "field_type": binding.get("field_type") or value_schema.get("type", "text"),
+            "required": binding.get("required")
+            if "required" in binding
+            else binding.get("field_key") in (container.get("required") or []),
+            "minimum": binding.get("minimum")
+            if "minimum" in binding
+            else value_schema.get("minimum"),
+            "maximum": binding.get("maximum")
+            if "maximum" in binding
+            else value_schema.get("maximum"),
+            "options": binding.get("options") or value_schema.get("enum") or [],
+        }
+
+    @staticmethod
+    def _issue(issues, states, code, severity, field_ids, message):
+        issues.append(
+            {
+                "code": code,
+                "severity": severity,
+                "field_ids": field_ids,
+                "message": message,
+            }
+        )
+        for field_id in field_ids:
+            states[field_id]["conflicts"].append(code)

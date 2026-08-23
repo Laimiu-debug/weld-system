@@ -194,6 +194,50 @@ export interface WelderImportReview {
   records: WelderImportRecord[]
 }
 
+export interface WorkbenchValidation {
+  entity_id: string
+  can_publish: boolean
+  counts: {
+    required_missing: number
+    duplicates: number
+    rule_conflicts: number
+    unconfirmed: number
+    unmapped: number
+  }
+  issues: Array<{
+    code: string
+    severity: 'error' | 'warning'
+    field_ids: string[]
+    message: string
+  }>
+  field_states: Record<string, {
+    confidence_level: 'high' | 'medium' | 'low'
+    conflicts: string[]
+    is_unmapped: boolean
+    label: string
+  }>
+  binding_options: Array<{
+    field_id?: string
+    module_id?: string
+    instance_id?: string
+    field_key: string
+    label: string
+    field_type: string
+  }>
+}
+
+export interface ImportReviewHistory {
+  id: string
+  entity_id: string
+  extracted_field_id?: string
+  action: string
+  previous_value: unknown
+  new_value: unknown
+  reason?: string
+  reviewer_id?: number
+  created_at: string
+}
+
 export interface TemplateRecommendation {
   template_id: string
   name: string
@@ -371,6 +415,14 @@ class SmartImportService {
     return response.data
   }
 
+  async getDocumentPagePreview(documentId: string, pageNumber: number): Promise<Blob> {
+    const response = await api.get(
+      `/smart-import/documents/${documentId}/pages/${pageNumber}/preview`,
+      { responseType: 'blob' }
+    )
+    return response.data
+  }
+
   async parseDocument(
     documentId: string
   ): Promise<{ document: SourceDocument; pages: DocumentPage[] }> {
@@ -480,6 +532,39 @@ class SmartImportService {
   async getCurrentDocumentEntity(documentId: string): Promise<ExtractedEntity> {
     const response = await api.get(
       `/smart-import/documents/${documentId}/current-entity`
+    )
+    return response.data
+  }
+
+  async getWorkbenchValidation(entityId: string): Promise<WorkbenchValidation> {
+    const response = await api.get(`/smart-import/entities/${entityId}/workbench-validation`)
+    return response.data
+  }
+
+  async getReviewHistory(entityId: string): Promise<ImportReviewHistory[]> {
+    const response = await api.get(`/smart-import/entities/${entityId}/reviews`)
+    return response.data
+  }
+
+  async bindUnmappedField(
+    entityId: string,
+    fieldId: string,
+    data: {
+      action: 'bind_existing' | 'create_custom'
+      target_field_id?: string
+      target_module_id?: string
+      target_instance_id?: string
+      target_field_key?: string
+      field_label?: string
+      field_key?: string
+      field_type?: 'text' | 'number' | 'date' | 'textarea'
+      module_name?: string
+      existing_custom_module_id?: string
+    }
+  ): Promise<ExtractedEntity> {
+    const response = await api.post(
+      `/smart-import/entities/${entityId}/fields/${fieldId}/bind-unmapped`,
+      data
     )
     return response.data
   }

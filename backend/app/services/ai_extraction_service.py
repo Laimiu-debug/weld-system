@@ -70,6 +70,53 @@ units, table row order, and line breaks. Return only the requested JSON schema.
 
 MAX_FIELDS_PER_EXTRACTION_STAGE = 40
 
+UNMAPPED_FIELDS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "unmapped_fields": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "label": {"type": "string", "maxLength": 200},
+                    "suggested_key": {"type": "string", "maxLength": 150},
+                    "value": {"type": "string", "maxLength": 10000},
+                    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                    "evidence": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "page": {"type": "integer", "minimum": 1},
+                                "text": {"type": "string", "maxLength": 2000},
+                                "bbox": {
+                                    "type": "array",
+                                    "items": {"type": "number"},
+                                    "minItems": 4,
+                                    "maxItems": 4,
+                                },
+                            },
+                            "required": ["page", "text"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "required": [
+                    "label",
+                    "suggested_key",
+                    "value",
+                    "confidence",
+                    "evidence",
+                ],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["unmapped_fields"],
+    "additionalProperties": False,
+}
+
 
 class AIExtractionRunError(RuntimeError):
     def __init__(self, code: str, message: str, status_code: int = 422):
@@ -239,7 +286,7 @@ class AIExtractionService:
                 raise AIExtractionRunError(
                     "document_text_too_large", "文档文本超过单次 AI 提取限制"
                 )
-            stages = build_extraction_stages(schema_snapshot)
+            stages = build_extraction_stages(schema_snapshot, include_unmapped=True)
             cleaned: dict[str, Any] = {}
             for stage_index, stage in enumerate(stages):
                 self._ensure_active(job)
@@ -258,11 +305,7 @@ class AIExtractionService:
                 self.db.commit()
                 result = self.provider.structured_response(
                     StructuredAIRequest(
-                        instructions=(
-                            f"{UNTRUSTED_DOCUMENT_INSTRUCTIONS}\n"
-                            f"Extraction phase: {stage['name']}. Extract only fields "
-                            "present in this phase schema."
-                        ),
+                        instructions=self._stage_instructions(stage, schema_snapshot),
                         input_text=input_text,
                         json_schema=runtime_schema,
                     )
@@ -327,6 +370,28 @@ class AIExtractionService:
             self._fail_job(job.id, "extraction_failed", "AI 提取任务失败")
             self.quota.refund(job.id, user, context, "AI 提取任务失败")
             raise AIExtractionRunError("extraction_failed", "AI 提取任务失败", 500) from exc
+
+    @staticmethod
+    def _stage_instructions(
+        stage: dict[str, Any], schema_snapshot: dict[str, Any]
+    ) -> str:
+        if stage["name"] == "unmapped_fields":
+            mapped = [
+                binding.get("label") or binding.get("field_key")
+                for binding in schema_snapshot.get("field_bindings") or []
+                if binding.get("extractable")
+            ]
+            return (
+                f"{UNTRUSTED_DOCUMENT_INSTRUCTIONS}\n"
+                "Find important labeled facts present in the document but NOT represented "
+                "by the mapped field list below. Do not repeat mapped facts. Keep values as "
+                "source text and return an empty list when nothing remains.\n"
+                f"Mapped fields: {json.dumps(mapped, ensure_ascii=False)}"
+            )
+        return (
+            f"{UNTRUSTED_DOCUMENT_INSTRUCTIONS}\n"
+            f"Extraction phase: {stage['name']}. Extract only fields present in this phase schema."
+        )
 
     def _run_ocr(
         self,
@@ -534,6 +599,45 @@ class AIExtractionService:
                         **workspace,
                     )
                 )
+        for index, value in enumerate(data.get("unmapped_fields") or [], start=1):
+            field = ExtractedField(
+                id=str(uuid4()),
+                entity_id=entity.id,
+                module_id="unmapped",
+                instance_id=None,
+                field_id=None,
+                field_key=(value.get("suggested_key") or f"unmapped_{index}")[:150],
+                canonical_field_key=None,
+                raw_value={"label": value.get("label"), "value": value.get("value")},
+                normalized_value=value.get("value"),
+                confidence=value.get("confidence"),
+                review_status="pending",
+                schema_version=job.schema_version,
+                **workspace,
+            )
+            self.db.add(field)
+            for evidence in value.get("evidence") or []:
+                page = page_by_number.get(evidence["page"])
+                if page is None or not _evidence_matches_page(
+                    evidence["text"], page.text_content or ""
+                ):
+                    raise AIExtractionRunError(
+                        "invalid_unmapped_evidence", "未映射字段的证据无法在原文中定位"
+                    )
+                self.db.add(
+                    FieldEvidence(
+                        id=str(uuid4()),
+                        extracted_field_id=field.id,
+                        page_id=page.id,
+                        page_number=page.page_number,
+                        evidence_type=(
+                            "ocr" if page.ocr_status == "completed" else "text"
+                        ),
+                        text_excerpt=evidence["text"][:2000],
+                        bbox=evidence.get("bbox"),
+                        **workspace,
+                    )
+                )
         document.status = "ready"
         batch.status = "review"
         if previous is None:
@@ -596,6 +700,7 @@ def _prune_nulls(value: Any) -> Any:
 def build_extraction_stages(
     schema_snapshot: dict[str, Any],
     max_fields: int = MAX_FIELDS_PER_EXTRACTION_STAGE,
+    include_unmapped: bool = False,
 ) -> list[dict[str, Any]]:
     """Split core semantic facts from enterprise fields without losing paths."""
     if max_fields < 1:
@@ -617,7 +722,7 @@ def build_extraction_stages(
         raise AIExtractionRunError(
             "schema_has_no_extractable_fields", "当前 Schema 没有可提取字段"
         )
-    return [
+    stages = [
         {
             "name": name,
             "json_schema": _schema_for_bindings(
@@ -627,6 +732,15 @@ def build_extraction_stages(
         }
         for name, group in groups
     ]
+    if include_unmapped:
+        stages.append(
+            {
+                "name": "unmapped_fields",
+                "json_schema": deepcopy(UNMAPPED_FIELDS_SCHEMA),
+                "field_bindings": [],
+            }
+        )
+    return stages
 
 
 def _is_core_binding(binding: dict[str, Any]) -> bool:

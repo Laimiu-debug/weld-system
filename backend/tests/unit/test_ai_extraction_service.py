@@ -125,6 +125,24 @@ class FakeProvider:
                 8,
                 28,
             )
+        if "unmapped_fields" in properties:
+            return AIProviderResult(
+                {
+                    "unmapped_fields": [
+                        {
+                            "label": "Legacy note",
+                            "suggested_key": "legacy_note",
+                            "value": "PQR-001",
+                            "confidence": 0.72,
+                            "evidence": [{"page": 1, "text": "PQR No. PQR-001"}],
+                        }
+                    ]
+                },
+                None,
+                0,
+                0,
+                0,
+            )
         return AIProviderResult(
             {
                 "notes": {
@@ -269,8 +287,12 @@ def test_scanned_page_ocr_and_extraction_create_review_only_evidence() -> None:
     assert pages == [page]
     assert any(isinstance(item, ExtractedEntity) for item in added)
     assert any(isinstance(item, ExtractedField) for item in added)
+    assert any(
+        isinstance(item, ExtractedField) and item.module_id == "unmapped"
+        for item in added
+    )
     evidence = next(item for item in added if isinstance(item, FieldEvidence))
     assert evidence.page_id == "page-1"
     assert evidence.evidence_type == "ocr"
-    assert provider.calls == 3
+    assert provider.calls == 4
     quota.settle.assert_called_once_with(job, SimpleNamespace(id=7), context, 1)

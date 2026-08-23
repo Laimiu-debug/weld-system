@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   Col,
+  Divider,
   Descriptions,
   Drawer,
   Empty,
@@ -20,6 +21,7 @@ import {
   Switch,
   Table,
   Tag,
+  Tooltip,
   Typography,
   Upload,
   message,
@@ -38,6 +40,9 @@ import {
   WalletOutlined,
   SettingOutlined,
   DeleteOutlined,
+  HistoryOutlined,
+  LinkOutlined,
+  WarningOutlined,
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import smartImportService, {
@@ -54,6 +59,8 @@ import smartImportService, {
   SourceDocument,
   TemplateRecommendationResult,
   WelderImportReview,
+  WorkbenchValidation,
+  ImportReviewHistory,
 } from '@/services/smartImport'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import customModuleService, { CustomModuleSummary } from '@/services/customModules'
@@ -167,6 +174,15 @@ const SmartImportPage: React.FC = () => {
   const [publishing, setPublishing] = useState(false)
   const [welderReview, setWelderReview] = useState<WelderImportReview | null>(null)
   const [welderChoices, setWelderChoices] = useState<Record<string, number | 'new'>>({})
+  const [workbenchValidation, setWorkbenchValidation] = useState<WorkbenchValidation | null>(null)
+  const [reviewHistory, setReviewHistory] = useState<ImportReviewHistory[]>([])
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [activePageNumber, setActivePageNumber] = useState(1)
+  const [activeEvidence, setActiveEvidence] = useState<ExtractedField['evidence'][number] | null>(null)
+  const [pagePreviewUrl, setPagePreviewUrl] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [bindField, setBindField] = useState<ExtractedField | null>(null)
+  const [binding, setBinding] = useState(false)
   const [providerOpen, setProviderOpen] = useState(false)
   const [providerConfigs, setProviderConfigs] = useState<AIProviderConfig[]>([])
   const [enterprisePolicy, setEnterprisePolicy] = useState<EnterpriseAIPolicy | null>(null)
@@ -181,10 +197,12 @@ const SmartImportPage: React.FC = () => {
   const [providerForm] = Form.useForm()
   const [policyForm] = Form.useForm()
   const [rotateForm] = Form.useForm()
+  const [bindForm] = Form.useForm()
   const uploadQueueRef = useRef<Promise<void>>(Promise.resolve())
   const pendingUploadCountRef = useRef(0)
   const extractionMode = Form.useWatch('mode', extractForm)
   const provider = Form.useWatch('provider', extractForm)
+  const bindAction = Form.useWatch('action', bindForm)
   const loadProviderSettings = useCallback(async () => {
     const configs = await smartImportService.listAIProviderConfigs()
     setProviderConfigs(configs)
@@ -275,6 +293,58 @@ const SmartImportPage: React.FC = () => {
     }, 1500)
     return () => window.clearInterval(timer)
   }, [queuedJob?.id, queuedJob?.status, batch?.id, loadBatches])
+
+  const refreshWorkbench = useCallback(async (entityId: string) => {
+    const [validation, history] = await Promise.all([
+      smartImportService.getWorkbenchValidation(entityId),
+      smartImportService.getReviewHistory(entityId),
+    ])
+    setWorkbenchValidation(validation)
+    setReviewHistory(history)
+  }, [])
+
+  useEffect(() => {
+    if (!result) {
+      setWorkbenchValidation(null)
+      setReviewHistory([])
+      setActiveEvidence(null)
+      return
+    }
+    setActivePageNumber(result.pages[0]?.page_number || 1)
+    void refreshWorkbench(result.entity.id).catch(error => {
+      message.error(errorMessage(error, '加载发布前检查失败'))
+    })
+  }, [result?.entity.id, refreshWorkbench])
+
+  useEffect(() => {
+    if (!result) return
+    const document = batch?.documents.find(item => item.id === result.entity.document_id) || activeDocument
+    const visual = document?.mime_type === 'application/pdf' || document?.mime_type?.startsWith('image/')
+    if (!visual) {
+      setPagePreviewUrl(null)
+      return
+    }
+    let disposed = false
+    let objectUrl: string | null = null
+    setPreviewLoading(true)
+    smartImportService.getDocumentPagePreview(result.entity.document_id, activePageNumber)
+      .then(blob => {
+        if (disposed) return
+        objectUrl = URL.createObjectURL(blob)
+        setPagePreviewUrl(objectUrl)
+      })
+      .catch(() => setPagePreviewUrl(null))
+      .finally(() => !disposed && setPreviewLoading(false))
+    return () => {
+      disposed = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [result?.entity.document_id, activePageNumber, batch?.documents, activeDocument])
+
+  const focusEvidence = (evidence: ExtractedField['evidence'][number]) => {
+    setActiveEvidence(evidence)
+    setActivePageNumber(evidence.page_number)
+  }
 
   const selectBatch = async (id: string) => {
     if (uploading) {
@@ -453,6 +523,7 @@ const SmartImportPage: React.FC = () => {
         data
       )
       setResult({ ...result, entity })
+      await refreshWorkbench(entity.id)
       setReviewField(null)
       reviewForm.resetFields()
       message.success(values.action === 'correct' ? '字段已修正' : '字段审核状态已更新')
@@ -470,6 +541,7 @@ const SmartImportPage: React.FC = () => {
         minimum_confidence: 0.85,
       })
       setResult({ ...result, entity })
+      await refreshWorkbench(entity.id)
       message.success('已接受置信度不低于 85% 的待审核字段')
     } catch (error) {
       message.error(errorMessage(error, '批量接受失败'))
@@ -496,6 +568,34 @@ const SmartImportPage: React.FC = () => {
       message.error(errorMessage(error, '发布失败'))
     } finally {
       setPublishing(false)
+    }
+  }
+
+  const applyUnmappedBinding = async () => {
+    if (!result || !bindField) return
+    const values = await bindForm.validateFields()
+    setBinding(true)
+    try {
+      const option = workbenchValidation?.binding_options.find(item =>
+        `${item.field_id || ''}|${item.module_id || ''}|${item.instance_id || ''}|${item.field_key}` === values.target
+      )
+      const entity = await smartImportService.bindUnmappedField(result.entity.id, bindField.id, {
+        ...values,
+        target: undefined,
+        target_field_id: option?.field_id,
+        target_module_id: option?.module_id,
+        target_instance_id: option?.instance_id,
+        target_field_key: option?.field_key,
+      })
+      setResult({ ...result, entity })
+      await refreshWorkbench(entity.id)
+      setBindField(null)
+      bindForm.resetFields()
+      message.success(values.action === 'create_custom' ? '已创建企业字段并完成绑定' : '未映射内容已绑定')
+    } catch (error) {
+      message.error(errorMessage(error, '字段绑定失败'))
+    } finally {
+      setBinding(false)
     }
   }
 
@@ -731,7 +831,20 @@ const SmartImportPage: React.FC = () => {
       width: 180,
       render: (value, row) => (
         <Space direction="vertical" size={0}>
-          <Text strong>{value}</Text>
+          <Space size={6}>
+            {row.evidence?.length ? (
+              <Button
+                type="link"
+                className="smart-import__field-link"
+                onClick={() => focusEvidence(row.evidence[0])}
+              >
+                {workbenchValidation?.field_states[row.id]?.label || value}
+              </Button>
+            ) : (
+              <Text strong>{workbenchValidation?.field_states[row.id]?.label || value}</Text>
+            )}
+            {workbenchValidation?.field_states[row.id]?.is_unmapped && <Tag color="orange">未映射</Tag>}
+          </Space>
           {row.canonical_field_key && <Text type="secondary">{row.canonical_field_key}</Text>}
         </Space>
       ),
@@ -748,7 +861,23 @@ const SmartImportPage: React.FC = () => {
       render: value => {
         const percent = Math.round((value || 0) * 100)
         const color = percent >= 85 ? 'success' : percent >= 60 ? 'warning' : 'error'
-        return <Tag color={color}>{percent}%</Tag>
+        const level = percent >= 85 ? '高' : percent >= 60 ? '中' : '低'
+        return <Tag color={color}>{level} · {percent}%</Tag>
+      },
+    },
+    {
+      title: '冲突',
+      width: 150,
+      render: (_, field) => {
+        const conflicts = workbenchValidation?.field_states[field.id]?.conflicts || []
+        const labels: Record<string, string> = {
+          unconfirmed: '未确认', unmapped: '未映射', duplicate_field: '重复',
+          existing_record_duplicate: '正式库已存在',
+          semantic_conflict: '关联值冲突', range_violation: '超出范围', option_violation: '选项不合法',
+        }
+        return conflicts.length
+          ? <Space size={[4, 4]} wrap>{conflicts.map(item => <Tag key={item} color="error">{labels[item] || item}</Tag>)}</Space>
+          : <Tag color="success">无冲突</Tag>
       },
     },
     {
@@ -772,19 +901,33 @@ const SmartImportPage: React.FC = () => {
       render: evidence => evidence?.length ? (
         <Space direction="vertical" size={4}>
           {evidence.map((item: any) => (
-            <Text key={item.id} className="smart-import__evidence">
+            <Button key={item.id} type="link" className="smart-import__evidence" onClick={() => focusEvidence(item)}>
               第 {item.page_number} 页：{item.text_excerpt}
-            </Text>
+            </Button>
           ))}
         </Space>
       ) : <Text type="secondary">无证据片段</Text>,
     },
     {
       title: '操作',
-      width: 190,
+      width: 230,
       fixed: 'right',
       render: (_, field) => result?.entity.status === 'published' ? null : (
-        <Space size={4}>
+        <Space size={4} wrap>
+          {workbenchValidation?.field_states[field.id]?.is_unmapped && (
+            <Tooltip title="绑定已有字段或创建企业自定义字段">
+              <Button
+                type="text"
+                size="small"
+                icon={<LinkOutlined />}
+                title="绑定字段"
+                onClick={() => {
+                  setBindField(field)
+                  bindForm.setFieldsValue({ action: 'bind_existing' })
+                }}
+              />
+            </Tooltip>
+          )}
           <Button
             type="text"
             size="small"
@@ -822,6 +965,27 @@ const SmartImportPage: React.FC = () => {
   ]
 
   const pendingFieldCount = result?.entity.fields.filter(field => field.review_status === 'pending').length || 0
+  const activePage = result?.pages.find(page => page.page_number === activePageNumber)
+  const reviewGroups = (result?.entity.fields || []).reduce<Record<string, ExtractedField[]>>((groups, field) => {
+    const key = field.module_id || 'core'
+    groups[key] = [...(groups[key] || []), field]
+    return groups
+  }, {})
+  const evidenceBoxStyle = (() => {
+    const bbox = activeEvidence?.bbox
+    if (!bbox || bbox.length !== 4 || !activePage) return undefined
+    const metadata = activePage.page_metadata || {}
+    const width = Number(metadata.width_pixels || metadata.width_points || 1)
+    const height = Number(metadata.height_pixels || metadata.height_points || 1)
+    const normalized = bbox.every(value => value >= 0 && value <= 1)
+    const [x, y, boxWidth, boxHeight] = bbox
+    return {
+      left: `${normalized ? x * 100 : x * 100 / width}%`,
+      top: `${normalized ? y * 100 : y * 100 / height}%`,
+      width: `${normalized ? boxWidth * 100 : boxWidth * 100 / width}%`,
+      height: `${normalized ? boxHeight * 100 : boxHeight * 100 / height}%`,
+    }
+  })()
 
   return (
     <div className="smart-import">
@@ -1182,9 +1346,10 @@ const SmartImportPage: React.FC = () => {
         title={<Space><FileSearchOutlined />提取结果与原文证据</Space>}
         open={Boolean(result)}
         onClose={() => setResult(null)}
-        width="min(1100px, 96vw)"
+        width="min(1600px, 98vw)"
         extra={result && (
           <Space>
+            <Button icon={<HistoryOutlined />} onClick={() => setHistoryOpen(true)}>审核记录</Button>
             <Tag color={result.entity.status === 'published' ? 'success' : 'warning'}>
               {result.entity.status === 'published' ? '已发布' : `待审核 ${pendingFieldCount} 项`}
             </Tag>
@@ -1204,7 +1369,7 @@ const SmartImportPage: React.FC = () => {
                     type="primary"
                     icon={<SendOutlined />}
                     loading={publishing}
-                    disabled={pendingFieldCount > 0}
+                    disabled={!workbenchValidation?.can_publish}
                     onClick={() => void publishEntity()}
                   >
                     按已审核字段发布
@@ -1226,28 +1391,91 @@ const SmartImportPage: React.FC = () => {
         )}
       >
         {result && (
-          <Space direction="vertical" size={16} className="smart-import__main">
-            <Descriptions bordered size="small" column={{ xs: 1, sm: 3 }}>
-              <Descriptions.Item label="字段数">{result.entity.fields.length}</Descriptions.Item>
-              <Descriptions.Item label="总 Token">{result.job.total_tokens}</Descriptions.Item>
-              <Descriptions.Item label="草稿版本">V{result.entity.version}</Descriptions.Item>
-            </Descriptions>
-            <Table
-              rowKey="id"
-              columns={fieldColumns}
-              dataSource={result.entity.fields}
-              pagination={{ pageSize: 20 }}
-              scroll={{ x: 900 }}
-              locale={{ emptyText: <Empty description="未识别到可映射字段" /> }}
-            />
-            <Card title={<Space><EyeOutlined />分页文本</Space>} size="small">
-              {result.pages.map(page => (
-                <Card key={page.id} type="inner" size="small" title={`第 ${page.page_number} 页`} className="smart-import__page">
-                  <pre>{page.text_content || '本页没有可用文本'}</pre>
+          <div className="smart-import__review-workbench">
+            <Card
+              className="smart-import__source-pane"
+              title={<Space><EyeOutlined />原文定位</Space>}
+              extra={
+                <Select
+                  aria-label="选择原文页码"
+                  value={activePageNumber}
+                  onChange={value => { setActivePageNumber(value); setActiveEvidence(null) }}
+                  options={result.pages.map(page => ({ value: page.page_number, label: `第 ${page.page_number} 页` }))}
+                  style={{ width: 120 }}
+                />
+              }
+            >
+              <Spin spinning={previewLoading}>
+                {pagePreviewUrl ? (
+                  <div className="smart-import__page-preview">
+                    <img src={pagePreviewUrl} alt={`原始文件第 ${activePageNumber} 页`} />
+                    {evidenceBoxStyle && <div className="smart-import__evidence-box" style={evidenceBoxStyle} />}
+                  </div>
+                ) : (
+                  <pre className="smart-import__source-text">{activePage?.text_content || '本页没有可用文本或视觉预览'}</pre>
+                )}
+              </Spin>
+              {activeEvidence && (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message={`当前证据 · 第 ${activeEvidence.page_number} 页${activeEvidence.bbox ? ' · 已定位区域' : ''}`}
+                  description={activeEvidence.text_excerpt}
+                  className="smart-import__active-evidence"
+                />
+              )}
+            </Card>
+
+            <div className="smart-import__form-pane">
+              <Card size="small" className="smart-import__validation-card">
+                <Descriptions size="small" column={{ xs: 2, md: 5 }}>
+                  <Descriptions.Item label="缺少必填">{workbenchValidation?.counts.required_missing || 0}</Descriptions.Item>
+                  <Descriptions.Item label="重复项">{workbenchValidation?.counts.duplicates || 0}</Descriptions.Item>
+                  <Descriptions.Item label="规则冲突">{workbenchValidation?.counts.rule_conflicts || 0}</Descriptions.Item>
+                  <Descriptions.Item label="未确认">{workbenchValidation?.counts.unconfirmed || 0}</Descriptions.Item>
+                  <Descriptions.Item label="未映射">{workbenchValidation?.counts.unmapped || 0}</Descriptions.Item>
+                </Descriptions>
+                {(workbenchValidation?.issues.length || 0) > 0 && (
+                  <>
+                    <Divider />
+                    <List
+                      size="small"
+                      dataSource={workbenchValidation?.issues || []}
+                      renderItem={item => (
+                        <List.Item>
+                          <Space><WarningOutlined className="smart-import__issue-icon" /><Text>{item.message}</Text></Space>
+                        </List.Item>
+                      )}
+                    />
+                  </>
+                )}
+              </Card>
+
+              <Descriptions bordered size="small" column={{ xs: 1, sm: 3 }}>
+                <Descriptions.Item label="字段数">{result.entity.fields.length}</Descriptions.Item>
+                <Descriptions.Item label="总 Token">{result.job.total_tokens}</Descriptions.Item>
+                <Descriptions.Item label="草稿版本">V{result.entity.version}</Descriptions.Item>
+              </Descriptions>
+
+              {Object.entries(reviewGroups).map(([moduleId, fields]) => (
+                <Card
+                  key={moduleId}
+                  size="small"
+                  className="smart-import__module-card"
+                  title={<Space><Text strong>{moduleId === 'unmapped' ? '未映射字段' : moduleId}</Text><Tag>{fields.length} 项</Tag></Space>}
+                >
+                  <Table
+                    rowKey="id"
+                    columns={fieldColumns}
+                    dataSource={fields}
+                    pagination={false}
+                    scroll={{ x: 1100 }}
+                    locale={{ emptyText: <Empty description="暂无字段" /> }}
+                  />
                 </Card>
               ))}
-            </Card>
-          </Space>
+            </div>
+          </div>
         )}
       </Drawer>
 
@@ -1297,6 +1525,89 @@ const SmartImportPage: React.FC = () => {
             } },
             { title: '持证项目', width: 100, render: (_, item) => `${item.qualified_projects.length} 项` },
           ]}
+        />
+      </Modal>
+
+      <Modal
+        title="绑定未映射字段"
+        open={Boolean(bindField)}
+        onCancel={() => { setBindField(null); bindForm.resetFields() }}
+        onOk={() => void applyUnmappedBinding()}
+        confirmLoading={binding}
+        okText="确认绑定"
+      >
+        <Alert
+          type="info"
+          showIcon
+          message={`识别内容：${bindField ? displayValue(bindField.normalized_value) : ''}`}
+          description="绑定只更新当前草稿的字段关系并运行局部校验，不会重新调用模型或重复扣费。"
+          className="smart-import__modal-alert"
+        />
+        <Form form={bindForm} layout="vertical" initialValues={{ action: 'bind_existing', field_type: 'text' }}>
+          <Form.Item name="action" label="处理方式" rules={[{ required: true }]}>
+            <Radio.Group options={[
+              { value: 'bind_existing', label: '绑定已有字段' },
+              { value: 'create_custom', label: '创建企业自定义字段' },
+            ]} />
+          </Form.Item>
+          {bindAction === 'bind_existing' ? (
+            <Form.Item name="target" label="目标字段" rules={[{ required: true, message: '请选择目标字段' }]}>
+              <Select
+                showSearch
+                optionFilterProp="label"
+                options={(workbenchValidation?.binding_options || []).map(item => ({
+                  value: `${item.field_id || ''}|${item.module_id || ''}|${item.instance_id || ''}|${item.field_key}`,
+                  label: `${item.label} · ${item.module_id || '核心字段'}`,
+                }))}
+              />
+            </Form.Item>
+          ) : (
+            <>
+              <Form.Item name="field_label" label="字段名称" initialValue={bindField?.field_key} rules={[{ required: true }]}>
+                <Input maxLength={200} />
+              </Form.Item>
+              <Form.Item name="field_key" label="字段键名" extra="可留空，由系统根据字段名称生成">
+                <Input maxLength={150} placeholder="例如：impact_test_temperature" />
+              </Form.Item>
+              <Row gutter={12}>
+                <Col span={12}>
+                  <Form.Item name="field_type" label="字段类型" rules={[{ required: true }]}>
+                    <Select options={[
+                      { value: 'text', label: '单行文本' }, { value: 'textarea', label: '多行文本' },
+                      { value: 'number', label: '数值' }, { value: 'date', label: '日期' },
+                    ]} />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="module_name" label="新模块名称" initialValue="导入发现字段">
+                    <Input maxLength={200} />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </>
+          )}
+        </Form>
+      </Modal>
+
+      <Modal
+        title="字段审核与修改记录"
+        open={historyOpen}
+        onCancel={() => setHistoryOpen(false)}
+        footer={<Button onClick={() => setHistoryOpen(false)}>关闭</Button>}
+        width="min(900px, 94vw)"
+      >
+        <Table
+          rowKey="id"
+          dataSource={reviewHistory}
+          pagination={{ pageSize: 10 }}
+          columns={[
+            { title: '时间', dataIndex: 'created_at', width: 180, render: value => new Date(value).toLocaleString() },
+            { title: '操作', dataIndex: 'action', width: 100, render: value => ({ accept: '接受', correct: '修正', reject: '拒绝', submit: '提交', approve: '发布' }[value as string] || value) },
+            { title: '原值', dataIndex: 'previous_value', render: value => <Text ellipsis={{ tooltip: displayValue(value) }}>{displayValue(value)}</Text> },
+            { title: '新值', dataIndex: 'new_value', render: value => <Text ellipsis={{ tooltip: displayValue(value) }}>{displayValue(value)}</Text> },
+            { title: '原因', dataIndex: 'reason', render: value => value || '—' },
+          ]}
+          locale={{ emptyText: '尚无人工审核记录' }}
         />
       </Modal>
 

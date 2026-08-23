@@ -227,6 +227,38 @@ class WelderImportReviewResponse(BaseModel):
     records: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class UnmappedFieldBindRequest(BaseModel):
+    action: Literal["bind_existing", "create_custom"]
+    target_field_id: str | None = Field(None, max_length=100)
+    target_module_id: str | None = Field(None, max_length=100)
+    target_instance_id: str | None = Field(None, max_length=100)
+    target_field_key: str | None = Field(None, max_length=150)
+    field_label: str | None = Field(None, min_length=1, max_length=200)
+    field_key: str | None = Field(None, min_length=1, max_length=150)
+    field_type: Literal["text", "number", "date", "textarea"] = "text"
+    module_name: str | None = Field(None, min_length=1, max_length=200)
+    existing_custom_module_id: str | None = Field(None, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_binding_action(self):
+        if self.action == "bind_existing" and not (
+            self.target_field_id or (self.target_module_id and self.target_field_key)
+        ):
+            raise ValueError("绑定已有字段时必须选择目标字段")
+        if self.action == "create_custom" and not self.field_label:
+            raise ValueError("创建自定义字段时必须填写字段名称")
+        return self
+
+
+class WorkbenchValidationResponse(BaseModel):
+    entity_id: str
+    can_publish: bool
+    counts: dict[str, int] = Field(default_factory=dict)
+    issues: list[dict[str, Any]] = Field(default_factory=list)
+    field_states: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    binding_options: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class TemplateRecommendationItem(BaseModel):
     template_id: str
     name: str

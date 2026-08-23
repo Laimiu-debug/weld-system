@@ -68,6 +68,8 @@ from app.schemas.smart_import import (
     TemplateRecommendationResponse,
     WelderImportPublishRequest,
     WelderImportReviewResponse,
+    UnmappedFieldBindRequest,
+    WorkbenchValidationResponse,
 )
 from app.services.ai_extraction_service import (
     AIExtractionRunError,
@@ -82,7 +84,12 @@ from app.services.ai_credential_service import (
 )
 from app.services.ai_provider_service import AIProviderError, StructuredAIRequest
 from app.services.custom_module_service import CustomModuleService
-from app.services.document_parser_service import DefaultDocumentParser, DocumentParser
+from app.services.document_parser_service import (
+    DefaultDocumentParser,
+    DocumentParseError,
+    DocumentParser,
+)
+from app.services.document_page_renderer import DocumentPageRenderer
 from app.services.document_storage_service import (
     DocumentStorage,
     DocumentUploadError,
@@ -100,6 +107,7 @@ from app.services.smart_import_template_service import SmartImportTemplateServic
 from app.services.system_config_service import get_max_upload_bytes
 from app.services.wps_template_service import WPSTemplateService
 from app.services.welder_import_service import WelderImportService
+from app.services.smart_import_workbench_service import SmartImportWorkbenchService
 from app.tasks.celery_app import celery_app
 from app.tasks.smart_import_tasks import run_smart_import_extraction
 
@@ -615,6 +623,38 @@ def download_document(
         media_type=document.mime_type or "application/octet-stream",
         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
     )
+
+
+@router.get("/documents/{document_id}/pages/{page_number}/preview")
+def preview_document_page(
+    document_id: str,
+    page_number: int,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+    storage: DocumentStorage = Depends(get_document_storage),
+) -> StreamingResponse:
+    """Render a private PDF/image page for evidence-region review."""
+    enforce_rate_limit(
+        f"smart-import-preview:{current_user.id}", limit=60, window_seconds=60
+    )
+    context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "view")
+    document = SmartImportService(db).get_document(document_id, current_user, context)
+    if not document.storage_key:
+        raise HTTPException(status_code=404, detail="该记录没有可预览的原件")
+    try:
+        with storage.open_stream(document.storage_key) as stream:
+            png = DocumentPageRenderer().render_png(
+                stream, document.original_filename, page_number
+            )
+    except (DocumentUploadError, DocumentParseError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    SmartImportAuditService(db).record_file_access(
+        "preview", document, current_user.id, context
+    )
+    db.commit()
+    return StreamingResponse(iter([png]), media_type="image/png")
 
 
 @router.post("/documents/{document_id}/parse", response_model=DocumentParseResponse)
@@ -1267,6 +1307,45 @@ def list_import_reviews(
         .order_by(ImportReviewRecord.created_at.desc())
         .all()
     )
+
+
+@router.get(
+    "/entities/{entity_id}/workbench-validation",
+    response_model=WorkbenchValidationResponse,
+)
+def validate_review_workbench(
+    entity_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> WorkbenchValidationResponse:
+    """Run local required/duplicate/range/semantic checks without another AI call."""
+    context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "review")
+    return WorkbenchValidationResponse(
+        **SmartImportWorkbenchService(db).validate(entity_id, current_user, context)
+    )
+
+
+@router.post(
+    "/entities/{entity_id}/fields/{field_id}/bind-unmapped",
+    response_model=ExtractedEntityDetailResponse,
+)
+def bind_unmapped_import_field(
+    entity_id: str,
+    field_id: str,
+    request: UnmappedFieldBindRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> ExtractedEntityDetailResponse:
+    context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "modify")
+    entity = SmartImportReviewService(db).get_entity(entity_id, current_user, context)
+    ensure_module_permission(db, current_user, entity.entity_type, "update")
+    service = SmartImportWorkbenchService(db)
+    entity = service.bind_unmapped(entity_id, field_id, request, current_user, context)
+    return build_entity_detail(db, entity)
 
 
 @router.post("/entities/{entity_id}/publish", response_model=EntityPublishResponse)
