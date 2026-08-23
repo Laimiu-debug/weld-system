@@ -14,7 +14,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(
+    op.get_bind().exec_driver_sql(
         """
         ALTER TABLE approval_instances
           ADD COLUMN document_ref VARCHAR(100),
@@ -43,7 +43,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
+    op.get_bind().exec_driver_sql(
         """
         DROP INDEX IF EXISTS ix_approval_document_version;
         ALTER TABLE approval_instances

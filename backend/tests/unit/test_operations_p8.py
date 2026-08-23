@@ -1,6 +1,8 @@
 """P8 observability, privacy, deployment and lifecycle contracts."""
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -229,7 +231,9 @@ def test_offline_model_uses_local_endpoint_and_blocks_external_policy(monkeypatc
 
 
 def test_p8_api_exposes_dashboard_health_privacy_backup_and_lifecycle():
-    paths = {route.path for route in api_router.routes}
+    paths = {
+        route.path for route in api_router.routes if hasattr(route, "path")
+    }
     assert {
         "/operations/dashboard",
         "/operations/alerts/detect",
@@ -241,3 +245,23 @@ def test_p8_api_exposes_dashboard_health_privacy_backup_and_lifecycle():
         "/operations/tenant-lifecycle",
         "/operations/tenant-lifecycle/{job_id}/execute",
     } <= paths
+
+
+def test_approval_snapshot_migration_executes_colon_literals_as_raw_sql():
+    path = (
+        Path(__file__).parents[2]
+        / "alembic"
+        / "versions"
+        / "add_approval_version_snapshots.py"
+    )
+    spec = spec_from_file_location("approval_snapshot_migration", path)
+    assert spec is not None and spec.loader is not None
+    migration = module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    connection = Mock()
+
+    with patch.object(migration.op, "get_bind", return_value=connection):
+        migration.upgrade()
+
+    sql = connection.exec_driver_sql.call_args.args[0]
+    assert "':legacy'" in sql

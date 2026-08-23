@@ -539,7 +539,9 @@ def test_models_and_api_expose_issue_trace_inventory_and_actual_usage():
         "actual_returned_quantity",
         "actual_consumed_quantity",
     } <= set(ConsumableIssueItem.__table__.columns.keys())
-    paths = {route.path for route in api_router.routes}
+    paths = {
+        route.path for route in api_router.routes if hasattr(route, "path")
+    }
     assert "/consumables/quota-runs/{run_id}/issue-list" in paths
     assert "/consumables/issue-items/{issue_item_id}/actual-events" in paths
     assert "/consumables/issue-lists/{issue_list_id}/export/{export_type}" in paths

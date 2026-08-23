@@ -111,7 +111,7 @@ def upgrade() -> None:
     )
     op.create_index(
         "ix_engineering_product_workspace",
-        "engineering_products",
+        "products",
         ["workspace_type", "company_id", "user_id"],
     )
 
@@ -218,7 +218,7 @@ def upgrade() -> None:
     )
     op.create_index(
         "ix_engineering_part_revision",
-        "engineering_parts",
+        "parts",
         ["revision_id", "is_deleted"],
     )
 
