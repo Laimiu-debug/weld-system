@@ -79,6 +79,13 @@ from app.models.engineering import (
     EngineeringReviewRecord,
     EngineeringDependencyState,
 )
+from app.models.matching import (
+    WPSMatchRun,
+    WPSMatchCandidate,
+    WPSMatchCriterion,
+    WPSCapabilityGap,
+    WPSMatchFreeze,
+)
 
 __all__ = [
     "User",
@@ -156,4 +163,9 @@ __all__ = [
     "DrawingParseRun",
     "EngineeringReviewRecord",
     "EngineeringDependencyState",
+    "WPSMatchRun",
+    "WPSMatchCandidate",
+    "WPSMatchCriterion",
+    "WPSCapabilityGap",
+    "WPSMatchFreeze",
 ]

@@ -118,6 +118,12 @@ DRAWING_SCHEMA: dict[str, Any] = {
                     "weld_size": {"type": ["number", "null"]},
                     "length_mm": {"type": ["number", "null"]},
                     "weld_position": {"type": ["string", "null"]},
+                    "welding_process": {"type": ["string", "null"]},
+                    "material_group": {"type": ["string", "null"]},
+                    "diameter_applicable": {"type": ["boolean", "null"]},
+                    "diameter_mm": {"type": ["number", "null"]},
+                    "filler_material_spec": {"type": ["string", "null"]},
+                    "filler_material_classification": {"type": ["string", "null"]},
                     "nde_methods": {"type": "array", "items": {"type": "string"}},
                     "nde_rate": {"type": ["string", "null"]},
                     "pwht_required": {"type": ["boolean", "null"]},
@@ -141,6 +147,12 @@ DRAWING_SCHEMA: dict[str, Any] = {
                     "weld_size",
                     "length_mm",
                     "weld_position",
+                    "welding_process",
+                    "material_group",
+                    "diameter_applicable",
+                    "diameter_mm",
+                    "filler_material_spec",
+                    "filler_material_classification",
                     "nde_methods",
                     "nde_rate",
                     "pwht_required",
@@ -759,6 +771,14 @@ class EngineeringService:
                 id=str(uuid4()),
                 revision_id=revision.id,
                 weld_joint_id=joint.id,
+                welding_process=raw.get("welding_process"),
+                material_group=raw.get("material_group"),
+                diameter_applicable=raw.get("diameter_applicable"),
+                diameter_mm=raw.get("diameter_mm"),
+                filler_material_spec=raw.get("filler_material_spec"),
+                filler_material_classification=raw.get(
+                    "filler_material_classification"
+                ),
                 nde_methods=raw.get("nde_methods") or [],
                 nde_rate=raw.get("nde_rate"),
                 pwht_required=raw.get("pwht_required"),
@@ -920,6 +940,12 @@ class EngineeringService:
                 weld_joint_id=joint_map[old.weld_joint_id].id
                 if old.weld_joint_id in joint_map
                 else None,
+                welding_process=old.welding_process,
+                material_group=old.material_group,
+                diameter_applicable=old.diameter_applicable,
+                diameter_mm=old.diameter_mm,
+                filler_material_spec=old.filler_material_spec,
+                filler_material_classification=old.filler_material_classification,
                 nde_methods=old.nde_methods or [],
                 nde_rate=old.nde_rate,
                 pwht_required=old.pwht_required,
@@ -946,6 +972,12 @@ class EngineeringService:
             list(joint_map),
             user,
             summary,
+        )
+        self._invalidate(
+            target,
+            [],
+            "产品版本已复制，旧版本冻结结果不得跨版本沿用",
+            all_scope=True,
         )
         return target, {Part: part_map, WeldJoint: joint_map, WeldRequirement: req_map}
 
@@ -1021,6 +1053,12 @@ class EngineeringService:
             }
             if model is WeldJoint
             else {
+                "welding_process",
+                "material_group",
+                "diameter_applicable",
+                "diameter_mm",
+                "filler_material_spec",
+                "filler_material_classification",
                 "nde_methods",
                 "nde_rate",
                 "pwht_required",

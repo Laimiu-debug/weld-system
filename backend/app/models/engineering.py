@@ -228,6 +228,12 @@ class WeldRequirement(WorkspaceMixin, Base):
         nullable=False,
     )
     weld_joint_id = Column(String(36), ForeignKey("weld_joints.id", ondelete="CASCADE"))
+    welding_process = Column(String(100))
+    material_group = Column(String(100))
+    diameter_applicable = Column(Boolean)
+    diameter_mm = Column(Float)
+    filler_material_spec = Column(String(100))
+    filler_material_classification = Column(String(100))
     nde_methods = Column(JSONB, nullable=False, default=list)
     nde_rate = Column(String(80))
     pwht_required = Column(Boolean)

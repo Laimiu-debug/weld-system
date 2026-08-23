@@ -1,0 +1,117 @@
+.matching-page {
+  max-width: 1680px;
+  margin: 0 auto;
+  padding: 24px;
+}
+.matching-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+.matching-header h2 {
+  margin: 0;
+}
+.matching-header p {
+  max-width: 760px;
+  color: #475569;
+}
+.matching-summary .ant-card {
+  height: 100%;
+  border-color: #e2e8f0;
+}
+.matching-summary h4 {
+  margin: 8px 0 4px;
+}
+.run-bar {
+  margin: 16px 0;
+}
+.matching-workbench {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 16px;
+}
+.joint-option {
+  padding: 13px 10px !important;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    background-color 0.2s,
+    border-color 0.2s;
+}
+.joint-option:hover,
+.joint-option.active {
+  background: #f1f5f9;
+}
+.joint-option.active {
+  box-shadow: inset 3px 0 #f97316;
+}
+.status-ok {
+  color: #15803d;
+}
+.status-warn {
+  color: #c2410c;
+}
+.status-error {
+  color: #b91c1c;
+}
+.candidate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.candidate-card {
+  border-color: #cbd5e1;
+}
+.candidate-card.confirmed {
+  border-color: #16a34a;
+  box-shadow: inset 3px 0 #16a34a;
+}
+.candidate-card .ant-table {
+  margin-top: 12px;
+}
+.gap-card {
+  margin-top: 16px;
+}
+.confirm-description {
+  margin: 16px 0;
+}
+.matching-page > .ant-alert {
+  margin-bottom: 16px;
+}
+@media (max-width: 1000px) {
+  .matching-workbench {
+    grid-template-columns: 1fr;
+  }
+  .matching-workbench aside .ant-list-items {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+}
+@media (max-width: 640px) {
+  .matching-page {
+    padding: 12px;
+  }
+  .matching-header {
+    flex-direction: column;
+  }
+  .matching-header > div:last-child {
+    width: 100%;
+  }
+  .matching-workbench aside .ant-list-items {
+    grid-template-columns: 1fr;
+  }
+  .run-bar .ant-segmented {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .candidate-card .ant-card-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .candidate-card .ant-card-extra {
+    margin: 8px 0;
+  }
+}

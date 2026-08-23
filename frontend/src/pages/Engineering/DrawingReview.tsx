@@ -30,6 +30,7 @@ import {
   MergeCellsOutlined,
   PlusOutlined,
   RobotOutlined,
+  SafetyCertificateOutlined,
   ScissorOutlined,
   WarningOutlined,
 } from "@ant-design/icons";
@@ -323,6 +324,21 @@ const DrawingReview: React.FC = () => {
       render: (v: string) =>
         detail?.weld_joints.find((x) => x.id === v)?.weld_number || "总体要求",
     },
+    { title: "焊接方法", dataIndex: "welding_process" },
+    { title: "材料组", dataIndex: "material_group" },
+    {
+      title: "直径 mm",
+      dataIndex: "diameter_mm",
+      render: (v: number, row: DataRow) =>
+        row.diameter_applicable === false ? "不适用" : (v ?? "待确认"),
+    },
+    {
+      title: "焊材",
+      render: (_: unknown, row: DataRow) =>
+        [row.filler_material_spec, row.filler_material_classification]
+          .filter(Boolean)
+          .join(" / ") || "待确认",
+    },
     {
       title: "无损检测",
       dataIndex: "nde_methods",
@@ -366,6 +382,12 @@ const DrawingReview: React.FC = () => {
       <div className="drawing-review">
         <div className="review-header">
           <Space>
+            <Button
+              icon={<SafetyCertificateOutlined />}
+              onClick={() => navigate(`/engineering/revisions/${id}/matching`)}
+            >
+              WPS/PQR 匹配
+            </Button>
             <Button
               icon={<ArrowLeftOutlined />}
               onClick={() => navigate("/engineering")}
@@ -661,6 +683,36 @@ const DrawingReview: React.FC = () => {
               </>
             ) : (
               <>
+                <Form.Item name="welding_process" label="焊接方法">
+                  <Input placeholder="如 GTAW、SMAW" />
+                </Form.Item>
+                <Form.Item
+                  name="material_group"
+                  label="材料组（明确要求时填写）"
+                >
+                  <Input />
+                </Form.Item>
+                <Form.Item name="diameter_applicable" label="是否适用直径评定">
+                  <Select
+                    allowClear
+                    options={[
+                      { value: true, label: "适用（管件/筒体）" },
+                      { value: false, label: "不适用（板件）" },
+                    ]}
+                  />
+                </Form.Item>
+                <Form.Item name="diameter_mm" label="直径 mm">
+                  <InputNumber min={0} style={{ width: "100%" }} />
+                </Form.Item>
+                <Form.Item name="filler_material_spec" label="焊材标准">
+                  <Input />
+                </Form.Item>
+                <Form.Item
+                  name="filler_material_classification"
+                  label="焊材分类"
+                >
+                  <Input />
+                </Form.Item>
                 <Form.Item name="nde_methods" label="无损检测方法">
                   <Select mode="tags" />
                 </Form.Item>
