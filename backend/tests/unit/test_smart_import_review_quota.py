@@ -199,6 +199,42 @@ def test_publish_rejects_conflicting_fixed_field_values() -> None:
     assert "多个已确认值" in exc_info.value.detail
 
 
+def test_publish_maps_custom_semantic_field_to_fixed_column_and_module_data() -> None:
+    service = SmartImportReviewService(Mock())
+    number = _field("enterprise_pqr_no", "PQR-SEM-001", "field-number")
+    number.canonical_field_key = "document.number"
+    title = _field("title", "Semantic PQR", "field-title")
+    number.review_status = "accepted"
+    title.review_status = "accepted"
+    job = ExtractionJob(
+        id="job-1",
+        schema_snapshot={
+            "field_bindings": [
+                {
+                    "module_id": "pqr_basic_info",
+                    "instance_id": "basic-1",
+                    "field_key": "enterprise_pqr_no",
+                    "canonical_field_key": "document.number",
+                },
+                {
+                    "module_id": "alternate_info",
+                    "instance_id": "alternate-1",
+                    "field_key": "rejected_number_alias",
+                    "canonical_field_key": "document.number",
+                },
+            ]
+        },
+    )
+
+    payload = service._build_payload(_entity(), [number, title], job)
+
+    assert payload["pqr_number"] == "PQR-SEM-001"
+    assert (
+        payload["modules_data"]["basic-1"]["data"]["enterprise_pqr_no"] == "PQR-SEM-001"
+    )
+    assert "alternate-1" not in payload["modules_data"]
+
+
 def test_pqr_publish_uses_existing_service_and_keeps_formal_record_draft() -> None:
     db = Mock()
     entity = _entity()

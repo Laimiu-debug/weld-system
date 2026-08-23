@@ -24,6 +24,11 @@ export interface SemanticFieldDefinition {
   aliases: string[]
   rule_input: boolean
   enum: string[]
+  required_for: string[]
+  value_shape: 'scalar' | 'object' | 'list' | 'table'
+  field_kind: 'fact' | 'derived' | 'display'
+  region_hints: string[]
+  validation: Record<string, unknown>
 }
 
 export interface ExtractionSchemaResponse {

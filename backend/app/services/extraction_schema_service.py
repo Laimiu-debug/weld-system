@@ -37,7 +37,13 @@ def _core_field(
 
 BUILTIN_CORE_FIELDS: dict[str, tuple[dict[str, Any], ...]] = {
     "pqr": (
-        _core_field("title", "标题", required=True, aliases=("文件名称", "评定名称")),
+        _core_field(
+            "title",
+            "标题",
+            canonical="document.title",
+            required=True,
+            aliases=("文件名称", "评定名称"),
+        ),
         _core_field("pqr_number", "PQR编号", canonical="document.number", required=True),
         _core_field("test_date", "试验日期", "datetime", canonical="document.date"),
         _core_field(
@@ -114,7 +120,12 @@ BUILTIN_CORE_FIELDS: dict[str, tuple[dict[str, Any], ...]] = {
             "voltage_actual", "实际电压", "number", canonical="electrical.voltage", unit="V"
         ),
         _core_field(
-            "welding_speed_actual", "实际焊接速度", "number", aliases=("焊速",), unit="mm/min"
+            "welding_speed_actual",
+            "实际焊接速度",
+            "number",
+            canonical="welding.speed_actual",
+            aliases=("焊速",),
+            unit="mm/min",
         ),
         _core_field(
             "preheat_temp_actual",
@@ -155,12 +166,30 @@ BUILTIN_CORE_FIELDS: dict[str, tuple[dict[str, Any], ...]] = {
             unit="h",
             rule_input=True,
         ),
-        _core_field("visual_inspection_result", "目视检测结果", aliases=("VT结果", "外观检查")),
-        _core_field("rt_result", "射线检测结果", aliases=("RT结果",)),
-        _core_field("ut_result", "超声检测结果", aliases=("UT结果",)),
-        _core_field("mt_result", "磁粉检测结果", aliases=("MT结果",)),
-        _core_field("pt_result", "渗透检测结果", aliases=("PT结果",)),
-        _core_field("ndt_report_number", "无损检测报告编号", aliases=("NDE报告号", "NDT报告号")),
+        _core_field(
+            "visual_inspection_result",
+            "目视检测结果",
+            canonical="ndt.visual_result",
+            aliases=("VT结果", "外观检查"),
+        ),
+        _core_field(
+            "rt_result", "射线检测结果", canonical="ndt.rt_result", aliases=("RT结果",)
+        ),
+        _core_field(
+            "ut_result", "超声检测结果", canonical="ndt.ut_result", aliases=("UT结果",)
+        ),
+        _core_field(
+            "mt_result", "磁粉检测结果", canonical="ndt.mt_result", aliases=("MT结果",)
+        ),
+        _core_field(
+            "pt_result", "渗透检测结果", canonical="ndt.pt_result", aliases=("PT结果",)
+        ),
+        _core_field(
+            "ndt_report_number",
+            "无损检测报告编号",
+            canonical="ndt.report_number",
+            aliases=("NDE报告号", "NDT报告号"),
+        ),
         _core_field(
             "tensile_test_result",
             "拉伸试验结果",
@@ -171,6 +200,7 @@ BUILTIN_CORE_FIELDS: dict[str, tuple[dict[str, Any], ...]] = {
             "tensile_strength_actual",
             "抗拉强度",
             "number",
+            canonical="test.tensile.strength",
             aliases=("Rm",),
             unit="MPa",
             rule_input=True,
@@ -179,32 +209,45 @@ BUILTIN_CORE_FIELDS: dict[str, tuple[dict[str, Any], ...]] = {
             "tensile_yield_strength",
             "屈服强度",
             "number",
+            canonical="test.tensile.yield_strength",
             aliases=("ReL", "Rp0.2"),
             unit="MPa",
         ),
-        _core_field("tensile_elongation", "延伸率", "number", aliases=("A%",), unit="%"),
+        _core_field(
+            "tensile_elongation",
+            "延伸率",
+            "number",
+            canonical="test.tensile.elongation",
+            aliases=("A%",),
+            unit="%",
+        ),
         _core_field(
             "root_bend_result",
             "根弯结果",
-            canonical="test.bend.result",
+            canonical="test.bend.root_result",
             aliases=("根部弯曲",),
             rule_input=True,
         ),
         _core_field(
             "face_bend_result",
             "面弯结果",
-            canonical="test.bend.result",
+            canonical="test.bend.face_result",
             aliases=("表面弯曲",),
             rule_input=True,
         ),
         _core_field(
             "side_bend_result",
             "侧弯结果",
-            canonical="test.bend.result",
+            canonical="test.bend.side_result",
             aliases=("侧面弯曲",),
             rule_input=True,
         ),
-        _core_field("charpy_test_performed", "是否进行冲击试验", "checkbox"),
+        _core_field(
+            "charpy_test_performed",
+            "是否进行冲击试验",
+            "checkbox",
+            canonical="test.impact.performed",
+        ),
         _core_field(
             "charpy_test_temp",
             "冲击试验温度",
@@ -225,11 +268,17 @@ BUILTIN_CORE_FIELDS: dict[str, tuple[dict[str, Any], ...]] = {
             "charpy_energy_min",
             "最小冲击功",
             "number",
+            canonical="test.impact.minimum_energy",
             aliases=("单值最小冲击功",),
             unit="J",
             rule_input=True,
         ),
-        _core_field("hardness_test_performed", "是否进行硬度试验", "checkbox"),
+        _core_field(
+            "hardness_test_performed",
+            "是否进行硬度试验",
+            "checkbox",
+            canonical="test.hardness.performed",
+        ),
         _core_field(
             "hardness_values",
             "硬度值",
@@ -239,7 +288,13 @@ BUILTIN_CORE_FIELDS: dict[str, tuple[dict[str, Any], ...]] = {
         ),
     ),
     "wps": (
-        _core_field("title", "标题", required=True, aliases=("文件名称", "工艺名称")),
+        _core_field(
+            "title",
+            "标题",
+            canonical="document.title",
+            required=True,
+            aliases=("文件名称", "工艺名称"),
+        ),
         _core_field("wps_number", "WPS编号", canonical="document.number", required=True),
         _core_field("revision", "版本", canonical="document.revision"),
         _core_field(
@@ -300,11 +355,41 @@ BUILTIN_CORE_FIELDS: dict[str, tuple[dict[str, Any], ...]] = {
             unit="mm",
         ),
         _core_field("shielding_gas", "保护气体", canonical="shielding.gas"),
-        _core_field("current_range", "电流范围", aliases=("焊接电流",), unit="A"),
-        _core_field("voltage_range", "电压范围", aliases=("电弧电压",), unit="V"),
-        _core_field("welding_speed", "焊接速度", aliases=("焊速",), unit="mm/min"),
-        _core_field("weld_passes", "焊道数量", "integer", aliases=("焊道数",)),
-        _core_field("weld_layer", "焊层数量", "integer", aliases=("焊层数",)),
+        _core_field(
+            "current_range",
+            "电流范围",
+            canonical="electrical.current_range",
+            aliases=("焊接电流",),
+            unit="A",
+        ),
+        _core_field(
+            "voltage_range",
+            "电压范围",
+            canonical="electrical.voltage_range",
+            aliases=("电弧电压",),
+            unit="V",
+        ),
+        _core_field(
+            "welding_speed",
+            "焊接速度",
+            canonical="welding.speed_range",
+            aliases=("焊速",),
+            unit="mm/min",
+        ),
+        _core_field(
+            "weld_passes",
+            "焊道数量",
+            "integer",
+            canonical="welding.pass_count",
+            aliases=("焊道数",),
+        ),
+        _core_field(
+            "weld_layer",
+            "焊层数量",
+            "integer",
+            canonical="welding.layer_count",
+            aliases=("焊层数",),
+        ),
         _core_field(
             "preheat_temp_min",
             "最低预热温度",
@@ -344,10 +429,28 @@ BUILTIN_CORE_FIELDS: dict[str, tuple[dict[str, Any], ...]] = {
             unit="h",
             rule_input=True,
         ),
-        _core_field("ndt_required", "是否需要无损检测", "checkbox", aliases=("NDE要求", "NDT要求")),
-        _core_field("ndt_methods", "无损检测方法", aliases=("NDE方法", "NDT方法")),
-        _core_field("mechanical_testing", "力学性能试验要求", aliases=("试验要求",)),
-        _core_field("wpqr_number", "支持的PQR编号", aliases=("PQR编号", "WPQR编号")),
+        _core_field(
+            "ndt_required",
+            "是否需要无损检测",
+            "checkbox",
+            canonical="ndt.required",
+            aliases=("NDE要求", "NDT要求"),
+        ),
+        _core_field(
+            "ndt_methods", "无损检测方法", canonical="ndt.methods", aliases=("NDE方法", "NDT方法")
+        ),
+        _core_field(
+            "mechanical_testing",
+            "力学性能试验要求",
+            canonical="test.mechanical.requirements",
+            aliases=("试验要求",),
+        ),
+        _core_field(
+            "wpqr_number",
+            "支持的PQR编号",
+            canonical="supporting.pqr_number",
+            aliases=("PQR编号", "WPQR编号"),
+        ),
     ),
 }
 
@@ -424,6 +527,10 @@ def _value_schema(field: dict[str, Any]) -> dict[str, Any]:
         schema = {"type": "string", "format": "date"}
     elif field_type == "datetime":
         schema = {"type": "string", "format": "date-time"}
+    elif field_type == "object":
+        schema = {"type": "object", "additionalProperties": True}
+    elif field_type == "array":
+        schema = {"type": "array", "items": {}}
     elif field_type == "table":
         schema = {
             "type": "array",
@@ -487,14 +594,22 @@ def _evidence_value_schema(field_key: str, field: dict[str, Any]) -> dict[str, A
     }
 
 
+def _is_extractable(field: dict[str, Any]) -> bool:
+    semantic = get_semantic_field(field.get("canonical_field_key"))
+    return (
+        field.get("ai_extract_mode", "auto") == "auto"
+        and field.get("type") not in ("file", "image")
+        and (semantic is None or semantic.field_kind == "fact")
+    )
+
+
 def build_module_extraction_schema(module: Any) -> dict[str, Any]:
     fields = normalize_module_fields(module.id, module.fields or {})
     properties: dict[str, Any] = {}
     required: list[str] = []
     bindings: list[dict[str, Any]] = []
     for field_key, field in fields.items():
-        mode = field.get("ai_extract_mode", "auto")
-        extractable = mode == "auto" and field.get("type") not in ("file", "image")
+        extractable = _is_extractable(field)
         bindings.append(_binding(module.id, None, field_key, field, extractable))
         if not extractable:
             continue
@@ -576,8 +691,7 @@ def build_template_extraction_schema(
         field_properties: dict[str, Any] = {}
         field_required: list[str] = []
         for field_key, field in fields.items():
-            mode = field.get("ai_extract_mode", "auto")
-            extractable = mode == "auto" and field.get("type") not in ("file", "image")
+            extractable = _is_extractable(field)
             bindings.append(
                 _binding(module.id, instance_id, field_key, field, extractable)
             )

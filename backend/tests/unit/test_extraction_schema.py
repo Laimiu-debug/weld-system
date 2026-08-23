@@ -120,6 +120,48 @@ def test_builtin_schema_rejects_unsupported_document_type() -> None:
         build_builtin_extraction_schema("welder")
 
 
+def test_derived_semantic_fields_are_not_sent_to_ai() -> None:
+    module = SimpleNamespace(
+        id="qualification-module",
+        name="资格范围",
+        module_type="pqr",
+        schema_version=1,
+        fields={
+            "qualified_thickness": {
+                "label": "合格厚度范围",
+                "type": "text",
+                "canonical_field_key": "qualification.pqr_thickness_range",
+                "ai_extract_mode": "auto",
+            }
+        },
+    )
+
+    schema = build_module_extraction_schema(module)
+
+    assert schema["json_schema"]["properties"] == {}
+    assert schema["field_bindings"][0]["extractable"] is False
+
+
+def test_schema_supports_object_list_and_repeated_table_shapes() -> None:
+    module = SimpleNamespace(
+        id="shape-module",
+        name="结构字段",
+        module_type="pqr",
+        schema_version=1,
+        fields={
+            "object_value": {"label": "对象", "type": "object"},
+            "list_value": {"label": "列表", "type": "array"},
+            "rows": {"label": "重复表格", "type": "table"},
+        },
+    )
+
+    properties = build_module_extraction_schema(module)["json_schema"]["properties"]
+
+    assert properties["object_value"]["properties"]["value"]["type"] == "object"
+    assert properties["list_value"]["properties"]["value"]["type"] == "array"
+    assert properties["rows"]["properties"]["value"]["items"]["type"] == "object"
+
+
 def test_template_schema_supports_repeated_instances_and_missing_modules() -> None:
     module = _module()
     template = SimpleNamespace(

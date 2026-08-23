@@ -19,6 +19,12 @@ from app.models.user import User
 from app.schemas.pqr import PQRCreate
 from app.schemas.smart_import import BulkFieldAcceptRequest, FieldReviewRequest
 from app.schemas.wps import WPSCreate
+from app.domain.semantic_field_mapping import (
+    SemanticMappingConflict,
+    assign_semantic_value,
+    fixed_to_modules_data,
+    modules_data_to_fixed,
+)
 from app.services.membership_service import MembershipService
 from app.services.pqr_service import PQRService
 from app.services.smart_import_service import SmartImportService
@@ -259,12 +265,63 @@ class SmartImportReviewService:
                         detail=f"字段 {field.field_key} 存在多个已确认值，请先解决冲突",
                     )
                 payload[field.field_key] = value
+            try:
+                assign_semantic_value(
+                    entity.entity_type,
+                    payload,
+                    field.canonical_field_key,
+                    value,
+                )
+            except SemanticMappingConflict as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"字段 {exc.args[0]} 存在多个已确认值，请先解决冲突",
+                ) from exc
             instance_id = field.instance_id or field.module_id or "imported_fields"
             module = modules.setdefault(
                 instance_id,
                 {"moduleId": field.module_id or "imported_fields", "data": {}},
             )
             module["data"][field.field_key] = value
+        accepted_binding_keys = {
+            (
+                field.instance_id,
+                field.module_id,
+                field.field_key,
+            )
+            for field in fields
+        }
+        all_bindings = (
+            (job.schema_snapshot or {}).get("field_bindings", []) if job else []
+        )
+        bindings = [
+            binding
+            for binding in all_bindings
+            if (
+                binding.get("instance_id"),
+                binding.get("module_id"),
+                binding.get("field_key"),
+            )
+            in accepted_binding_keys
+        ]
+        try:
+            payload = modules_data_to_fixed(
+                entity.entity_type,
+                modules,
+                bindings,
+                payload,
+            )
+        except SemanticMappingConflict as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=f"字段 {exc.args[0]} 存在多个已确认值，请先解决冲突",
+            ) from exc
+        modules = fixed_to_modules_data(
+            entity.entity_type,
+            payload,
+            modules,
+            bindings,
+        )
         payload["modules_data"] = modules
         if job and job.template_id:
             payload["template_id"] = job.template_id
