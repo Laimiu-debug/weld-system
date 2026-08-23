@@ -26,11 +26,13 @@ from app.models.company import CompanyEmployee
 from app.models.smart_import import (
     ExtractedEntity,
     ExtractedField,
+    ExtractionJob,
     FieldEvidence,
     ImportReviewRecord,
 )
 from app.models.user import User
 from app.schemas.smart_import import (
+    AIExtractionQueuedResponse,
     AIExtractionRequest,
     AIExtractionResponse,
     AIProviderConfigCreate,
@@ -48,6 +50,7 @@ from app.schemas.smart_import import (
     ExtractedEntityDetailResponse,
     ExtractedEntityResponse,
     ExtractedFieldResponse,
+    ExtractionJobResponse,
     FieldEvidenceResponse,
     FieldReviewRequest,
     ImportBatchCreate,
@@ -62,6 +65,7 @@ from app.services.ai_extraction_service import (
     AIExtractionService,
     build_provider,
 )
+from app.services.ai_extraction_queue_service import AIExtractionQueueService
 from app.services.ai_quota_service import AIQuotaService
 from app.services.ai_credential_service import (
     AIProviderConfigService,
@@ -83,6 +87,8 @@ from app.services.smart_import_service import SmartImportService
 from app.services.smart_import_review_service import SmartImportReviewService
 from app.services.system_config_service import get_max_upload_bytes
 from app.services.wps_template_service import WPSTemplateService
+from app.tasks.celery_app import celery_app
+from app.tasks.smart_import_tasks import run_smart_import_extraction
 
 
 router = APIRouter()
@@ -636,6 +642,151 @@ def extract_document(
     finally:
         if provider is not None:
             provider.close()
+
+
+def dispatch_extraction_job(job: ExtractionJob) -> None:
+    try:
+        run_smart_import_extraction.apply_async(args=[job.id], task_id=job.id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="后台任务队列暂时不可用") from exc
+
+
+@router.post(
+    "/documents/{document_id}/extract-async",
+    response_model=AIExtractionQueuedResponse,
+    status_code=202,
+)
+def queue_document_extraction(
+    document_id: str,
+    request: AIExtractionRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> AIExtractionQueuedResponse:
+    """Queue platform or saved-credential extraction without serializing secrets."""
+    enforce_rate_limit(
+        f"smart-import-extract-queue:{current_user.id}", limit=10, window_seconds=60
+    )
+    context = resolve_workspace(db, current_user, workspace_id)
+    validate_ai_extraction_request(request)
+    if request.mode == "byok" and not request.provider_config_id:
+        raise HTTPException(
+            status_code=422,
+            detail="临时 API Key 不进入后台队列，请使用已保存配置或单次同步提取",
+        )
+    schema_snapshot, template_id = build_requested_schema(
+        request, db, current_user, context
+    )
+    credentials = AIProviderConfigService(db)
+    provider_config = None
+    if request.provider_config_id:
+        provider_config, _ = credentials.resolve_for_use(
+            request.provider_config_id, current_user, context
+        )
+        provider_name = provider_config.provider
+        model_name = provider_config.model
+    else:
+        credentials.enforce_policy("platform", None, context)
+        if not settings.AI_PLATFORM_API_KEY or not settings.AI_PLATFORM_MODEL:
+            raise HTTPException(status_code=503, detail="平台 AI 服务尚未配置")
+        provider_name = settings.AI_PLATFORM_PROVIDER
+        model_name = settings.AI_PLATFORM_MODEL
+    service = AIExtractionQueueService(db)
+    job = service.create_job(
+        document_id=document_id,
+        schema_snapshot=schema_snapshot,
+        template_id=template_id,
+        mode=request.mode,
+        provider=provider_name,
+        model=model_name,
+        provider_config_id=provider_config.id if provider_config else None,
+        run_ocr=request.run_ocr,
+        user=current_user,
+        context=context,
+    )
+    try:
+        dispatch_extraction_job(job)
+    except HTTPException:
+        job.status = "failed"
+        job.error_code = "queue_unavailable"
+        job.error_message = "后台任务队列暂时不可用"
+        job.completed_at = datetime.utcnow()
+        db.commit()
+        raise
+    return AIExtractionQueuedResponse(job=ExtractionJobResponse.model_validate(job))
+
+
+@router.get(
+    "/documents/{document_id}/extraction-jobs",
+    response_model=list[ExtractionJobResponse],
+)
+def list_document_extraction_jobs(
+    document_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> list[ExtractionJob]:
+    context = resolve_workspace(db, current_user, workspace_id)
+    return AIExtractionQueueService(db).list_document_jobs(
+        document_id, current_user, context
+    )
+
+
+@router.get("/extraction-jobs/{job_id}", response_model=ExtractionJobResponse)
+def get_extraction_job(
+    job_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> ExtractionJob:
+    context = resolve_workspace(db, current_user, workspace_id)
+    return AIExtractionQueueService(db).get_job(job_id, current_user, context)
+
+
+@router.post("/extraction-jobs/{job_id}/cancel", response_model=ExtractionJobResponse)
+def cancel_extraction_job(
+    job_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> ExtractionJob:
+    context = resolve_workspace(db, current_user, workspace_id)
+    service = AIExtractionQueueService(db)
+    job = service.cancel_job(service.get_job(job_id, current_user, context))
+    celery_app.control.revoke(job.id, terminate=False)
+    return job
+
+
+@router.post(
+    "/extraction-jobs/{job_id}/retry",
+    response_model=AIExtractionQueuedResponse,
+    status_code=202,
+)
+def retry_extraction_job(
+    job_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> AIExtractionQueuedResponse:
+    context = resolve_workspace(db, current_user, workspace_id)
+    service = AIExtractionQueueService(db)
+    source = service.get_job(job_id, current_user, context)
+    credentials = AIProviderConfigService(db)
+    if source.provider_config_id:
+        credentials.resolve_for_use(source.provider_config_id, current_user, context)
+    else:
+        credentials.enforce_policy(source.mode, None, context)
+    job = service.retry_job(source, current_user, context)
+    try:
+        dispatch_extraction_job(job)
+    except HTTPException:
+        job.status = "failed"
+        job.error_code = "queue_unavailable"
+        job.error_message = "后台任务队列暂时不可用"
+        job.completed_at = datetime.utcnow()
+        db.commit()
+        raise
+    return AIExtractionQueuedResponse(job=ExtractionJobResponse.model_validate(job))
 
 
 @router.get("/entities/{entity_id}", response_model=ExtractedEntityDetailResponse)

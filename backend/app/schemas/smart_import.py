@@ -282,6 +282,9 @@ class ExtractionJobResponse(BaseModel):
     mode: str
     provider: str | None
     model: str | None
+    provider_config_id: str | None
+    retry_of_job_id: str | None
+    progress: int
     status: str
     schema_version: str
     request_trace_id: str | None
@@ -294,6 +297,11 @@ class ExtractionJobResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AIExtractionQueuedResponse(BaseModel):
+    job: ExtractionJobResponse
+    message: str = "任务已进入后台队列"
 
 
 class AIExtractionResponse(BaseModel):

@@ -9,11 +9,13 @@ from app.tasks.notification_tasks import (
     run_daily_notification_tasks,
     run_hourly_notification_tasks,
 )
+from app.tasks.smart_import_tasks import run_smart_import_extraction
 
 
 def test_notification_tasks_are_registered() -> None:
     assert run_daily_notification_tasks.name == "notifications.daily"
     assert run_hourly_notification_tasks.name == "notifications.hourly"
+    assert run_smart_import_extraction.name == "smart_import.extract"
 
 
 def test_notification_schedule_contains_daily_and_hourly_jobs() -> None:

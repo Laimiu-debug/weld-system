@@ -155,6 +155,7 @@ const SmartImportPage: React.FC = () => {
   const [providerConfigs, setProviderConfigs] = useState<AIProviderConfig[]>([])
   const [enterprisePolicy, setEnterprisePolicy] = useState<EnterpriseAIPolicy | null>(null)
   const [providerSaving, setProviderSaving] = useState(false)
+  const [queuedJob, setQueuedJob] = useState<AIExtractionJob | null>(null)
   const [rotateConfig, setRotateConfig] = useState<AIProviderConfig | null>(null)
   const [createForm] = Form.useForm()
   const [extractForm] = Form.useForm()
@@ -185,8 +186,15 @@ const SmartImportPage: React.FC = () => {
       const list = await smartImportService.listBatches()
       setBatches(list)
       const nextId = preferredId || batch?.id || list[0]?.id
-      if (nextId) setBatch(await smartImportService.getBatch(nextId))
-      else setBatch(null)
+      if (nextId) {
+        const detail = await smartImportService.getBatch(nextId)
+        setBatch(detail)
+        const jobs = (await Promise.all(
+          detail.documents.map(item => smartImportService.listDocumentExtractionJobs(item.id))
+        )).flat()
+        const active = jobs.find(item => ['queued', 'processing'].includes(item.status))
+        if (active) setQueuedJob(active)
+      } else setBatch(null)
     } catch (error) {
       message.error(errorMessage(error, '加载导入任务失败'))
     } finally {
@@ -201,10 +209,40 @@ const SmartImportPage: React.FC = () => {
     void loadProviderSettings()
   }, [])
 
+  useEffect(() => {
+    if (!queuedJob || !['queued', 'processing'].includes(queuedJob.status)) return
+    const timer = window.setInterval(async () => {
+      try {
+        const job = await smartImportService.getExtractionJob(queuedJob.id)
+        setQueuedJob(job)
+        if (job.status === 'completed') {
+          const [entity, pages] = await Promise.all([
+            smartImportService.getCurrentDocumentEntity(job.document_id),
+            smartImportService.listDocumentPages(job.document_id),
+          ])
+          setResult({ job, entity, pages })
+          await loadBatches(batch?.id)
+          message.success('后台 AI 提取完成，结果已进入待审核草稿')
+        } else if (job.status === 'failed') {
+          message.error(job.error_message || '后台 AI 提取失败')
+        }
+      } catch {
+        // A transient polling failure does not alter the persisted task state.
+      }
+    }, 1500)
+    return () => window.clearInterval(timer)
+  }, [queuedJob?.id, queuedJob?.status, batch?.id, loadBatches])
+
   const selectBatch = async (id: string) => {
     setLoading(true)
     try {
-      setBatch(await smartImportService.getBatch(id))
+      const detail = await smartImportService.getBatch(id)
+      setBatch(detail)
+      const jobs = (await Promise.all(
+        detail.documents.map(item => smartImportService.listDocumentExtractionJobs(item.id))
+      )).flat()
+      const active = jobs.find(item => ['queued', 'processing'].includes(item.status))
+      setQueuedJob(active || null)
     } finally {
       setLoading(false)
     }
@@ -285,11 +323,13 @@ const SmartImportPage: React.FC = () => {
         pages,
         job: {
           id: entity.job_id || '',
+          document_id: document.id,
           status: 'completed',
           mode: entity.source_mode === 'ai' ? 'platform' : 'byok',
           input_tokens: 0,
           output_tokens: 0,
           total_tokens: 0,
+          progress: 100,
         },
       })
     } catch (error) {
@@ -363,7 +403,7 @@ const SmartImportPage: React.FC = () => {
     const [sourceType, sourceId] = String(values.schema_source).split(':', 2)
     setExtracting(true)
     try {
-      const response = await smartImportService.extractDocument(activeDocument.id, {
+      const payload = {
         mode: values.mode === 'platform' ? 'platform' : 'byok',
         provider: values.mode === 'byok' ? values.provider : undefined,
         model: values.mode === 'byok' ? values.model?.trim() : undefined,
@@ -373,12 +413,19 @@ const SmartImportPage: React.FC = () => {
         template_id: sourceType === 'template' ? sourceId : undefined,
         module_id: sourceType === 'module' ? sourceId : undefined,
         run_ocr: values.run_ocr,
-      })
-      setResult(response)
+      }
+      if (values.mode === 'byok') {
+        const response = await smartImportService.extractDocument(activeDocument.id, payload)
+        setResult(response)
+        message.success('AI 提取完成，结果已进入待审核草稿')
+      } else {
+        const response = await smartImportService.queueExtraction(activeDocument.id, payload)
+        setQueuedJob(response.job)
+        message.success('任务已进入后台队列，可离开当前页面继续其他工作')
+      }
       setExtractOpen(false)
       extractForm.setFieldValue('api_key', undefined)
       await loadBatches(batch?.id)
-      message.success('AI 提取完成，结果已进入待审核草稿')
     } catch (error) {
       message.error(errorMessage(error, 'AI 提取失败'))
     } finally {
@@ -614,6 +661,31 @@ const SmartImportPage: React.FC = () => {
               </Tag>
             )}
             <Text type="secondary">BYOK 不扣平台点数</Text>
+          </Space>
+        </Card>
+      )}
+
+      {queuedJob && (
+        <Card size="small" className="smart-import__quota">
+          <Space wrap>
+            <RobotOutlined />
+            <Text strong>后台提取任务</Text>
+            <Tag color={queuedJob.status === 'completed' ? 'success' : queuedJob.status === 'failed' ? 'error' : queuedJob.status === 'cancelled' ? 'default' : 'processing'}>
+              {statusLabels[queuedJob.status] || queuedJob.status}
+            </Tag>
+            <Progress percent={queuedJob.progress || 0} size="small" style={{ width: 180 }} />
+            {['queued', 'processing'].includes(queuedJob.status) && (
+              <Button size="small" danger onClick={async () => {
+                try { setQueuedJob(await smartImportService.cancelExtractionJob(queuedJob.id)); message.success('任务已取消') }
+                catch (error) { message.error(errorMessage(error, '取消任务失败')) }
+              }}>取消</Button>
+            )}
+            {['failed', 'cancelled'].includes(queuedJob.status) && (
+              <Button size="small" onClick={async () => {
+                try { const response = await smartImportService.retryExtractionJob(queuedJob.id); setQueuedJob(response.job); message.success('重试任务已进入队列') }
+                catch (error) { message.error(errorMessage(error, '重试任务失败')) }
+              }}>重试</Button>
+            )}
           </Space>
         </Card>
       )}

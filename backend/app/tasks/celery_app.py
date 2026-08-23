@@ -16,7 +16,7 @@ celery_app = Celery(
     "weldsystem",
     broker=_broker_url(settings.CELERY_BROKER_URL),
     backend=_broker_url(settings.CELERY_RESULT_BACKEND),
-    include=["app.tasks.notification_tasks"],
+    include=["app.tasks.notification_tasks", "app.tasks.smart_import_tasks"],
 )
 
 celery_app.conf.update(

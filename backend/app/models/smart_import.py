@@ -180,6 +180,11 @@ class ExtractionJob(WorkspaceOwnedMixin, Base):
         ForeignKey("ai_provider_configs.id", ondelete="SET NULL"),
         index=True,
     )
+    retry_of_job_id = Column(
+        String(36), ForeignKey("extraction_jobs.id", ondelete="SET NULL"), index=True
+    )
+    run_ocr = Column(Boolean, nullable=False, default=True)
+    progress = Column(Integer, nullable=False, default=0)
     schema_version = Column(String(40), nullable=False)
     schema_snapshot = Column(JSONB, nullable=False, default=dict)
     prompt_version = Column(String(40))
@@ -205,6 +210,9 @@ class ExtractionJob(WorkspaceOwnedMixin, Base):
         CheckConstraint(
             "status IN ('queued','processing','completed','failed','cancelled')",
             name="ck_extraction_job_status",
+        ),
+        CheckConstraint(
+            "progress >= 0 AND progress <= 100", name="ck_extraction_job_progress"
         ),
     )
 

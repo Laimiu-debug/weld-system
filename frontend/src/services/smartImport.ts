@@ -46,10 +46,14 @@ export interface DocumentPage {
 
 export interface AIExtractionJob {
   id: string
+  document_id: string
   status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled'
   mode: 'platform' | 'byok'
   provider?: string
   model?: string
+  provider_config_id?: string
+  retry_of_job_id?: string
+  progress: number
   input_tokens: number
   output_tokens: number
   total_tokens: number
@@ -316,6 +320,40 @@ class SmartImportService {
       `/smart-import/documents/${documentId}/extract`,
       data
     )
+    return response.data
+  }
+
+  async queueExtraction(
+    documentId: string,
+    data: {
+      mode?: 'platform' | 'byok'
+      provider_config_id?: string
+      template_id?: string
+      module_id?: string
+      run_ocr?: boolean
+    }
+  ): Promise<{ job: AIExtractionJob; message: string }> {
+    const response = await api.post(`/smart-import/documents/${documentId}/extract-async`, data)
+    return response.data
+  }
+
+  async getExtractionJob(jobId: string): Promise<AIExtractionJob> {
+    const response = await api.get(`/smart-import/extraction-jobs/${jobId}`)
+    return response.data
+  }
+
+  async listDocumentExtractionJobs(documentId: string): Promise<AIExtractionJob[]> {
+    const response = await api.get(`/smart-import/documents/${documentId}/extraction-jobs`)
+    return response.data
+  }
+
+  async cancelExtractionJob(jobId: string): Promise<AIExtractionJob> {
+    const response = await api.post(`/smart-import/extraction-jobs/${jobId}/cancel`)
+    return response.data
+  }
+
+  async retryExtractionJob(jobId: string): Promise<{ job: AIExtractionJob; message: string }> {
+    const response = await api.post(`/smart-import/extraction-jobs/${jobId}/retry`)
     return response.data
   }
 

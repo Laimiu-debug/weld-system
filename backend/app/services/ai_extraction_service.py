@@ -152,6 +152,7 @@ class AIExtractionService:
         user: User,
         context: WorkspaceContext,
         provider_config_id: str | None = None,
+        existing_job: ExtractionJob | None = None,
     ) -> tuple[ExtractionJob, ExtractedEntity, list[DocumentPage]]:
         document = self.smart_import.get_document(document_id, user, context)
         batch = self.smart_import.get_batch(document.batch_id, user, context)
@@ -172,31 +173,55 @@ class AIExtractionService:
             )
 
         workspace = _resource_workspace(document)
-        job = ExtractionJob(
-            id=str(uuid4()),
-            document_id=document.id,
-            template_id=template_id,
-            mode=mode,
-            provider=self.provider.provider_name,
-            model=self.provider.model_name,
-            provider_config_id=provider_config_id,
-            schema_version=str(schema_snapshot.get("schema_version") or "1.0"),
-            schema_snapshot=schema_snapshot,
-            prompt_version="smart-import-v1",
-            request_trace_id=str(uuid4()),
-            status="processing",
-            attempt_count=1,
-            started_at=_utcnow(),
-            **workspace,
-        )
-        self.db.add(job)
+        if existing_job is None:
+            job = ExtractionJob(
+                id=str(uuid4()),
+                document_id=document.id,
+                template_id=template_id,
+                mode=mode,
+                provider=self.provider.provider_name,
+                model=self.provider.model_name,
+                provider_config_id=provider_config_id,
+                schema_version=str(schema_snapshot.get("schema_version") or "1.0"),
+                schema_snapshot=schema_snapshot,
+                prompt_version="smart-import-v1",
+                request_trace_id=str(uuid4()),
+                status="processing",
+                attempt_count=1,
+                run_ocr=run_ocr,
+                progress=5,
+                started_at=_utcnow(),
+                **workspace,
+            )
+            self.db.add(job)
+        else:
+            job = existing_job
+            self.db.refresh(job)
+            if job.status == "cancelled":
+                raise AIExtractionRunError("task_cancelled", "任务已取消", 409)
+            if job.document_id != document.id:
+                raise AIExtractionRunError("job_document_mismatch", "任务与文档不匹配", 409)
+            job.status = "processing"
+            job.progress = 5
+            job.attempt_count = (job.attempt_count or 0) + 1
+            job.started_at = _utcnow()
+            job.completed_at = None
+            job.error_code = None
+            job.error_message = None
+        batch.status = "processing"
         self.db.commit()
         try:
             if mode == "platform":
                 self.quota.reserve(job, user, context, len(pages))
             usage = [0, 0, 0]
             response_ids: list[str] = []
-            self._run_ocr(document, pages, run_ocr, usage, response_ids)
+            self._ensure_active(job)
+            job.progress = 10
+            self.db.commit()
+            self._run_ocr(document, pages, run_ocr, usage, response_ids, job)
+            self._ensure_active(job)
+            job.progress = 60
+            self.db.commit()
             input_text = _document_text(pages)
             if len(input_text) > settings.AI_MAX_INPUT_CHARS:
                 raise AIExtractionRunError(
@@ -212,6 +237,9 @@ class AIExtractionService:
                     json_schema=runtime_schema,
                 )
             )
+            self._ensure_active(job)
+            job.progress = 85
+            self.db.commit()
             _add_usage(usage, result)
             if result.response_id:
                 response_ids.append(result.response_id)
@@ -231,6 +259,7 @@ class AIExtractionService:
                 context,
             )
             job.status = "completed"
+            job.progress = 100
             job.completed_at = _utcnow()
             job.external_response_id = response_ids[-1] if response_ids else None
             job.input_tokens, job.output_tokens, job.total_tokens = usage
@@ -244,7 +273,8 @@ class AIExtractionService:
             self.quota.refund(job.id, user, context, str(exc))
             raise AIExtractionRunError(exc.code, str(exc), exc.status_code) from exc
         except AIExtractionRunError as exc:
-            self._fail_job(job.id, exc.code, str(exc))
+            if exc.code != "task_cancelled":
+                self._fail_job(job.id, exc.code, str(exc))
             self.quota.refund(job.id, user, context, str(exc))
             raise
         except AIProviderError as exc:
@@ -275,11 +305,13 @@ class AIExtractionService:
         run_ocr: bool,
         usage: list[int],
         response_ids: list[str],
+        job: ExtractionJob,
     ) -> None:
         pending = [page for page in pages if page.ocr_status == "pending"]
         if pending and not run_ocr:
             raise AIExtractionRunError("ocr_required", "文档包含扫描页，必须先执行 OCR")
-        for page in pending:
+        for index, page in enumerate(pending):
+            self._ensure_active(job)
             page.ocr_status = "processing"
             self.db.commit()
             try:
@@ -314,6 +346,10 @@ class AIExtractionService:
                 _add_usage(usage, result)
                 if result.response_id:
                     response_ids.append(result.response_id)
+                self.db.commit()
+                job.progress = min(
+                    55, 10 + int((index + 1) * 45 / max(len(pending), 1))
+                )
                 self.db.commit()
             except Exception:
                 self.db.rollback()
@@ -423,12 +459,17 @@ class AIExtractionService:
     def _fail_job(self, job_id: str, code: str, message: str) -> None:
         self.db.rollback()
         job = self.db.query(ExtractionJob).filter(ExtractionJob.id == job_id).first()
-        if job is not None:
+        if job is not None and job.status != "cancelled":
             job.status = "failed"
             job.error_code = code[:80]
             job.error_message = message[:1000]
             job.completed_at = _utcnow()
             self.db.commit()
+
+    def _ensure_active(self, job: ExtractionJob) -> None:
+        self.db.refresh(job)
+        if job.status == "cancelled":
+            raise AIExtractionRunError("task_cancelled", "任务已取消", 409)
 
 
 def _resource_workspace(resource: Any) -> dict[str, Any]:
