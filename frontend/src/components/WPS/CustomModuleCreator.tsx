@@ -34,7 +34,10 @@ import {
 } from '@ant-design/icons'
 import type { TabsProps } from 'antd'
 import { FieldDefinition, FieldModule } from '@/types/wpsModules'
-import customModuleService, { CustomModuleCreate } from '@/services/customModules'
+import customModuleService, {
+  CustomModuleCreate,
+  SemanticFieldDefinition
+} from '@/services/customModules'
 import TableFieldEditor from './TableFieldEditor'
 import ModuleFormRenderer from './ModuleFormRenderer'
 
@@ -43,11 +46,12 @@ const { Option } = Select
 
 interface FieldEditorProps {
   field: FieldDefinition & { key: string }
+  semanticFields: SemanticFieldDefinition[]
   onChange: (field: FieldDefinition & { key: string }) => void
   onDelete: () => void
 }
 
-const FieldEditor: React.FC<FieldEditorProps> = ({ field, onChange, onDelete }) => {
+const FieldEditor: React.FC<FieldEditorProps> = ({ field, semanticFields, onChange, onDelete }) => {
   return (
     <Card
       size="small"
@@ -220,6 +224,120 @@ const FieldEditor: React.FC<FieldEditorProps> = ({ field, onChange, onDelete }) 
           />
         </div>
       )}
+
+      <Collapse
+        ghost
+        items={[{
+          key: 'ai-extraction',
+          label: 'AI 识别设置（可选）',
+          children: (
+            <>
+              <Alert
+                type="info"
+                showIcon
+                message="AI 只负责生成待确认草稿，不影响手工录入。"
+                style={{ marginBottom: 12 }}
+              />
+              <Row gutter={16}>
+                <Col span={8}>
+                  <Form.Item label="识别方式">
+                    <Select
+                      value={field.ai_extract_mode || 'auto'}
+                      onChange={(value) => onChange({ ...field, ai_extract_mode: value })}
+                    >
+                      <Option value="auto">自动识别</Option>
+                      <Option value="manual">仅手工填写</Option>
+                      <Option value="derived">由系统计算</Option>
+                      <Option value="disabled">不参与识别</Option>
+                    </Select>
+                  </Form.Item>
+                </Col>
+                <Col span={10}>
+                  <Form.Item
+                    label="标准语义字段"
+                    tooltip="映射后可跨模板复用识别和规则；自定义字段可以不映射。"
+                  >
+                    <Select
+                      allowClear
+                      showSearch
+                      optionFilterProp="label"
+                      value={field.canonical_field_key}
+                      options={semanticFields.map((item) => ({
+                        value: item.key,
+                        label: `${item.label} (${item.key})`
+                      }))}
+                      onChange={(value) => {
+                        const semantic = semanticFields.find((item) => item.key === value)
+                        onChange({
+                          ...field,
+                          canonical_field_key: value,
+                          aliases: field.aliases?.length || !semantic
+                            ? field.aliases
+                            : semantic.aliases,
+                          use_in_rules: semantic?.rule_input
+                            ? field.use_in_rules ?? true
+                            : field.use_in_rules
+                        })
+                      }}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={6}>
+                  <Form.Item label="最低置信度">
+                    <InputNumber
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={field.confidence_threshold ?? 0.8}
+                      onChange={(value) => onChange({
+                        ...field,
+                        confidence_threshold: value ?? 0.8
+                      })}
+                      style={{ width: '100%' }}
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={16}>
+                <Col span={16}>
+                  <Form.Item label="字段说明">
+                    <Input
+                      value={field.description}
+                      onChange={(event) => onChange({
+                        ...field,
+                        description: event.target.value
+                      })}
+                      placeholder="说明该字段在工艺文件中的含义"
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item label="允许作为规则输入">
+                    <Switch
+                      checked={field.use_in_rules || false}
+                      onChange={(checked) => onChange({ ...field, use_in_rules: checked })}
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Form.Item label="识别别名（每行一个）">
+                <TextArea
+                  rows={2}
+                  value={(field.aliases || []).join('\n')}
+                  onChange={(event) => onChange({
+                    ...field,
+                    aliases: event.target.value
+                      .split('\n')
+                      .map((item) => item.trim())
+                      .filter(Boolean)
+                  })}
+                  placeholder="例如：材料牌号&#10;母材"
+                />
+              </Form.Item>
+            </>
+          )
+        }]}
+      />
     </Card>
   )
 }
@@ -240,6 +358,17 @@ const CustomModuleCreator: React.FC<CustomModuleCreatorProps> = ({
   const [form] = Form.useForm()
   const [fields, setFields] = useState<(FieldDefinition & { key: string })[]>([])
   const [loading, setLoading] = useState(false)
+  const [semanticFields, setSemanticFields] = useState<SemanticFieldDefinition[]>([])
+  const moduleType = Form.useWatch('module_type', form)
+
+  useEffect(() => {
+    if (!visible) return
+    const registryType = moduleType === 'common' ? undefined : moduleType
+    customModuleService
+      .getSemanticFields(registryType)
+      .then(setSemanticFields)
+      .catch(() => setSemanticFields([]))
+  }, [visible, moduleType])
 
   // 当 copyFromModule 改变时，初始化表单和字段
   useEffect(() => {
@@ -250,7 +379,7 @@ const CustomModuleCreator: React.FC<CustomModuleCreatorProps> = ({
         description: copyFromModule.description,
         icon: copyFromModule.icon,
         category: copyFromModule.category,
-        module_type: 'wps',  // 默认为WPS类型
+        module_type: copyFromModule.module_type || 'wps',
         repeatable: copyFromModule.repeatable,
         is_shared: false,
         access_level: 'private'
@@ -259,7 +388,8 @@ const CustomModuleCreator: React.FC<CustomModuleCreatorProps> = ({
       // 初始化字段
       const copiedFields = Object.entries(copyFromModule.fields).map(([key, field]) => ({
         key,
-        ...field
+        ...field,
+        field_id: undefined
       }))
       setFields(copiedFields)
     } else if (visible) {
@@ -284,7 +414,9 @@ const CustomModuleCreator: React.FC<CustomModuleCreatorProps> = ({
         label: '',
         type: 'text',
         required: false,
-        readonly: false
+        readonly: false,
+        ai_extract_mode: 'auto',
+        confidence_threshold: 0.8
       }
     ])
   }
@@ -380,6 +512,7 @@ const CustomModuleCreator: React.FC<CustomModuleCreatorProps> = ({
         <FieldEditor
           key={index}
           field={field}
+          semanticFields={semanticFields}
           onChange={(newField) => handleFieldChange(index, newField)}
           onDelete={() => handleFieldDelete(index)}
         />
@@ -539,4 +672,3 @@ const CustomModuleCreator: React.FC<CustomModuleCreatorProps> = ({
 }
 
 export default CustomModuleCreator
-

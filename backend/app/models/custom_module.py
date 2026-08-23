@@ -28,6 +28,7 @@ class CustomModule(Base):
     
     # 字段定义（JSONB格式）
     fields = Column(JSONB, nullable=False, default={})
+    schema_version = Column(Integer, nullable=False, default=1)
     
     # 数据隔离字段
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'))
@@ -65,4 +66,3 @@ class CustomModule(Base):
             name='check_category'
         ),
     )
-

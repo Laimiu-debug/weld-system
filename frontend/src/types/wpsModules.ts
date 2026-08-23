@@ -67,6 +67,13 @@ export interface FieldDefinition {
   accept?: string  // 当 type='file' 或 'image' 时使用，如 'image/*' 或 '.png,.jpg'
   maxSize?: number  // 最大文件大小（字节）
   description?: string  // 字段描述
+  field_id?: string  // 稳定字段ID，字段改名时保持不变
+  aliases?: string[]  // 文档中可能出现的别名
+  examples?: any[]  // 识别示例
+  ai_extract_mode?: 'auto' | 'manual' | 'derived' | 'disabled'
+  canonical_field_key?: string  // 平台稳定语义字段
+  confidence_threshold?: number
+  use_in_rules?: boolean
   condition?: {  // 条件显示
     field: string
     value: any
@@ -81,9 +88,11 @@ export interface FieldModule {
   name: string
   description: string
   icon: string
-  category: 'basic' | 'material' | 'materials' | 'gas' | 'electrical' | 'motion' | 'equipment' | 'calculation' | 'parameters' | 'tests' | 'analysis' | 'evaluation' | 'approval'
+  category: 'basic' | 'material' | 'materials' | 'gas' | 'electrical' | 'motion' | 'equipment' | 'calculation' | 'parameters' | 'tests' | 'analysis' | 'evaluation' | 'approval' | 'results' | 'attachments' | 'notes'
   repeatable: boolean  // 是否可重复（用于多层多道焊）
   fields: Record<string, FieldDefinition>
+  module_type?: 'wps' | 'pqr' | 'ppqr' | 'common'
+  schema_version?: number
 }
 
 /**
@@ -127,4 +136,3 @@ export const MODULE_CATEGORIES = {
   equipment: { label: '设备信息', color: '#eb2f96' },
   calculation: { label: '计算结果', color: '#fa8c16' },
 } as const
-

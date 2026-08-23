@@ -1,0 +1,120 @@
+from types import SimpleNamespace
+
+import pytest
+from pydantic import ValidationError
+
+from app.schemas.custom_module import FieldDefinition
+from app.services.extraction_schema_service import (
+    build_module_extraction_schema,
+    build_template_extraction_schema,
+    normalize_module_fields,
+    stable_legacy_field_id,
+)
+
+
+def _module(module_id: str = "module-1") -> SimpleNamespace:
+    return SimpleNamespace(
+        id=module_id,
+        name="母材信息",
+        module_type="wps",
+        schema_version=2,
+        fields={
+            "material_grade": {
+                "label": "材料牌号",
+                "type": "text",
+                "required": True,
+                "canonical_field_key": "base_material.specification",
+                "aliases": ["材质", "材质"],
+                "ai_extract_mode": "auto",
+                "confidence_threshold": 0.9,
+                "use_in_rules": True,
+            },
+            "internal_note": {
+                "label": "内部备注",
+                "type": "textarea",
+                "ai_extract_mode": "manual",
+            },
+        },
+    )
+
+
+def test_legacy_field_id_is_deterministic_and_existing_id_is_preserved() -> None:
+    expected = stable_legacy_field_id("module-1", "grade")
+    first = normalize_module_fields(
+        "module-1", {"grade": {"label": "牌号", "type": "text"}}
+    )
+    second = normalize_module_fields(
+        "module-1",
+        {"grade": {"label": "新显示名称", "type": "text"}},
+        existing_fields={"grade": {"field_id": "saved-id"}},
+    )
+
+    assert first["grade"]["field_id"] == expected
+    assert second["grade"]["field_id"] == "saved-id"
+
+
+def test_normalize_fields_handles_legacy_null_metadata() -> None:
+    fields = normalize_module_fields(
+        "module-1",
+        {
+            "grade": {
+                "label": "牌号",
+                "type": "text",
+                "confidence_threshold": None,
+                "aliases": None,
+            }
+        },
+    )
+
+    assert fields["grade"]["confidence_threshold"] == 0.8
+    assert fields["grade"]["aliases"] == []
+
+
+def test_module_schema_only_exposes_auto_fields_with_evidence() -> None:
+    schema = build_module_extraction_schema(_module())
+    json_schema = schema["json_schema"]
+    grade = json_schema["properties"]["material_grade"]
+
+    assert schema["source"]["version"] == "2"
+    assert json_schema["required"] == ["material_grade"]
+    assert "internal_note" not in json_schema["properties"]
+    assert grade["required"] == ["value", "confidence", "evidence"]
+    assert grade["x-weld-canonical-field"] == "base_material.specification"
+    assert grade["x-weld-aliases"].count("材质") == 1
+    assert grade["x-weld-rule-input"] is True
+    assert schema["field_bindings"][1]["extractable"] is False
+
+
+def test_template_schema_supports_repeated_instances_and_missing_modules() -> None:
+    module = _module()
+    template = SimpleNamespace(
+        id="template-1",
+        name="组合模板",
+        module_type="wps",
+        version="3",
+        module_instances=[
+            {"instanceId": "second", "moduleId": module.id, "order": 2},
+            {"instanceId": "first", "moduleId": module.id, "order": 1},
+            {"instanceId": "missing", "moduleId": "unknown"},
+        ],
+    )
+
+    schema = build_template_extraction_schema(template, [module])
+
+    assert list(schema["json_schema"]["properties"]) == ["first", "second"]
+    assert len(schema["field_bindings"]) == 4
+    assert schema["warnings"] == [{"code": "MISSING_MODULE", "module_id": "unknown"}]
+
+
+def test_field_definition_rejects_unknown_semantic_key() -> None:
+    with pytest.raises(ValidationError, match="未知的系统语义字段"):
+        FieldDefinition(
+            label="未知字段",
+            type="text",
+            canonical_field_key="unknown.field",
+        )
+
+
+def test_field_definition_rejects_non_uuid_field_id() -> None:
+    with pytest.raises(ValidationError, match="field_id 必须是有效 UUID"):
+        FieldDefinition(label="牌号", type="text", field_id="not-a-uuid")

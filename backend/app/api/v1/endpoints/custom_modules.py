@@ -1,7 +1,7 @@
 """
 自定义模块API端点
 """
-from typing import List, Optional
+from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from sqlalchemy.orm import Session
 
@@ -18,6 +18,8 @@ from app.schemas.custom_module import (
 from app.services.custom_module_service import CustomModuleService
 from app.services.workspace_service import WorkspaceService
 from app.core.data_access import WorkspaceContext, WorkspaceType
+from app.domain.semantic_fields import list_semantic_fields
+from app.services.extraction_schema_service import build_module_extraction_schema
 
 router = APIRouter()
 
@@ -121,6 +123,35 @@ def get_custom_modules(
         summaries.append(summary)
 
     return summaries
+
+
+@router.get("/semantic-fields/registry")
+def get_semantic_field_registry(
+    module_type: Optional[str] = Query(
+        None, pattern="^(wps|pqr|ppqr)$", description="按文档类型筛选"
+    ),
+    current_user: User = Depends(get_current_user),
+) -> list[dict[str, Any]]:
+    """返回稳定语义字段字典，供模块编辑器和提取映射使用。"""
+    del current_user
+    return [field.to_dict() for field in list_semantic_fields(module_type)]
+
+
+@router.get("/{module_id}/extraction-schema")
+def get_module_extraction_schema(
+    module_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> dict[str, Any]:
+    """按当前模块字段定义生成供应商无关的结构化提取 Schema。"""
+    workspace_context = get_workspace_context(db, current_user, workspace_id)
+    module = CustomModuleService(db).get_module(
+        module_id, current_user, workspace_context
+    )
+    if not module:
+        raise HTTPException(status_code=404, detail="模块不存在或无权访问")
+    return build_module_extraction_schema(module)
 
 
 @router.get("/{module_id}", response_model=CustomModuleResponse)
@@ -237,4 +268,3 @@ def increment_module_usage(
     module_service.increment_usage(module_id)
 
     return {"message": "使用次数已更新"}
-

@@ -10,6 +10,7 @@ from app.models.custom_module import CustomModule
 from app.models.user import User
 from app.schemas.custom_module import CustomModuleCreate, CustomModuleUpdate
 from app.core.data_access import DataAccessMiddleware, WorkspaceContext, WorkspaceType
+from app.services.extraction_schema_service import normalize_module_fields
 
 
 class CustomModuleService:
@@ -154,10 +155,8 @@ class CustomModuleService:
         else:
             module_id = module_data.id
 
-        # 转换字段定义为dict
-        fields_dict = {
-            key: value.model_dump() for key, value in module_data.fields.items()
-        }
+        # 补齐稳定字段 ID 与可选 AI 元数据，同时兼容旧模块字段。
+        fields_dict = normalize_module_fields(module_id, module_data.fields)
 
         # 创建模块
         module = CustomModule(
@@ -213,15 +212,20 @@ class CustomModuleService:
         # 更新字段
         update_data = module_data.model_dump(exclude_unset=True)
 
-        # 转换字段定义
-        if 'fields' in update_data and update_data['fields']:
-            update_data['fields'] = {
-                key: value.model_dump() if hasattr(value, 'model_dump') else value
-                for key, value in update_data['fields'].items()
-            }
+        # 转换字段定义并保留原有稳定字段 ID。
+        fields_changed = 'fields' in update_data and update_data['fields'] is not None
+        if fields_changed:
+            update_data['fields'] = normalize_module_fields(
+                module.id,
+                update_data['fields'],
+                existing_fields=module.fields or {},
+            )
 
         for field, value in update_data.items():
             setattr(module, field, value)
+
+        if fields_changed:
+            module.schema_version = (module.schema_version or 1) + 1
 
         self.db.commit()
         self.db.refresh(module)
@@ -329,4 +333,3 @@ class CustomModuleService:
 
         # 企业内其他人创建的共享模块（仅查看权限,不能修改/删除）
         return False
-

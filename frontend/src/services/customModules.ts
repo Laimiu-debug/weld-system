@@ -4,16 +4,47 @@
 import api from './api'
 import { FieldModule } from '@/types/wpsModules'
 
+export type ModuleCategory =
+  | 'basic'
+  | 'parameters'
+  | 'materials'
+  | 'tests'
+  | 'results'
+  | 'equipment'
+  | 'attachments'
+  | 'notes'
+
+export interface SemanticFieldDefinition {
+  key: string
+  label: string
+  data_type: string
+  document_types: string[]
+  unit?: string
+  description: string
+  aliases: string[]
+  rule_input: boolean
+  enum: string[]
+}
+
+export interface ExtractionSchemaResponse {
+  schema_version: string
+  document_type: string
+  source: Record<string, unknown>
+  json_schema: Record<string, unknown>
+  field_bindings: Array<Record<string, unknown>>
+  warnings?: Array<Record<string, unknown>>
+}
+
 export interface CustomModuleCreate {
   id?: string
   name: string
   description?: string
   icon?: string
-  category: 'basic' | 'material' | 'gas' | 'electrical' | 'motion' | 'equipment' | 'calculation'
+  category: ModuleCategory
   repeatable: boolean
   fields: Record<string, any>
   is_shared?: boolean
-  module_type?: 'wps' | 'pqr' | 'ppqr'
+  module_type?: 'wps' | 'pqr' | 'ppqr' | 'common'
   access_level?: 'private' | 'shared' | 'public'
 }
 
@@ -21,7 +52,7 @@ export interface CustomModuleUpdate {
   name?: string
   description?: string
   icon?: string
-  category?: 'basic' | 'material' | 'gas' | 'electrical' | 'motion' | 'equipment' | 'calculation'
+  category?: ModuleCategory
   repeatable?: boolean
   fields?: Record<string, any>
   is_shared?: boolean
@@ -34,6 +65,7 @@ export interface CustomModuleResponse extends FieldModule {
   company_id?: number
   factory_id?: number
   usage_count: number
+  schema_version: number
   created_at: string
   updated_at: string
 }
@@ -54,6 +86,20 @@ export interface CustomModuleSummary {
 }
 
 class CustomModuleService {
+  async getSemanticFields(
+    moduleType?: 'wps' | 'pqr' | 'ppqr'
+  ): Promise<SemanticFieldDefinition[]> {
+    const response = await api.get('/custom-modules/semantic-fields/registry', {
+      params: moduleType ? { module_type: moduleType } : undefined
+    })
+    return response.data
+  }
+
+  async getExtractionSchema(id: string): Promise<ExtractionSchemaResponse> {
+    const response = await api.get(`/custom-modules/${id}/extraction-schema`)
+    return response.data
+  }
+
   /**
    * 获取自定义模块列表
    */
@@ -106,4 +152,3 @@ class CustomModuleService {
 }
 
 export default new CustomModuleService()
-

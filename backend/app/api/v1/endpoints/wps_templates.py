@@ -16,6 +16,8 @@ from app.schemas.wps_template import (
     WPSTemplateListResponse
 )
 from app.services.wps_template_service import WPSTemplateService
+from app.services.custom_module_service import CustomModuleService
+from app.services.extraction_schema_service import build_template_extraction_schema
 from app.services.workspace_service import WorkspaceService
 from app.core.data_access import WorkspaceContext, WorkspaceType
 
@@ -164,6 +166,35 @@ def get_template(
         )
 
 
+@router.get("/{template_id}/extraction-schema")
+def get_template_extraction_schema(
+    *,
+    db: Session = Depends(deps.get_db),
+    template_id: str,
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> dict[str, Any]:
+    """汇总模板中的可访问模块，生成动态结构化提取 Schema。"""
+    workspace_context = get_workspace_context(db, current_user, workspace_id)
+    template = WPSTemplateService(db).get_template_by_id(
+        template_id=template_id,
+        current_user=current_user,
+        workspace_context=workspace_context,
+    )
+    module_service = CustomModuleService(db)
+    modules = []
+    seen: set[str] = set()
+    for instance in template.module_instances or []:
+        module_id = instance["moduleId"]
+        if module_id in seen:
+            continue
+        seen.add(module_id)
+        module = module_service.get_module(module_id, current_user, workspace_context)
+        if module is not None:
+            modules.append(module)
+    return build_template_extraction_schema(template, modules)
+
+
 @router.post("/", response_model=WPSTemplateResponse, status_code=status.HTTP_201_CREATED)
 def create_template(
     *,
@@ -298,5 +329,4 @@ def get_standards(
         {"code": "CUSTOM", "name": "自定义标准"}
     ]
     return standards
-
 

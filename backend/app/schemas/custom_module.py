@@ -3,7 +3,10 @@
 """
 from typing import Optional, Dict, Any, List
 from datetime import datetime
-from pydantic import BaseModel, Field
+from uuid import UUID
+from pydantic import BaseModel, Field, field_validator
+
+from app.domain.semantic_fields import get_semantic_field
 
 
 class TableCellDefinition(BaseModel):
@@ -49,6 +52,37 @@ class FieldDefinition(BaseModel):
     max: Optional[float] = None
     multiple: Optional[bool] = False
     tableDefinition: Optional[TableDefinition] = None
+    field_id: Optional[str] = Field(
+        default=None,
+        description="稳定字段ID；显示键名或标签变化时保持不变",
+    )
+    description: Optional[str] = Field(None, max_length=500)
+    aliases: List[str] = Field(default_factory=list)
+    examples: List[Any] = Field(default_factory=list)
+    ai_extract_mode: str = Field(
+        default="auto",
+        pattern="^(auto|manual|derived|disabled)$",
+    )
+    canonical_field_key: Optional[str] = None
+    confidence_threshold: float = Field(default=0.8, ge=0, le=1)
+    use_in_rules: bool = False
+
+    @field_validator("canonical_field_key")
+    @classmethod
+    def validate_canonical_field_key(cls, value: Optional[str]) -> Optional[str]:
+        if value and get_semantic_field(value) is None:
+            raise ValueError("未知的系统语义字段")
+        return value
+
+    @field_validator("field_id")
+    @classmethod
+    def validate_field_id(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        try:
+            return str(UUID(value))
+        except ValueError as exc:
+            raise ValueError("field_id 必须是有效 UUID") from exc
 
 
 class CustomModuleBase(BaseModel):
@@ -104,6 +138,7 @@ class CustomModuleResponse(CustomModuleBase):
     company_id: Optional[int] = None
     factory_id: Optional[int] = None
     usage_count: int
+    schema_version: int = 1
     created_at: datetime
     updated_at: datetime
 
@@ -126,4 +161,3 @@ class CustomModuleSummary(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
-
