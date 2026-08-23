@@ -9,7 +9,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.data_access import WorkspaceContext
-from app.models.smart_import import ExtractionJob
+from app.models.smart_import import (
+    ExtractedEntity,
+    ExtractionJob,
+    ImportBatch,
+    SourceDocument,
+)
 from app.models.user import User
 from app.services.smart_import_service import SmartImportService
 
@@ -49,6 +54,57 @@ class AIExtractionQueueService:
             .all()
         )
 
+    def refresh_batch(self, batch: ImportBatch) -> ImportBatch:
+        documents = (
+            self.db.query(SourceDocument)
+            .filter(SourceDocument.batch_id == batch.id)
+            .all()
+        )
+        if not documents:
+            return batch
+        document_ids = [item.id for item in documents]
+        jobs = (
+            self.db.query(ExtractionJob)
+            .filter(ExtractionJob.document_id.in_(document_ids))
+            .order_by(ExtractionJob.created_at.desc())
+            .all()
+        )
+        latest: dict[str, ExtractionJob] = {}
+        for job in jobs:
+            latest.setdefault(job.document_id, job)
+        entities = (
+            self.db.query(ExtractedEntity)
+            .filter(
+                ExtractedEntity.document_id.in_(document_ids),
+                ExtractedEntity.is_current.is_(True),
+            )
+            .all()
+        )
+        published = sum(item.status == "published" for item in entities)
+        selected = list(latest.values())
+        completed = sum(item.status == "completed" for item in selected)
+        failed = sum(item.status in {"failed", "cancelled"} for item in selected)
+        batch.progress = int(
+            sum(item.progress or 0 for item in selected) / max(len(documents), 1)
+        )
+        if published == len(documents):
+            batch.status = "completed"
+            batch.progress = 100
+        elif any(item.status == "processing" for item in selected):
+            batch.status = "processing"
+        elif any(item.status == "queued" for item in selected):
+            batch.status = "queued"
+        elif completed and failed:
+            batch.status = "partial_success"
+        elif completed == len(documents):
+            batch.status = "review"
+            batch.progress = 100
+        elif failed == len(documents):
+            batch.status = "failed"
+        self.db.commit()
+        self.db.refresh(batch)
+        return batch
+
     def create_job(
         self,
         *,
@@ -79,13 +135,13 @@ class AIExtractionQueueService:
         )
         if duplicate:
             raise HTTPException(status_code=409, detail="该文件已有正在执行的提取任务")
-        active = self.smart_import._scope_query(
+        queued = self.smart_import._scope_query(
             self.db.query(ExtractionJob), ExtractionJob, user, context
-        ).filter(ExtractionJob.status.in_(ACTIVE_JOB_STATUSES))
-        if active.count() >= settings.AI_MAX_CONCURRENT_TASKS:
+        ).filter(ExtractionJob.status == "queued")
+        if queued.count() >= settings.AI_MAX_QUEUED_TASKS:
             raise HTTPException(
                 status_code=429,
-                detail=f"当前工作区最多同时运行 {settings.AI_MAX_CONCURRENT_TASKS} 个 AI 任务",
+                detail=f"当前工作区最多排队 {settings.AI_MAX_QUEUED_TASKS} 个 AI 任务",
             )
         job = ExtractionJob(
             id=str(uuid4()),

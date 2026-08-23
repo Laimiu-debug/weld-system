@@ -26,6 +26,7 @@ celery_app.conf.update(
     timezone=settings.CELERY_TIMEZONE,
     enable_utc=True,
     task_track_started=True,
+    worker_concurrency=settings.AI_MAX_CONCURRENT_TASKS,
     broker_connection_retry_on_startup=True,
     beat_schedule={
         "daily-notifications-at-08-00": {

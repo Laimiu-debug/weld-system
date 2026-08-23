@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from app.core.database import SessionLocal
 from app.core.data_access import WorkspaceContext
-from app.models.smart_import import ExtractionJob
+from app.models.smart_import import ExtractionJob, ImportBatch, SourceDocument
 from app.models.user import User
 from app.schemas.smart_import import AIExtractionRequest
 from app.services.ai_credential_service import AIProviderConfigService
@@ -13,6 +13,7 @@ from app.services.ai_extraction_service import (
     AIExtractionService,
     build_provider,
 )
+from app.services.ai_extraction_queue_service import AIExtractionQueueService
 from app.services.document_storage_service import get_document_storage
 from app.tasks.celery_app import celery_app
 
@@ -91,6 +92,10 @@ def run_smart_import_extraction(job_id: str) -> dict:
     finally:
         if provider is not None:
             provider.close()
+        try:
+            _refresh_job_batch(db, job_id)
+        except Exception:
+            logger.exception("Could not refresh batch state for task %s", job_id)
         db.close()
 
 
@@ -100,3 +105,17 @@ def _mark_setup_failure(db, job: ExtractionJob, code: str, message: str) -> None
     job.error_message = message
     job.completed_at = datetime.now(UTC).replace(tzinfo=None)
     db.commit()
+
+
+def _refresh_job_batch(db, job_id: str) -> None:
+    job = db.query(ExtractionJob).filter(ExtractionJob.id == job_id).first()
+    if not job:
+        return
+    document = (
+        db.query(SourceDocument).filter(SourceDocument.id == job.document_id).first()
+    )
+    if not document:
+        return
+    batch = db.query(ImportBatch).filter(ImportBatch.id == document.batch_id).first()
+    if batch:
+        AIExtractionQueueService(db).refresh_batch(batch)

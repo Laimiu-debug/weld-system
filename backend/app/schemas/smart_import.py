@@ -304,6 +304,25 @@ class AIExtractionQueuedResponse(BaseModel):
     message: str = "任务已进入后台队列"
 
 
+class BatchAIExtractionRequest(AIExtractionRequest):
+    document_ids: list[str] = Field(default_factory=list, max_length=100)
+
+
+class BatchOperationItem(BaseModel):
+    document_id: str
+    resource_id: str | None = None
+    status: Literal["queued", "published", "skipped", "failed"]
+    message: str | None = None
+
+
+class BatchOperationResponse(BaseModel):
+    batch_id: str
+    succeeded: int
+    failed: int
+    skipped: int
+    items: list[BatchOperationItem]
+
+
 class AIExtractionResponse(BaseModel):
     job: ExtractionJobResponse
     entity: ExtractedEntityDetailResponse

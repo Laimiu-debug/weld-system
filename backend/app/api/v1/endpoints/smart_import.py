@@ -40,7 +40,10 @@ from app.schemas.smart_import import (
     AIProviderConfigUpdate,
     AIProviderKeyRotate,
     AIQuotaStatusResponse,
+    BatchAIExtractionRequest,
     BatchDetailResponse,
+    BatchOperationItem,
+    BatchOperationResponse,
     BulkFieldAcceptRequest,
     DocumentPageResponse,
     DocumentParseResponse,
@@ -427,7 +430,9 @@ def list_batches(
     workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
 ) -> list[ImportBatchResponse]:
     context = resolve_workspace(db, current_user, workspace_id)
-    return SmartImportService(db).list_batches(current_user, context, skip, limit)
+    batches = SmartImportService(db).list_batches(current_user, context, skip, limit)
+    queue = AIExtractionQueueService(db)
+    return [queue.refresh_batch(item) for item in batches]
 
 
 @router.get("/batches/{batch_id}", response_model=BatchDetailResponse)
@@ -440,6 +445,7 @@ def get_batch(
     context = resolve_workspace(db, current_user, workspace_id)
     service = SmartImportService(db)
     batch = service.get_batch(batch_id, current_user, context)
+    batch = AIExtractionQueueService(db).refresh_batch(batch)
     documents = service.get_batch_documents(batch, current_user, context)
     return BatchDetailResponse(
         **ImportBatchResponse.model_validate(batch).model_dump(),
@@ -754,6 +760,11 @@ def cancel_extraction_job(
     service = AIExtractionQueueService(db)
     job = service.cancel_job(service.get_job(job_id, current_user, context))
     celery_app.control.revoke(job.id, terminate=False)
+    document = SmartImportService(db).get_document(
+        job.document_id, current_user, context
+    )
+    batch = SmartImportService(db).get_batch(document.batch_id, current_user, context)
+    service.refresh_batch(batch)
     return job
 
 
@@ -787,6 +798,227 @@ def retry_extraction_job(
         db.commit()
         raise
     return AIExtractionQueuedResponse(job=ExtractionJobResponse.model_validate(job))
+
+
+def _operation_error(exc: HTTPException) -> str:
+    if isinstance(exc.detail, str):
+        return exc.detail[:500]
+    if isinstance(exc.detail, dict):
+        return str(exc.detail.get("message") or "操作失败")[:500]
+    return "操作失败"
+
+
+@router.post(
+    "/batches/{batch_id}/extract-async",
+    response_model=BatchOperationResponse,
+    status_code=202,
+)
+def queue_batch_extraction(
+    batch_id: str,
+    request: BatchAIExtractionRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> BatchOperationResponse:
+    context = resolve_workspace(db, current_user, workspace_id)
+    validate_ai_extraction_request(request)
+    if request.mode == "byok" and not request.provider_config_id:
+        raise HTTPException(status_code=422, detail="批量任务必须使用平台额度或已保存配置")
+    smart_import = SmartImportService(db)
+    batch = smart_import.get_batch(batch_id, current_user, context)
+    documents = smart_import.get_batch_documents(batch, current_user, context)
+    requested = set(request.document_ids)
+    if requested:
+        unknown = requested - {item.id for item in documents}
+        if unknown:
+            raise HTTPException(status_code=422, detail="选择的文件不属于当前批次")
+        documents = [item for item in documents if item.id in requested]
+    if not documents:
+        raise HTTPException(status_code=422, detail="当前批次没有可处理文件")
+    schema_snapshot, template_id = build_requested_schema(
+        request, db, current_user, context
+    )
+    credentials = AIProviderConfigService(db)
+    provider_config = None
+    if request.provider_config_id:
+        provider_config, _ = credentials.resolve_for_use(
+            request.provider_config_id, current_user, context
+        )
+        provider_name, model_name = provider_config.provider, provider_config.model
+    else:
+        credentials.enforce_policy("platform", None, context)
+        if not settings.AI_PLATFORM_API_KEY or not settings.AI_PLATFORM_MODEL:
+            raise HTTPException(status_code=503, detail="平台 AI 服务尚未配置")
+        provider_name, model_name = (
+            settings.AI_PLATFORM_PROVIDER,
+            settings.AI_PLATFORM_MODEL,
+        )
+    queue = AIExtractionQueueService(db)
+    items: list[BatchOperationItem] = []
+    for document in documents:
+        try:
+            job = queue.create_job(
+                document_id=document.id,
+                schema_snapshot=schema_snapshot,
+                template_id=template_id,
+                mode=request.mode,
+                provider=provider_name,
+                model=model_name,
+                provider_config_id=provider_config.id if provider_config else None,
+                run_ocr=request.run_ocr,
+                user=current_user,
+                context=context,
+            )
+            try:
+                dispatch_extraction_job(job)
+            except HTTPException:
+                job.status = "failed"
+                job.error_code = "queue_unavailable"
+                job.error_message = "后台任务队列暂时不可用"
+                job.completed_at = datetime.utcnow()
+                db.commit()
+                raise
+            items.append(
+                BatchOperationItem(
+                    document_id=document.id,
+                    resource_id=job.id,
+                    status="queued",
+                )
+            )
+        except HTTPException as exc:
+            status = "skipped" if exc.status_code == 409 else "failed"
+            items.append(
+                BatchOperationItem(
+                    document_id=document.id,
+                    status=status,
+                    message=_operation_error(exc),
+                )
+            )
+    queue.refresh_batch(batch)
+    return BatchOperationResponse(
+        batch_id=batch.id,
+        succeeded=sum(item.status == "queued" for item in items),
+        failed=sum(item.status == "failed" for item in items),
+        skipped=sum(item.status == "skipped" for item in items),
+        items=items,
+    )
+
+
+@router.post(
+    "/batches/{batch_id}/retry-failed",
+    response_model=BatchOperationResponse,
+    status_code=202,
+)
+def retry_failed_batch_jobs(
+    batch_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> BatchOperationResponse:
+    context = resolve_workspace(db, current_user, workspace_id)
+    smart_import = SmartImportService(db)
+    batch = smart_import.get_batch(batch_id, current_user, context)
+    documents = smart_import.get_batch_documents(batch, current_user, context)
+    queue = AIExtractionQueueService(db)
+    items: list[BatchOperationItem] = []
+    for document in documents:
+        jobs = queue.list_document_jobs(document.id, current_user, context)
+        source = jobs[0] if jobs else None
+        if not source or source.status not in {"failed", "cancelled"}:
+            items.append(BatchOperationItem(document_id=document.id, status="skipped"))
+            continue
+        try:
+            credentials = AIProviderConfigService(db)
+            if source.provider_config_id:
+                credentials.resolve_for_use(
+                    source.provider_config_id, current_user, context
+                )
+            else:
+                credentials.enforce_policy(source.mode, None, context)
+            job = queue.retry_job(source, current_user, context)
+            dispatch_extraction_job(job)
+            items.append(
+                BatchOperationItem(
+                    document_id=document.id,
+                    resource_id=job.id,
+                    status="queued",
+                )
+            )
+        except HTTPException as exc:
+            items.append(
+                BatchOperationItem(
+                    document_id=document.id,
+                    status="failed",
+                    message=_operation_error(exc),
+                )
+            )
+    queue.refresh_batch(batch)
+    return BatchOperationResponse(
+        batch_id=batch.id,
+        succeeded=sum(item.status == "queued" for item in items),
+        failed=sum(item.status == "failed" for item in items),
+        skipped=sum(item.status == "skipped" for item in items),
+        items=items,
+    )
+
+
+@router.post(
+    "/batches/{batch_id}/publish-reviewed",
+    response_model=BatchOperationResponse,
+)
+def publish_reviewed_batch_entities(
+    batch_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> BatchOperationResponse:
+    context = resolve_workspace(db, current_user, workspace_id)
+    smart_import = SmartImportService(db)
+    batch = smart_import.get_batch(batch_id, current_user, context)
+    documents = smart_import.get_batch_documents(batch, current_user, context)
+    review = SmartImportReviewService(db)
+    items: list[BatchOperationItem] = []
+    for document in documents:
+        entity = (
+            smart_import._scope_query(
+                db.query(ExtractedEntity), ExtractedEntity, current_user, context
+            )
+            .filter(
+                ExtractedEntity.document_id == document.id,
+                ExtractedEntity.is_current.is_(True),
+            )
+            .order_by(ExtractedEntity.version.desc())
+            .first()
+        )
+        if not entity or entity.status != "review":
+            items.append(BatchOperationItem(document_id=document.id, status="skipped"))
+            continue
+        try:
+            ensure_module_permission(db, current_user, entity.entity_type, "create")
+            record = review.publish(entity.id, current_user, context)
+            items.append(
+                BatchOperationItem(
+                    document_id=document.id,
+                    resource_id=record.target_entity_id,
+                    status="published",
+                )
+            )
+        except HTTPException as exc:
+            items.append(
+                BatchOperationItem(
+                    document_id=document.id,
+                    status="failed",
+                    message=_operation_error(exc),
+                )
+            )
+    AIExtractionQueueService(db).refresh_batch(batch)
+    return BatchOperationResponse(
+        batch_id=batch.id,
+        succeeded=sum(item.status == "published" for item in items),
+        failed=sum(item.status == "failed" for item in items),
+        skipped=sum(item.status == "skipped" for item in items),
+        items=items,
+    )
 
 
 @router.get("/entities/{entity_id}", response_model=ExtractedEntityDetailResponse)

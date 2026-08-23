@@ -7,7 +7,7 @@ export interface ImportBatch {
   name: string
   source_type: 'upload' | 'manual' | 'migration'
   target_entity_type: ImportEntityType
-  status: 'draft' | 'queued' | 'processing' | 'review' | 'completed' | 'failed' | 'cancelled'
+  status: 'draft' | 'queued' | 'processing' | 'review' | 'partial_success' | 'completed' | 'failed' | 'cancelled'
   progress: number
   total_documents: number
   processed_documents: number
@@ -136,6 +136,19 @@ export interface EnterpriseAIPolicy {
   require_enterprise_key: boolean
   allowed_hosts: string[]
   updated_at?: string
+}
+
+export interface BatchOperationResult {
+  batch_id: string
+  succeeded: number
+  failed: number
+  skipped: number
+  items: Array<{
+    document_id: string
+    resource_id?: string
+    status: 'queued' | 'published' | 'skipped' | 'failed'
+    message?: string
+  }>
 }
 
 export interface EntityPublishResult {
@@ -354,6 +367,31 @@ class SmartImportService {
 
   async retryExtractionJob(jobId: string): Promise<{ job: AIExtractionJob; message: string }> {
     const response = await api.post(`/smart-import/extraction-jobs/${jobId}/retry`)
+    return response.data
+  }
+
+  async queueBatchExtraction(
+    batchId: string,
+    data: {
+      mode: 'platform' | 'byok'
+      provider_config_id?: string
+      template_id?: string
+      module_id?: string
+      run_ocr?: boolean
+      document_ids?: string[]
+    }
+  ): Promise<BatchOperationResult> {
+    const response = await api.post(`/smart-import/batches/${batchId}/extract-async`, data)
+    return response.data
+  }
+
+  async retryFailedBatchJobs(batchId: string): Promise<BatchOperationResult> {
+    const response = await api.post(`/smart-import/batches/${batchId}/retry-failed`)
+    return response.data
+  }
+
+  async publishReviewedBatch(batchId: string): Promise<BatchOperationResult> {
+    const response = await api.post(`/smart-import/batches/${batchId}/publish-reviewed`)
     return response.data
   }
 

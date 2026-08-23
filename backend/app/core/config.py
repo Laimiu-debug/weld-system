@@ -163,6 +163,7 @@ class Settings(BaseSettings):
     AI_MAX_DOCUMENT_PAGES: int = 30
     AI_MAX_INPUT_CHARS: int = 120000
     AI_MAX_CONCURRENT_TASKS: int = 2
+    AI_MAX_QUEUED_TASKS: int = 50
 
     # 安全配置
     BCRYPT_ROUNDS: int = 12

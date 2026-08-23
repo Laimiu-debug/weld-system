@@ -5,7 +5,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.core.data_access import WorkspaceContext, WorkspaceType
-from app.models.smart_import import ExtractionJob
+from app.models.smart_import import ExtractionJob, ImportBatch, SourceDocument
 from app.services.ai_extraction_queue_service import AIExtractionQueueService
 
 
@@ -50,3 +50,27 @@ def test_retry_creates_new_job_with_source_link() -> None:
     assert result.id == "job-2"
     assert service.create_job.call_args.kwargs["retry_of_job_id"] == "job-1"
     assert service.create_job.call_args.kwargs["document_id"] == "document-1"
+
+
+def test_batch_state_becomes_partial_success() -> None:
+    db = Mock()
+    document_query = Mock()
+    document_query.filter.return_value.all.return_value = [
+        SourceDocument(id="doc-1", batch_id="batch-1"),
+        SourceDocument(id="doc-2", batch_id="batch-1"),
+    ]
+    job_query = Mock()
+    job_query.filter.return_value.order_by.return_value.all.return_value = [
+        ExtractionJob(id="job-1", document_id="doc-1", status="completed", progress=100),
+        ExtractionJob(id="job-2", document_id="doc-2", status="failed", progress=40),
+    ]
+    entity_query = Mock()
+    entity_query.filter.return_value.all.return_value = []
+    db.query.side_effect = [document_query, job_query, entity_query]
+    batch = ImportBatch(id="batch-1", status="processing", progress=0)
+
+    result = AIExtractionQueueService(db).refresh_batch(batch)
+
+    assert result.status == "partial_success"
+    assert result.progress == 70
+    db.commit.assert_called_once()

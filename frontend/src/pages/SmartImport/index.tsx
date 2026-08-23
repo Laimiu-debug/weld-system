@@ -81,6 +81,7 @@ const statusLabels: Record<string, string> = {
   queued: '排队中',
   processing: '处理中',
   review: '待审核',
+  partial_success: '部分成功',
   completed: '已完成',
   failed: '失败',
   cancelled: '已取消',
@@ -95,6 +96,7 @@ const statusColors: Record<string, string> = {
   queued: 'processing',
   processing: 'processing',
   review: 'warning',
+  partial_success: 'warning',
   completed: 'success',
   ready: 'success',
   failed: 'error',
@@ -156,6 +158,8 @@ const SmartImportPage: React.FC = () => {
   const [enterprisePolicy, setEnterprisePolicy] = useState<EnterpriseAIPolicy | null>(null)
   const [providerSaving, setProviderSaving] = useState(false)
   const [queuedJob, setQueuedJob] = useState<AIExtractionJob | null>(null)
+  const [documentJobs, setDocumentJobs] = useState<Record<string, AIExtractionJob>>({})
+  const [batchExtractionMode, setBatchExtractionMode] = useState(false)
   const [rotateConfig, setRotateConfig] = useState<AIProviderConfig | null>(null)
   const [createForm] = Form.useForm()
   const [extractForm] = Form.useForm()
@@ -189,9 +193,13 @@ const SmartImportPage: React.FC = () => {
       if (nextId) {
         const detail = await smartImportService.getBatch(nextId)
         setBatch(detail)
-        const jobs = (await Promise.all(
+        const jobsByDocument = await Promise.all(
           detail.documents.map(item => smartImportService.listDocumentExtractionJobs(item.id))
-        )).flat()
+        )
+        setDocumentJobs(Object.fromEntries(
+          detail.documents.flatMap((item, index) => jobsByDocument[index][0] ? [[item.id, jobsByDocument[index][0]]] : [])
+        ))
+        const jobs = jobsByDocument.flat()
         const active = jobs.find(item => ['queued', 'processing'].includes(item.status))
         if (active) setQueuedJob(active)
       } else setBatch(null)
@@ -238,9 +246,13 @@ const SmartImportPage: React.FC = () => {
     try {
       const detail = await smartImportService.getBatch(id)
       setBatch(detail)
-      const jobs = (await Promise.all(
+      const jobsByDocument = await Promise.all(
         detail.documents.map(item => smartImportService.listDocumentExtractionJobs(item.id))
-      )).flat()
+      )
+      setDocumentJobs(Object.fromEntries(
+        detail.documents.flatMap((item, index) => jobsByDocument[index][0] ? [[item.id, jobsByDocument[index][0]]] : [])
+      ))
+      const jobs = jobsByDocument.flat()
       const active = jobs.find(item => ['queued', 'processing'].includes(item.status))
       setQueuedJob(active || null)
     } finally {
@@ -285,6 +297,7 @@ const SmartImportPage: React.FC = () => {
   const prepareExtraction = async (document: SourceDocument) => {
     if (!batch) return
     setActiveDocument(document)
+    setBatchExtractionMode(false)
     setExtractOpen(true)
     smartImportService.getAIQuota(document.page_count || 1).then(setQuota).catch(() => undefined)
     extractForm.resetFields()
@@ -312,6 +325,19 @@ const SmartImportPage: React.FC = () => {
     } catch (error) {
       message.error(errorMessage(error, '加载模板和模块失败'))
     }
+  }
+
+  const prepareBatchExtraction = async () => {
+    if (!batch?.documents.length) {
+      message.warning('请先上传文件')
+      return
+    }
+    await prepareExtraction(batch.documents[0])
+    setBatchExtractionMode(true)
+    extractForm.setFieldValue(
+      'mode',
+      capabilities?.platform_available ? 'platform' : providerConfigs.length ? 'saved' : undefined
+    )
   }
 
   const viewDraft = async (document: SourceDocument) => {
@@ -397,8 +423,33 @@ const SmartImportPage: React.FC = () => {
     }
   }
 
+  const retryFailedBatch = async () => {
+    if (!batch) return
+    try {
+      const response = await smartImportService.retryFailedBatchJobs(batch.id)
+      await loadBatches(batch.id)
+      message.success(`已重新排队 ${response.succeeded} 个文件，跳过 ${response.skipped} 个`)
+    } catch (error) {
+      message.error(errorMessage(error, '批量重试失败'))
+    }
+  }
+
+  const publishReviewedBatch = async () => {
+    if (!batch) return
+    setPublishing(true)
+    try {
+      const response = await smartImportService.publishReviewedBatch(batch.id)
+      await loadBatches(batch.id)
+      message.success(`已发布 ${response.succeeded} 条，跳过 ${response.skipped} 条，失败 ${response.failed} 条`)
+    } catch (error) {
+      message.error(errorMessage(error, '批量发布失败'))
+    } finally {
+      setPublishing(false)
+    }
+  }
+
   const runExtraction = async () => {
-    if (!activeDocument) return
+    if ((!activeDocument && !batchExtractionMode) || !batch) return
     const values = await extractForm.validateFields()
     const [sourceType, sourceId] = String(values.schema_source).split(':', 2)
     setExtracting(true)
@@ -414,12 +465,15 @@ const SmartImportPage: React.FC = () => {
         module_id: sourceType === 'module' ? sourceId : undefined,
         run_ocr: values.run_ocr,
       }
-      if (values.mode === 'byok') {
-        const response = await smartImportService.extractDocument(activeDocument.id, payload)
+      if (batchExtractionMode) {
+        const response = await smartImportService.queueBatchExtraction(batch.id, payload)
+        message.success(`批量任务已提交：${response.succeeded} 个排队，${response.skipped} 个跳过，${response.failed} 个失败`)
+      } else if (values.mode === 'byok') {
+        const response = await smartImportService.extractDocument(activeDocument!.id, payload)
         setResult(response)
         message.success('AI 提取完成，结果已进入待审核草稿')
       } else {
-        const response = await smartImportService.queueExtraction(activeDocument.id, payload)
+        const response = await smartImportService.queueExtraction(activeDocument!.id, payload)
         setQueuedJob(response.job)
         message.success('任务已进入后台队列，可离开当前页面继续其他工作')
       }
@@ -495,7 +549,15 @@ const SmartImportPage: React.FC = () => {
       title: '状态',
       dataIndex: 'status',
       width: 110,
-      render: (status: string) => <Tag color={statusColors[status]}>{statusLabels[status] || status}</Tag>,
+      render: (status: string, row) => {
+        const job = documentJobs[row.id]
+        return (
+          <Space direction="vertical" size={2}>
+            <Tag color={statusColors[status]}>{statusLabels[status] || status}</Tag>
+            {job && <Tag color={statusColors[job.status]}>{statusLabels[job.status] || job.status} {job.progress}%</Tag>}
+          </Space>
+        )
+      },
     },
     {
       title: '操作',
@@ -528,7 +590,7 @@ const SmartImportPage: React.FC = () => {
         </Space>
       ),
     },
-  ], [batch?.id, loadBatches])
+  ], [batch?.id, loadBatches, documentJobs])
 
   const fieldColumns: ColumnsType<ExtractedField> = [
     {
@@ -747,7 +809,20 @@ const SmartImportPage: React.FC = () => {
                   </Dragger>
                 </Card>
 
-                <Card title="待处理文件">
+                <Card
+                  title="待处理文件"
+                  extra={(
+                    <Space>
+                      <Button icon={<RobotOutlined />} onClick={() => void prepareBatchExtraction()}>批量 AI 提取</Button>
+                      <Button onClick={() => void retryFailedBatch()}>重试失败项</Button>
+                      <Button type="primary" loading={publishing} onClick={() => Modal.confirm({
+                        title: '批量发布已审核草稿？',
+                        content: '仅发布所有字段已确认的 WPS/PQR，其他文件会自动跳过。',
+                        onOk: publishReviewedBatch,
+                      })}>批量发布</Button>
+                    </Space>
+                  )}
+                >
                   <Table rowKey="id" columns={columns} dataSource={batch.documents} pagination={false} scroll={{ x: 680 }} />
                 </Card>
               </Space>
@@ -777,7 +852,7 @@ const SmartImportPage: React.FC = () => {
       </Modal>
 
       <Modal
-        title={<Space><RobotOutlined />AI 结构化提取</Space>}
+        title={<Space><RobotOutlined />{batchExtractionMode ? '批量 AI 结构化提取' : 'AI 结构化提取'}</Space>}
         open={extractOpen}
         onCancel={() => !extracting && setExtractOpen(false)}
         onOk={() => void runExtraction()}
@@ -810,7 +885,7 @@ const SmartImportPage: React.FC = () => {
             <Radio.Group>
               <Radio value="platform" disabled={!capabilities?.platform_available}>使用平台额度{!capabilities?.platform_available && '（管理员未配置）'}</Radio>
               <Radio value="saved" disabled={!providerConfigs.length}>使用已保存配置{!providerConfigs.length && '（暂无）'}</Radio>
-              <Radio value="byok">使用自己的 API Key</Radio>
+              <Radio value="byok" disabled={batchExtractionMode}>使用自己的 API Key{batchExtractionMode && '（批量任务不传递临时 Key）'}</Radio>
             </Radio.Group>
           </Form.Item>
           {extractionMode === 'platform' && quota && (

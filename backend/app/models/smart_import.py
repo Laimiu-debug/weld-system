@@ -71,7 +71,7 @@ class ImportBatch(WorkspaceOwnedMixin, Base):
             name="ck_import_batch_target",
         ),
         CheckConstraint(
-            "status IN ('draft','queued','processing','review','completed','failed','cancelled')",
+            "status IN ('draft','queued','processing','review','partial_success','completed','failed','cancelled')",
             name="ck_import_batch_status",
         ),
         CheckConstraint(
