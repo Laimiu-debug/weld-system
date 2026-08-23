@@ -365,6 +365,9 @@ const SmartImportPage: React.FC = () => {
     extractForm.setFieldsValue({
       mode: capabilities?.platform_available ? 'platform' : 'byok',
       provider: 'openai_responses',
+      schema_source: ['wps', 'pqr'].includes(batch.target_entity_type)
+        ? 'builtin:auto'
+        : undefined,
       run_ocr: true,
     })
     try {
@@ -946,16 +949,19 @@ const SmartImportPage: React.FC = () => {
           className="smart-import__modal-alert"
         />
         <Form form={extractForm} layout="vertical">
-          <Form.Item name="schema_source" label="提取模板或模块" rules={[{ required: true, message: '请选择提取字段来源' }]}>
+          <Form.Item name="schema_source" label="提取字段来源" rules={[{ required: true, message: '请选择提取字段来源' }]}>
             <Select
               showSearch
               optionFilterProp="label"
-              placeholder="选择与文件相符的模板或模块"
+              placeholder="选择自动核心字段、企业模板或模块"
               options={[
+                ...(['wps', 'pqr'].includes(batch?.target_entity_type || '')
+                  ? [{ value: 'builtin:auto', label: `自动 · ${entityLabels[batch!.target_entity_type]} 核心字段（推荐）` }]
+                  : []),
                 ...templates.map(item => ({ value: `template:${item.id}`, label: `模板 · ${item.name}` })),
                 ...modules.map(item => ({ value: `module:${item.id}`, label: `模块 · ${item.name}` })),
               ]}
-              notFoundContent="当前类型尚无可用模板或模块"
+              notFoundContent="当前类型尚无可用字段来源"
             />
           </Form.Item>
           <Form.Item name="mode" label="费用来源" rules={[{ required: true }]}>

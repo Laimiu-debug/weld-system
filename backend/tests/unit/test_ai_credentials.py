@@ -75,6 +75,20 @@ def test_byok_request_accepts_saved_or_temporary_but_not_both() -> None:
         )
 
 
+def test_extraction_request_allows_builtin_schema_and_rejects_two_sources() -> None:
+    validate_ai_extraction_request(AIExtractionRequest(mode="platform"))
+
+    with pytest.raises(HTTPException) as exc_info:
+        validate_ai_extraction_request(
+            AIExtractionRequest(
+                mode="platform",
+                template_id="template-1",
+                module_id="module-1",
+            )
+        )
+    assert exc_info.value.detail == "模板和模块不能同时选择"
+
+
 def test_saved_provider_uses_server_resolved_values() -> None:
     request = AIExtractionRequest(
         mode="byok", provider_config_id="config-1", module_id="module-1"

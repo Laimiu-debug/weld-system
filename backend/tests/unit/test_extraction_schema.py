@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from app.schemas.custom_module import FieldDefinition
 from app.services.extraction_schema_service import (
+    build_builtin_extraction_schema,
     build_module_extraction_schema,
     build_template_extraction_schema,
     normalize_module_fields,
@@ -83,6 +84,40 @@ def test_module_schema_only_exposes_auto_fields_with_evidence() -> None:
     assert grade["x-weld-aliases"].count("材质") == 1
     assert grade["x-weld-rule-input"] is True
     assert schema["field_bindings"][1]["extractable"] is False
+
+
+def test_builtin_pqr_schema_covers_core_and_test_facts_without_qualification() -> None:
+    schema = build_builtin_extraction_schema("pqr")
+    properties = schema["json_schema"]["properties"]
+
+    assert schema["source"]["kind"] == "builtin"
+    assert schema["json_schema"]["required"] == ["title", "pqr_number"]
+    assert properties["pqr_number"]["x-weld-canonical-field"] == "document.number"
+    assert properties["test_date"]["properties"]["value"]["format"] == "date-time"
+    assert (
+        properties["base_material_thickness"]["properties"]["value"]["type"] == "number"
+    )
+    assert "rt_result" in properties
+    assert "tensile_strength_actual" in properties
+    assert "charpy_energy_avg" in properties
+    assert "hardness_values" in properties
+    assert "thickness_range_qualified" not in properties
+    assert "position_qualified" not in properties
+
+
+def test_builtin_wps_schema_maps_directly_to_formal_fields() -> None:
+    schema = build_builtin_extraction_schema("wps")
+    properties = schema["json_schema"]["properties"]
+
+    assert schema["json_schema"]["required"] == ["title", "wps_number"]
+    assert properties["weld_passes"]["properties"]["value"]["type"] == "integer"
+    assert properties["pwht_required"]["properties"]["value"]["type"] == "boolean"
+    assert "wpqr_number" in properties
+
+
+def test_builtin_schema_rejects_unsupported_document_type() -> None:
+    with pytest.raises(ValueError, match="没有内置提取 Schema"):
+        build_builtin_extraction_schema("welder")
 
 
 def test_template_schema_supports_repeated_instances_and_missing_modules() -> None:

@@ -12,6 +12,346 @@ EXTRACTION_SCHEMA_VERSION = "1.0"
 FIELD_METADATA_VERSION = 1
 
 
+def _core_field(
+    field_key: str,
+    label: str,
+    field_type: str = "text",
+    *,
+    canonical: str | None = None,
+    required: bool = False,
+    aliases: tuple[str, ...] = (),
+    unit: str | None = None,
+    rule_input: bool = False,
+) -> dict[str, Any]:
+    return {
+        "field_key": field_key,
+        "label": label,
+        "type": field_type,
+        "canonical_field_key": canonical,
+        "required": required,
+        "aliases": list(aliases),
+        "unit": unit,
+        "use_in_rules": rule_input,
+    }
+
+
+BUILTIN_CORE_FIELDS: dict[str, tuple[dict[str, Any], ...]] = {
+    "pqr": (
+        _core_field("title", "标题", required=True, aliases=("文件名称", "评定名称")),
+        _core_field("pqr_number", "PQR编号", canonical="document.number", required=True),
+        _core_field("test_date", "试验日期", "datetime", canonical="document.date"),
+        _core_field(
+            "process_specification",
+            "标准及版本",
+            canonical="standard.code",
+            aliases=("执行标准", "标准版本"),
+            rule_input=True,
+        ),
+        _core_field(
+            "welding_process", "焊接方法", canonical="welding.process", rule_input=True
+        ),
+        _core_field(
+            "base_material_spec",
+            "母材牌号",
+            canonical="base_material.specification",
+            rule_input=True,
+        ),
+        _core_field(
+            "base_material_group",
+            "母材组别",
+            canonical="base_material.group",
+            rule_input=True,
+        ),
+        _core_field(
+            "base_material_thickness",
+            "母材厚度",
+            "number",
+            canonical="base_material.thickness",
+            unit="mm",
+            rule_input=True,
+        ),
+        _core_field("joint_design", "接头形式", canonical="joint.type", rule_input=True),
+        _core_field(
+            "groove_type", "坡口形式", canonical="joint.groove_type", rule_input=True
+        ),
+        _core_field(
+            "groove_angle_actual",
+            "坡口角度",
+            "number",
+            canonical="joint.groove_angle",
+            unit="degree",
+        ),
+        _core_field(
+            "root_gap_actual", "根部间隙", "number", canonical="joint.root_gap", unit="mm"
+        ),
+        _core_field(
+            "root_face_actual", "钝边", "number", canonical="joint.root_face", unit="mm"
+        ),
+        _core_field(
+            "filler_material_spec",
+            "焊材牌号",
+            canonical="filler.specification",
+            rule_input=True,
+        ),
+        _core_field(
+            "filler_material_classification",
+            "焊材分类",
+            canonical="filler.classification",
+            rule_input=True,
+        ),
+        _core_field(
+            "filler_material_diameter",
+            "焊材直径",
+            "number",
+            canonical="filler.diameter",
+            unit="mm",
+        ),
+        _core_field("shielding_gas", "保护气体", canonical="shielding.gas"),
+        _core_field(
+            "current_actual", "实际电流", "number", canonical="electrical.current", unit="A"
+        ),
+        _core_field(
+            "voltage_actual", "实际电压", "number", canonical="electrical.voltage", unit="V"
+        ),
+        _core_field(
+            "welding_speed_actual", "实际焊接速度", "number", aliases=("焊速",), unit="mm/min"
+        ),
+        _core_field(
+            "preheat_temp_actual",
+            "实际预热温度",
+            "number",
+            canonical="thermal.preheat_temperature",
+            unit="degC",
+            rule_input=True,
+        ),
+        _core_field(
+            "interpass_temp_max_actual",
+            "最高层间温度",
+            "number",
+            canonical="thermal.interpass_temperature",
+            unit="degC",
+            rule_input=True,
+        ),
+        _core_field(
+            "pwht_performed",
+            "是否焊后热处理",
+            "checkbox",
+            canonical="thermal.pwht_required",
+            rule_input=True,
+        ),
+        _core_field(
+            "pwht_temperature_actual",
+            "焊后热处理温度",
+            "number",
+            canonical="thermal.pwht_temperature",
+            unit="degC",
+            rule_input=True,
+        ),
+        _core_field(
+            "pwht_time_actual",
+            "焊后热处理时间",
+            "number",
+            canonical="thermal.pwht_duration",
+            unit="h",
+            rule_input=True,
+        ),
+        _core_field("visual_inspection_result", "目视检测结果", aliases=("VT结果", "外观检查")),
+        _core_field("rt_result", "射线检测结果", aliases=("RT结果",)),
+        _core_field("ut_result", "超声检测结果", aliases=("UT结果",)),
+        _core_field("mt_result", "磁粉检测结果", aliases=("MT结果",)),
+        _core_field("pt_result", "渗透检测结果", aliases=("PT结果",)),
+        _core_field("ndt_report_number", "无损检测报告编号", aliases=("NDE报告号", "NDT报告号")),
+        _core_field(
+            "tensile_test_result",
+            "拉伸试验结果",
+            canonical="test.tensile.result",
+            rule_input=True,
+        ),
+        _core_field(
+            "tensile_strength_actual",
+            "抗拉强度",
+            "number",
+            aliases=("Rm",),
+            unit="MPa",
+            rule_input=True,
+        ),
+        _core_field(
+            "tensile_yield_strength",
+            "屈服强度",
+            "number",
+            aliases=("ReL", "Rp0.2"),
+            unit="MPa",
+        ),
+        _core_field("tensile_elongation", "延伸率", "number", aliases=("A%",), unit="%"),
+        _core_field(
+            "root_bend_result",
+            "根弯结果",
+            canonical="test.bend.result",
+            aliases=("根部弯曲",),
+            rule_input=True,
+        ),
+        _core_field(
+            "face_bend_result",
+            "面弯结果",
+            canonical="test.bend.result",
+            aliases=("表面弯曲",),
+            rule_input=True,
+        ),
+        _core_field(
+            "side_bend_result",
+            "侧弯结果",
+            canonical="test.bend.result",
+            aliases=("侧面弯曲",),
+            rule_input=True,
+        ),
+        _core_field("charpy_test_performed", "是否进行冲击试验", "checkbox"),
+        _core_field(
+            "charpy_test_temp",
+            "冲击试验温度",
+            "number",
+            canonical="test.impact.temperature",
+            unit="degC",
+            rule_input=True,
+        ),
+        _core_field(
+            "charpy_energy_avg",
+            "平均冲击功",
+            "number",
+            canonical="test.impact.energy",
+            unit="J",
+            rule_input=True,
+        ),
+        _core_field(
+            "charpy_energy_min",
+            "最小冲击功",
+            "number",
+            aliases=("单值最小冲击功",),
+            unit="J",
+            rule_input=True,
+        ),
+        _core_field("hardness_test_performed", "是否进行硬度试验", "checkbox"),
+        _core_field(
+            "hardness_values",
+            "硬度值",
+            canonical="test.hardness.values",
+            aliases=("HV", "HB", "HRC"),
+            rule_input=True,
+        ),
+    ),
+    "wps": (
+        _core_field("title", "标题", required=True, aliases=("文件名称", "工艺名称")),
+        _core_field("wps_number", "WPS编号", canonical="document.number", required=True),
+        _core_field("revision", "版本", canonical="document.revision"),
+        _core_field(
+            "process_specification",
+            "标准及版本",
+            canonical="standard.code",
+            aliases=("执行标准", "标准版本"),
+            rule_input=True,
+        ),
+        _core_field(
+            "welding_process", "焊接方法", canonical="welding.process", rule_input=True
+        ),
+        _core_field(
+            "base_material_spec",
+            "母材牌号",
+            canonical="base_material.specification",
+            rule_input=True,
+        ),
+        _core_field(
+            "base_material_group",
+            "母材组别",
+            canonical="base_material.group",
+            rule_input=True,
+        ),
+        _core_field(
+            "base_material_thickness_range",
+            "母材厚度范围",
+            canonical="base_material.thickness_range",
+            unit="mm",
+            rule_input=True,
+        ),
+        _core_field("joint_design", "接头形式", canonical="joint.type", rule_input=True),
+        _core_field(
+            "groove_type", "坡口形式", canonical="joint.groove_type", rule_input=True
+        ),
+        _core_field(
+            "groove_angle", "坡口角度", canonical="joint.groove_angle", unit="degree"
+        ),
+        _core_field("root_gap", "根部间隙", canonical="joint.root_gap", unit="mm"),
+        _core_field("root_face", "钝边", canonical="joint.root_face", unit="mm"),
+        _core_field(
+            "filler_material_spec",
+            "焊材牌号",
+            canonical="filler.specification",
+            rule_input=True,
+        ),
+        _core_field(
+            "filler_material_classification",
+            "焊材分类",
+            canonical="filler.classification",
+            rule_input=True,
+        ),
+        _core_field(
+            "filler_material_diameter",
+            "焊材直径",
+            "number",
+            canonical="filler.diameter",
+            unit="mm",
+        ),
+        _core_field("shielding_gas", "保护气体", canonical="shielding.gas"),
+        _core_field("current_range", "电流范围", aliases=("焊接电流",), unit="A"),
+        _core_field("voltage_range", "电压范围", aliases=("电弧电压",), unit="V"),
+        _core_field("welding_speed", "焊接速度", aliases=("焊速",), unit="mm/min"),
+        _core_field("weld_passes", "焊道数量", "integer", aliases=("焊道数",)),
+        _core_field("weld_layer", "焊层数量", "integer", aliases=("焊层数",)),
+        _core_field(
+            "preheat_temp_min",
+            "最低预热温度",
+            "number",
+            canonical="thermal.preheat_temperature",
+            unit="degC",
+            rule_input=True,
+        ),
+        _core_field(
+            "interpass_temp_max",
+            "最高层间温度",
+            "number",
+            canonical="thermal.interpass_temperature",
+            unit="degC",
+            rule_input=True,
+        ),
+        _core_field(
+            "pwht_required",
+            "是否需要焊后热处理",
+            "checkbox",
+            canonical="thermal.pwht_required",
+            rule_input=True,
+        ),
+        _core_field(
+            "pwht_temperature",
+            "焊后热处理温度",
+            "number",
+            canonical="thermal.pwht_temperature",
+            unit="degC",
+            rule_input=True,
+        ),
+        _core_field(
+            "pwht_time",
+            "焊后热处理时间",
+            "number",
+            canonical="thermal.pwht_duration",
+            unit="h",
+            rule_input=True,
+        ),
+        _core_field("ndt_required", "是否需要无损检测", "checkbox", aliases=("NDE要求", "NDT要求")),
+        _core_field("ndt_methods", "无损检测方法", aliases=("NDE方法", "NDT方法")),
+        _core_field("mechanical_testing", "力学性能试验要求", aliases=("试验要求",)),
+        _core_field("wpqr_number", "支持的PQR编号", aliases=("PQR编号", "WPQR编号")),
+    ),
+}
+
+
 def stable_legacy_field_id(module_id: str, field_key: str) -> str:
     """Return a deterministic ID for legacy fields that predate field_id."""
     return str(uuid5(NAMESPACE_URL, f"weldsystem:module:{module_id}:{field_key}"))
@@ -72,8 +412,8 @@ def _option_values(options: Any) -> list[Any]:
 
 def _value_schema(field: dict[str, Any]) -> dict[str, Any]:
     field_type = field.get("type", "text")
-    if field_type == "number":
-        schema: dict[str, Any] = {"type": "number"}
+    if field_type in {"number", "integer"}:
+        schema: dict[str, Any] = {"type": field_type}
         if field.get("min") is not None:
             schema["minimum"] = field["min"]
         if field.get("max") is not None:
@@ -82,6 +422,8 @@ def _value_schema(field: dict[str, Any]) -> dict[str, Any]:
         schema = {"type": "boolean"}
     elif field_type == "date":
         schema = {"type": "string", "format": "date"}
+    elif field_type == "datetime":
+        schema = {"type": "string", "format": "date-time"}
     elif field_type == "table":
         schema = {
             "type": "array",
@@ -171,6 +513,43 @@ def build_module_extraction_schema(module: Any) -> dict[str, Any]:
         },
         "json_schema": _object_schema(module.name, properties, required),
         "field_bindings": bindings,
+    }
+
+
+def build_builtin_extraction_schema(document_type: str) -> dict[str, Any]:
+    """Build a safe core schema when an enterprise has no template yet."""
+    definitions = BUILTIN_CORE_FIELDS.get(document_type)
+    if not definitions:
+        raise ValueError(f"当前导入类型没有内置提取 Schema：{document_type}")
+    module_id = f"builtin:{document_type}"
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    bindings: list[dict[str, Any]] = []
+    for definition in definitions:
+        field_key = definition["field_key"]
+        field = {
+            **definition,
+            "field_id": stable_legacy_field_id(module_id, field_key),
+            "ai_extract_mode": "auto",
+            "confidence_threshold": 0.8,
+        }
+        properties[field_key] = _evidence_value_schema(field_key, field)
+        bindings.append(_binding(module_id, None, field_key, field, True))
+        if field.get("required"):
+            required.append(field_key)
+    label = document_type.upper()
+    return {
+        "schema_version": EXTRACTION_SCHEMA_VERSION,
+        "document_type": document_type,
+        "source": {
+            "kind": "builtin",
+            "id": module_id,
+            "name": f"{label} 核心字段",
+            "version": EXTRACTION_SCHEMA_VERSION,
+        },
+        "json_schema": _object_schema(f"{label} 核心字段", properties, required),
+        "field_bindings": bindings,
+        "warnings": [],
     }
 
 

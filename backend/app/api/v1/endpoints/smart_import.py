@@ -83,6 +83,7 @@ from app.services.document_storage_service import (
     get_document_storage,
 )
 from app.services.extraction_schema_service import (
+    build_builtin_extraction_schema,
     build_module_extraction_schema,
     build_template_extraction_schema,
 )
@@ -182,6 +183,7 @@ def build_requested_schema(
     db: Session,
     current_user: User,
     context: WorkspaceContext,
+    document_type: str,
 ) -> tuple[dict, str | None]:
     if request.module_id:
         module = CustomModuleService(db).get_module(
@@ -190,6 +192,12 @@ def build_requested_schema(
         if module is None:
             raise HTTPException(status_code=404, detail="提取模块不存在或无权访问")
         return build_module_extraction_schema(module), None
+
+    if not request.template_id:
+        try:
+            return build_builtin_extraction_schema(document_type), None
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     template = WPSTemplateService(db).get_template_by_id(
         template_id=request.template_id,
@@ -211,8 +219,8 @@ def build_requested_schema(
 
 
 def validate_ai_extraction_request(request: AIExtractionRequest) -> None:
-    if bool(request.template_id) == bool(request.module_id):
-        raise HTTPException(status_code=422, detail="必须且只能选择一个模板或模块")
+    if request.template_id and request.module_id:
+        raise HTTPException(status_code=422, detail="模板和模块不能同时选择")
     if request.mode == "byok":
         if request.provider_config_id:
             if request.api_key or request.model or request.base_url or request.provider:
@@ -610,8 +618,11 @@ def extract_document(
     )
     context = resolve_workspace(db, current_user, workspace_id)
     validate_ai_extraction_request(request)
+    document = SmartImportService(db).get_document(
+        document_id, current_user, context
+    )
     schema_snapshot, template_id = build_requested_schema(
-        request, db, current_user, context
+        request, db, current_user, context, document.document_type
     )
     provider = None
     provider_config = None
@@ -680,8 +691,11 @@ def queue_document_extraction(
             status_code=422,
             detail="临时 API Key 不进入后台队列，请使用已保存配置或单次同步提取",
         )
+    document = SmartImportService(db).get_document(
+        document_id, current_user, context
+    )
     schema_snapshot, template_id = build_requested_schema(
-        request, db, current_user, context
+        request, db, current_user, context, document.document_type
     )
     credentials = AIProviderConfigService(db)
     provider_config = None
@@ -836,7 +850,7 @@ def queue_batch_extraction(
     if not documents:
         raise HTTPException(status_code=422, detail="当前批次没有可处理文件")
     schema_snapshot, template_id = build_requested_schema(
-        request, db, current_user, context
+        request, db, current_user, context, batch.target_entity_type
     )
     credentials = AIProviderConfigService(db)
     provider_config = None
