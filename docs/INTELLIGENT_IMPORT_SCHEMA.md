@@ -57,6 +57,8 @@
 
 `DocumentStorage` 是存储适配接口，支持本地私有目录以及 S3/MinIO 兼容对象存储。原件下载必须先通过工作区权限校验，不会暴露物理路径或对象 Key。`document_artifacts` 统一区分原件、页面预览、OCR 文本、识别结果和正式导出，并按原件、临时、审核证据、导出四类保留策略执行每日清理。
 
+动态提取采用分阶段策略：具备 `canonical_field_key` 的核心语义字段优先提取，企业自定义字段随后按固定字段数分批提取。每个阶段使用裁剪后的独立 JSON Schema 完成校验，全部通过后才合并写入同一个审核草稿；任一阶段失败都不会生成部分正式业务数据。
+
 ## 分页解析与 OCR 边界
 
 - `POST /api/v1/smart-import/documents/{document_id}/parse` 同步生成或替换页面暂存记录，不写入正式 WPS/PQR 数据。
