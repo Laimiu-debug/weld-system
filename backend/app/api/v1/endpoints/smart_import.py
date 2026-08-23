@@ -57,12 +57,15 @@ from app.schemas.smart_import import (
     ExtractionJobResponse,
     FieldEvidenceResponse,
     FieldReviewRequest,
+    FormHandoffResponse,
+    FormPublishRequest,
     ImportBatchCreate,
     ImportBatchResponse,
     ImportReviewRecordResponse,
     ManualDraftCreate,
     SourceDocumentRegister,
     SourceDocumentResponse,
+    TemplateRecommendationResponse,
 )
 from app.services.ai_extraction_service import (
     AIExtractionRunError,
@@ -91,6 +94,7 @@ from app.services.extraction_schema_service import (
 from app.services.smart_import_service import SmartImportService
 from app.services.smart_import_audit_service import SmartImportAuditService
 from app.services.smart_import_review_service import SmartImportReviewService
+from app.services.smart_import_template_service import SmartImportTemplateService
 from app.services.system_config_service import get_max_upload_bytes
 from app.services.wps_template_service import WPSTemplateService
 from app.tasks.celery_app import celery_app
@@ -646,6 +650,24 @@ def list_document_pages(
 
 
 @router.get(
+    "/documents/{document_id}/template-recommendations",
+    response_model=TemplateRecommendationResponse,
+)
+def recommend_document_templates(
+    document_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> TemplateRecommendationResponse:
+    """Classify parsed content and rank accessible templates without changing the draft."""
+    context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "view")
+    return SmartImportTemplateService(db).recommend_for_document(
+        document_id, current_user, context
+    )
+
+
+@router.get(
     "/documents/{document_id}/artifacts",
     response_model=list[DocumentArtifactResponse],
 )
@@ -1144,6 +1166,45 @@ def get_current_extracted_entity(
     return build_entity_detail(db, entity)
 
 
+@router.get("/entities/{entity_id}/form-handoff", response_model=FormHandoffResponse)
+def get_form_handoff(
+    entity_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> FormHandoffResponse:
+    """Prepare an import draft for the existing WPS/PQR dynamic form."""
+    context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "review")
+    service = SmartImportReviewService(db)
+    entity = service.get_entity(entity_id, current_user, context)
+    if entity.entity_type not in {"wps", "pqr"}:
+        raise HTTPException(status_code=422, detail="当前类型没有可复用的正式表单")
+    fields = (
+        db.query(ExtractedField).filter(ExtractedField.entity_id == entity.id).all()
+    )
+    form_values = {}
+    for field in fields:
+        if field.review_status == "rejected":
+            continue
+        form_values[field.field_key] = field.normalized_value
+        if field.instance_id:
+            form_values[
+                f"{field.instance_id}_{field.field_key}"
+            ] = field.normalized_value
+    job = db.query(ExtractionJob).filter(ExtractionJob.id == entity.job_id).first()
+    candidates = SmartImportTemplateService(db).match_supporting_pqrs(
+        entity, current_user, context
+    )
+    return FormHandoffResponse(
+        entity_id=entity.id,
+        entity_type=entity.entity_type,
+        template_id=job.template_id if job else None,
+        form_values=form_values,
+        supporting_pqr_candidates=candidates,
+    )
+
+
 @router.post(
     "/entities/{entity_id}/fields/{field_id}/review",
     response_model=ExtractedEntityDetailResponse,
@@ -1218,6 +1279,30 @@ def publish_extracted_entity(
     entity = service.get_entity(entity_id, current_user, context)
     ensure_module_permission(db, current_user, entity.entity_type, "create")
     record = service.publish(entity_id, current_user, context)
+    return EntityPublishResponse(
+        entity_id=entity.id,
+        target_entity_type=record.target_entity_type,
+        target_entity_id=record.target_entity_id,
+        status="published",
+        detail_url=f"/{record.target_entity_type}/{record.target_entity_id}",
+    )
+
+
+@router.post("/entities/{entity_id}/form-publish", response_model=EntityPublishResponse)
+def publish_import_from_existing_form(
+    entity_id: str,
+    request: FormPublishRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> EntityPublishResponse:
+    """Publish a human-corrected existing form through the normal domain Service."""
+    context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "publish")
+    service = SmartImportReviewService(db)
+    entity = service.get_entity(entity_id, current_user, context)
+    ensure_module_permission(db, current_user, entity.entity_type, "create")
+    record = service.publish_form(entity_id, request, current_user, context)
     return EntityPublishResponse(
         entity_id=entity.id,
         target_entity_type=record.target_entity_type,

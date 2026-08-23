@@ -17,7 +17,11 @@ from app.models.smart_import import (
 )
 from app.models.user import User
 from app.schemas.pqr import PQRCreate
-from app.schemas.smart_import import BulkFieldAcceptRequest, FieldReviewRequest
+from app.schemas.smart_import import (
+    BulkFieldAcceptRequest,
+    FieldReviewRequest,
+    FormPublishRequest,
+)
 from app.schemas.wps import WPSCreate
 from app.domain.semantic_field_mapping import (
     SemanticMappingConflict,
@@ -28,6 +32,7 @@ from app.domain.semantic_field_mapping import (
 from app.services.membership_service import MembershipService
 from app.services.pqr_service import PQRService
 from app.services.smart_import_service import SmartImportService
+from app.services.smart_import_template_service import SmartImportTemplateService
 from app.services.wps_service import WPSService
 
 
@@ -157,6 +162,11 @@ class SmartImportReviewService:
             return existing
         if entity.entity_type not in {"wps", "pqr"}:
             raise HTTPException(status_code=422, detail="当前仅支持发布 WPS 和 PQR")
+        if entity.entity_type == "wps":
+            raise HTTPException(
+                status_code=409,
+                detail="WPS 必须进入现有表单并人工确认支持 PQR 后发布",
+            )
         fields = (
             self.db.query(ExtractedField)
             .filter(ExtractedField.entity_id == entity.id)
@@ -238,6 +248,140 @@ class SmartImportReviewService:
             if (batch.processed_documents or 0) >= (batch.total_documents or 0):
                 batch.status = "completed"
                 batch.progress = 100
+        self.db.commit()
+        self._increment_formal_quota(entity.entity_type, user, context)
+        self.db.refresh(record)
+        return record
+
+    def publish_form(
+        self,
+        entity_id: str,
+        request: FormPublishRequest,
+        user: User,
+        context: WorkspaceContext,
+    ) -> EntityPublishRecord:
+        """Publish a complete human-reviewed existing form through the domain Service."""
+        entity = self.get_entity(entity_id, user, context)
+        self._ensure_editable(entity)
+        if entity.entity_type not in {"wps", "pqr"}:
+            raise HTTPException(status_code=422, detail="当前仅支持 WPS 和 PQR 表单校核")
+        existing = (
+            self.db.query(EntityPublishRecord)
+            .filter(EntityPublishRecord.entity_id == entity.id)
+            .order_by(EntityPublishRecord.created_at.desc())
+            .first()
+        )
+        if existing and existing.target_entity_id != "pending":
+            return existing
+
+        payload = dict(request.payload)
+        payload["status"] = "draft"
+        if entity.entity_type == "wps":
+            if request.supporting_pqr_decision not in {"matched", "no_match"}:
+                raise HTTPException(status_code=422, detail="请明确确认支持 PQR 或选择暂无匹配")
+            match = None
+            if request.supporting_pqr_decision == "matched":
+                candidates = SmartImportTemplateService(self.db).match_supporting_pqrs(
+                    entity, user, context
+                )
+                match = next(
+                    (
+                        item
+                        for item in candidates
+                        if item["pqr_id"] == request.supporting_pqr_id
+                        and item["eligible"]
+                    ),
+                    None,
+                )
+                if match is None:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="所选 PQR 不可访问、未批准或不在当前匹配候选中",
+                    )
+                payload["wpqr_number"] = match["pqr_number"]
+            modules = dict(payload.get("modules_data") or {})
+            modules["_import_control"] = {
+                "moduleId": "_import_control",
+                "data": {
+                    "supporting_pqr_decision": request.supporting_pqr_decision,
+                    "supporting_pqr_id": match["pqr_id"] if match else None,
+                    "supporting_pqr_number": match["pqr_number"] if match else None,
+                    "capability_eligible": bool(match),
+                },
+            }
+            payload["modules_data"] = modules
+            entity.draft_data = {
+                **(entity.draft_data or {}),
+                "_supporting_pqr_match": modules["_import_control"]["data"],
+            }
+
+        obj_in = self._validate_payload(entity.entity_type, payload)
+        self._check_formal_quota(entity.entity_type, user, context)
+        record = existing or EntityPublishRecord(
+            id=str(uuid4()),
+            entity_id=entity.id,
+            target_entity_type=entity.entity_type,
+            target_entity_id="pending",
+            published_snapshot=obj_in.model_dump(mode="json"),
+            published_by=user.id,
+            **self._workspace(entity),
+        )
+        if existing is None:
+            self.db.add(record)
+        fields = (
+            self.db.query(ExtractedField)
+            .filter(ExtractedField.entity_id == entity.id)
+            .all()
+        )
+        for field in fields:
+            if field.review_status == "pending":
+                field.review_status = "accepted"
+        self.db.add(
+            self._review_record(
+                entity,
+                None,
+                "submit",
+                entity.draft_data,
+                obj_in.model_dump(mode="json"),
+                "使用现有动态表单完成人工校核",
+                user,
+            )
+        )
+        self.db.flush()
+        try:
+            if entity.entity_type == "wps":
+                target = WPSService(self.db).create(
+                    self.db,
+                    obj_in=obj_in,
+                    current_user=user,
+                    workspace_context=context,
+                )
+            else:
+                target = PQRService(self.db).create(
+                    self.db,
+                    obj_in=obj_in,
+                    current_user=user,
+                    workspace_context=context,
+                )
+        except ValueError as exc:
+            self.db.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        record.target_entity_id = str(target.id)
+        entity.status = "published"
+        self.db.add(
+            self._review_record(
+                entity,
+                None,
+                "approve",
+                None,
+                {
+                    "target_entity_type": entity.entity_type,
+                    "target_entity_id": target.id,
+                },
+                "表单校核后发布到现有 Service，正式记录保持草稿",
+                user,
+            )
+        )
         self.db.commit()
         self._increment_formal_quota(entity.entity_type, user, context)
         self.db.refresh(record)

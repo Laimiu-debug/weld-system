@@ -22,6 +22,7 @@ def _core_field(
     aliases: tuple[str, ...] = (),
     unit: str | None = None,
     rule_input: bool = False,
+    table_definition: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "field_key": field_key,
@@ -32,6 +33,7 @@ def _core_field(
         "aliases": list(aliases),
         "unit": unit,
         "use_in_rules": rule_input,
+        "tableDefinition": table_definition,
     }
 
 
@@ -308,6 +310,20 @@ BUILTIN_CORE_FIELDS: dict[str, tuple[dict[str, Any], ...]] = {
             "welding_process", "焊接方法", canonical="welding.process", rule_input=True
         ),
         _core_field(
+            "welding_process_rows",
+            "多焊接方法明细",
+            "table",
+            aliases=("焊接方法组合", "process sequence"),
+            rule_input=True,
+            table_definition={
+                "columns": [
+                    {"key": "sequence", "label": "顺序", "type": "integer"},
+                    {"key": "process", "label": "焊接方法", "type": "text"},
+                    {"key": "application", "label": "适用焊层/焊道", "type": "text"},
+                ]
+            },
+        ),
+        _core_field(
             "base_material_spec",
             "母材牌号",
             canonical="base_material.specification",
@@ -389,6 +405,37 @@ BUILTIN_CORE_FIELDS: dict[str, tuple[dict[str, Any], ...]] = {
             "integer",
             canonical="welding.layer_count",
             aliases=("焊层数",),
+        ),
+        _core_field(
+            "weld_layer_rows",
+            "焊层与焊道明细",
+            "table",
+            aliases=("焊层表", "焊道表", "pass table"),
+            table_definition={
+                "columns": [
+                    {"key": "layer", "label": "焊层", "type": "text"},
+                    {"key": "pass", "label": "焊道", "type": "text"},
+                    {"key": "process", "label": "焊接方法", "type": "text"},
+                    {"key": "filler", "label": "焊材", "type": "text"},
+                ]
+            },
+        ),
+        _core_field(
+            "welding_parameter_rows",
+            "重复焊接参数表",
+            "table",
+            aliases=("焊接参数表", "参数明细", "welding parameters"),
+            table_definition={
+                "columns": [
+                    {"key": "layer", "label": "焊层/焊道", "type": "text"},
+                    {"key": "process", "label": "方法", "type": "text"},
+                    {"key": "diameter", "label": "直径(mm)", "type": "number"},
+                    {"key": "current", "label": "电流(A)", "type": "text"},
+                    {"key": "voltage", "label": "电压(V)", "type": "text"},
+                    {"key": "speed", "label": "速度(mm/min)", "type": "text"},
+                    {"key": "heat_input", "label": "热输入(kJ/mm)", "type": "text"},
+                ]
+            },
         ),
         _core_field(
             "preheat_temp_min",

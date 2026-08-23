@@ -113,6 +113,11 @@ def test_builtin_wps_schema_maps_directly_to_formal_fields() -> None:
     assert properties["weld_passes"]["properties"]["value"]["type"] == "integer"
     assert properties["pwht_required"]["properties"]["value"]["type"] == "boolean"
     assert "wpqr_number" in properties
+    assert properties["welding_process_rows"]["properties"]["value"]["type"] == "array"
+    assert properties["weld_layer_rows"]["properties"]["value"]["type"] == "array"
+    assert (
+        properties["welding_parameter_rows"]["properties"]["value"]["type"] == "array"
+    )
 
 
 def test_builtin_schema_rejects_unsupported_document_type() -> None:

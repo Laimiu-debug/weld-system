@@ -205,6 +205,66 @@ class EntityPublishResponse(BaseModel):
     detail_url: str
 
 
+class TemplateRecommendationItem(BaseModel):
+    template_id: str
+    name: str
+    score: int = Field(ge=0, le=100)
+    reasons: list[str] = Field(default_factory=list)
+    welding_process: str | None = None
+    standard: str | None = None
+
+
+class DocumentClassification(BaseModel):
+    document_type: str
+    confidence: float = Field(ge=0, le=1)
+    declared_type: str
+    detected_processes: list[str] = Field(default_factory=list)
+    detected_standards: list[str] = Field(default_factory=list)
+    requires_confirmation: bool
+
+
+class TemplateRecommendationResponse(BaseModel):
+    classification: DocumentClassification
+    recommendations: list[TemplateRecommendationItem] = Field(default_factory=list)
+
+
+class SupportingPQRMatch(BaseModel):
+    pqr_id: int
+    pqr_number: str
+    title: str
+    status: str
+    score: int = Field(ge=0, le=100)
+    reasons: list[str] = Field(default_factory=list)
+    eligible: bool
+
+
+class FormHandoffResponse(BaseModel):
+    entity_id: str
+    entity_type: EntityType
+    template_id: str | None = None
+    form_values: dict[str, Any] = Field(default_factory=dict)
+    supporting_pqr_candidates: list[SupportingPQRMatch] = Field(default_factory=list)
+
+
+class FormPublishRequest(BaseModel):
+    payload: dict[str, Any]
+    supporting_pqr_decision: Literal[
+        "matched", "no_match", "not_required"
+    ] = "not_required"
+    supporting_pqr_id: int | None = None
+
+    @model_validator(mode="after")
+    def validate_supporting_pqr(self):
+        if self.supporting_pqr_decision == "matched" and self.supporting_pqr_id is None:
+            raise ValueError("确认匹配时必须选择支持 PQR")
+        if (
+            self.supporting_pqr_decision != "matched"
+            and self.supporting_pqr_id is not None
+        ):
+            raise ValueError("未选择匹配时不能提交支持 PQR ID")
+        return self
+
+
 class AIQuotaStatusResponse(BaseModel):
     tier_key: str
     workspace_type: str
@@ -316,6 +376,7 @@ class ExtractionJobResponse(BaseModel):
     model: str | None
     provider_config_id: str | None
     retry_of_job_id: str | None
+    template_id: str | None = None
     progress: int
     status: str
     schema_version: str

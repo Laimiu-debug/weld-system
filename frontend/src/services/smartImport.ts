@@ -53,6 +53,7 @@ export interface AIExtractionJob {
   model?: string
   provider_config_id?: string
   retry_of_job_id?: string
+  template_id?: string
   progress: number
   input_tokens: number
   output_tokens: number
@@ -172,6 +173,43 @@ export interface EntityPublishResult {
   target_entity_id: string
   status: 'published'
   detail_url: string
+}
+
+export interface TemplateRecommendation {
+  template_id: string
+  name: string
+  score: number
+  reasons: string[]
+  welding_process?: string
+  standard?: string
+}
+
+export interface TemplateRecommendationResult {
+  classification: {
+    document_type: ImportEntityType | 'unknown'
+    confidence: number
+    declared_type: ImportEntityType | 'unknown'
+    detected_processes: string[]
+    detected_standards: string[]
+    requires_confirmation: boolean
+  }
+  recommendations: TemplateRecommendation[]
+}
+
+export interface FormHandoff {
+  entity_id: string
+  entity_type: 'wps' | 'pqr'
+  template_id?: string
+  form_values: Record<string, unknown>
+  supporting_pqr_candidates: Array<{
+    pqr_id: number
+    pqr_number: string
+    title: string
+    status: string
+    score: number
+    reasons: string[]
+    eligible: boolean
+  }>
 }
 
 export interface ImportBatchDetail extends ImportBatch {
@@ -326,6 +364,11 @@ class SmartImportService {
     return response.data
   }
 
+  async recommendTemplates(documentId: string): Promise<TemplateRecommendationResult> {
+    const response = await api.get(`/smart-import/documents/${documentId}/template-recommendations`)
+    return response.data
+  }
+
   async extractDocument(
     documentId: string,
     data: {
@@ -451,6 +494,23 @@ class SmartImportService {
 
   async publishEntity(entityId: string): Promise<EntityPublishResult> {
     const response = await api.post(`/smart-import/entities/${entityId}/publish`)
+    return response.data
+  }
+
+  async getFormHandoff(entityId: string): Promise<FormHandoff> {
+    const response = await api.get(`/smart-import/entities/${entityId}/form-handoff`)
+    return response.data
+  }
+
+  async publishFormEntity(
+    entityId: string,
+    data: {
+      payload: Record<string, unknown>
+      supporting_pqr_decision?: 'matched' | 'no_match' | 'not_required'
+      supporting_pqr_id?: number
+    }
+  ): Promise<EntityPublishResult> {
+    const response = await api.post(`/smart-import/entities/${entityId}/form-publish`, data)
     return response.data
   }
 

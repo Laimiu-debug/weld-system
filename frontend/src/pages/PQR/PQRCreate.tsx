@@ -2,8 +2,8 @@
  * 基于模板的PQR创建页面
  * 使用动态表单根据选择的模板渲染不同的字段
  */
-import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import React, { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Form,
   Button,
@@ -27,15 +27,18 @@ import { useAuthStore } from '@/store/authStore'
 import TemplateSelector from '@/components/WPS/TemplateSelector'
 import TemplatePreview from '@/components/WPS/TemplatePreview'
 import ModuleFormRenderer from '@/components/WPS/ModuleFormRenderer'
-import { WPSTemplate } from '@/services/wpsTemplates'
+import wpsTemplateService, { WPSTemplate } from '@/services/wpsTemplates'
 import { getPQRModuleById } from '@/constants/pqrModules'
 import pqrService from '@/services/pqr'
+import smartImportService, { FormHandoff } from '@/services/smartImport'
 
 const { Title, Text, Link } = Typography
 
 const PQRCreate: React.FC = () => {
   const [form] = Form.useForm()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const importEntityId = searchParams.get('import_entity_id')
   const { user } = useAuthStore()
 
   // 状态
@@ -43,6 +46,41 @@ const PQRCreate: React.FC = () => {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>()
   const [selectedTemplate, setSelectedTemplate] = useState<WPSTemplate | null>(null)
   const [loading, setLoading] = useState(false)
+  const [importHandoff, setImportHandoff] = useState<FormHandoff | null>(null)
+
+  const applyImportedValues = (template: WPSTemplate, handoff: FormHandoff) => {
+    const values: Record<string, unknown> = { ...handoff.form_values }
+    template.module_instances.forEach(instance => {
+      const module = getPQRModuleById(instance.moduleId)
+      if (!module) return
+      Object.keys(module.fields).forEach(fieldKey => {
+        const direct = handoff.form_values[fieldKey]
+        if (direct !== undefined) values[`${instance.instanceId}_${fieldKey}`] = direct
+      })
+    })
+    form.setFieldsValue(values)
+  }
+
+  useEffect(() => {
+    if (!importEntityId) return
+    setLoading(true)
+    smartImportService.getFormHandoff(importEntityId)
+      .then(async handoff => {
+        if (handoff.entity_type !== 'pqr') throw new Error('导入草稿类型不是 PQR')
+        setImportHandoff(handoff)
+        if (handoff.template_id) {
+          const response = await wpsTemplateService.getTemplate(handoff.template_id)
+          if (response.success && response.data) {
+            setSelectedTemplateId(handoff.template_id)
+            setSelectedTemplate(response.data)
+            applyImportedValues(response.data, handoff)
+            setCurrentStep(1)
+          }
+        }
+      })
+      .catch(() => message.error('加载 PQR 导入草稿失败，请返回智能导入重试'))
+      .finally(() => setLoading(false))
+  }, [importEntityId])
 
   // 步骤配置
   const steps = [
@@ -69,6 +107,7 @@ const PQRCreate: React.FC = () => {
     if (template?.default_values) {
       form.setFieldsValue(template.default_values)
     }
+    if (template && importHandoff) applyImportedValues(template, importHandoff)
   }
 
   /**
@@ -166,9 +205,16 @@ const PQRCreate: React.FC = () => {
       console.log('提交数据:', submitData)
 
       // 调用API创建PQR
-      const response = await pqrService.create(submitData)
+      if (importEntityId) {
+        await smartImportService.publishFormEntity(importEntityId, {
+          payload: submitData,
+          supporting_pqr_decision: 'not_required',
+        })
+      } else {
+        await pqrService.create(submitData)
+      }
 
-      message.success('PQR创建成功')
+      message.success(importEntityId ? 'PQR 校核完成，已保存为正式模块草稿' : 'PQR创建成功')
       navigate('/pqr')
     } catch (error: any) {
       console.error('创建PQR失败:', error)
@@ -251,6 +297,15 @@ const PQRCreate: React.FC = () => {
               closable
               style={{ marginTop: 16 }}
             />
+            {importHandoff && (
+              <Alert
+                message="正在使用现有 PQR 表单校核智能导入草稿"
+                description="提交后仍保存为草稿，并继续沿用现有审批流程。表单中的修改会作为本次人工校核结果留痕。"
+                type="warning"
+                showIcon
+                style={{ marginTop: 12 }}
+              />
+            )}
           </div>
 
           {/* 步骤指示器 */}

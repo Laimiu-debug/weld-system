@@ -2,8 +2,8 @@
  * 基于模板的WPS创建页面
  * 使用动态表单根据选择的模板渲染不同的字段
  */
-import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import React, { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Form,
   Button,
@@ -13,7 +13,9 @@ import {
   Steps,
   Typography,
   Spin,
-  Alert
+  Alert,
+  Radio,
+  Select
 } from 'antd'
 import {
   LeftOutlined,
@@ -27,15 +29,18 @@ import { useAuthStore } from '@/store/authStore'
 import TemplateSelector from '@/components/WPS/TemplateSelector'
 import TemplatePreview from '@/components/WPS/TemplatePreview'
 import ModuleFormRenderer from '@/components/WPS/ModuleFormRenderer'
-import { WPSTemplate } from '@/services/wpsTemplates'
+import wpsTemplateService, { WPSTemplate } from '@/services/wpsTemplates'
 import { getModuleById } from '@/constants/wpsModules'
 import wpsService from '@/services/wps'
+import smartImportService, { FormHandoff } from '@/services/smartImport'
 
 const { Title, Text, Link } = Typography
 
 const WPSCreate: React.FC = () => {
   const [form] = Form.useForm()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const importEntityId = searchParams.get('import_entity_id')
   const { user } = useAuthStore()
 
   // 状态
@@ -43,6 +48,43 @@ const WPSCreate: React.FC = () => {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>()
   const [selectedTemplate, setSelectedTemplate] = useState<WPSTemplate | null>(null)
   const [loading, setLoading] = useState(false)
+  const [importHandoff, setImportHandoff] = useState<FormHandoff | null>(null)
+  const [supportingDecision, setSupportingDecision] = useState<'matched' | 'no_match'>()
+  const [supportingPqrId, setSupportingPqrId] = useState<number>()
+
+  const applyImportedValues = (template: WPSTemplate, handoff: FormHandoff) => {
+    const values: Record<string, unknown> = { ...handoff.form_values }
+    template.module_instances.forEach(instance => {
+      const module = getModuleById(instance.moduleId)
+      if (!module) return
+      Object.keys(module.fields).forEach(fieldKey => {
+        const direct = handoff.form_values[fieldKey]
+        if (direct !== undefined) values[`${instance.instanceId}_${fieldKey}`] = direct
+      })
+    })
+    form.setFieldsValue(values)
+  }
+
+  useEffect(() => {
+    if (!importEntityId) return
+    setLoading(true)
+    smartImportService.getFormHandoff(importEntityId)
+      .then(async handoff => {
+        if (handoff.entity_type !== 'wps') throw new Error('导入草稿类型不是 WPS')
+        setImportHandoff(handoff)
+        if (handoff.template_id) {
+          const response = await wpsTemplateService.getTemplate(handoff.template_id)
+          if (response.success && response.data) {
+            setSelectedTemplateId(handoff.template_id)
+            setSelectedTemplate(response.data)
+            applyImportedValues(response.data, handoff)
+            setCurrentStep(1)
+          }
+        }
+      })
+      .catch(() => message.error('加载 WPS 导入草稿失败，请返回智能导入重试'))
+      .finally(() => setLoading(false))
+  }, [importEntityId])
 
   // 步骤配置
   const steps = [
@@ -69,6 +111,7 @@ const WPSCreate: React.FC = () => {
     if (template?.default_values) {
       form.setFieldsValue(template.default_values)
     }
+    if (template && importHandoff) applyImportedValues(template, importHandoff)
   }
 
   /**
@@ -100,6 +143,14 @@ const WPSCreate: React.FC = () => {
    */
   const handleSubmit = async () => {
     try {
+      if (importEntityId && !supportingDecision) {
+        message.error('请确认支持 PQR，或明确选择暂无匹配')
+        return
+      }
+      if (importEntityId && supportingDecision === 'matched' && !supportingPqrId) {
+        message.error('请选择一个已批准的支持 PQR')
+        return
+      }
       setLoading(true)
 
       // 验证表单
@@ -170,9 +221,17 @@ const WPSCreate: React.FC = () => {
       console.log('提交数据:', submitData)
 
       // 调用API创建WPS
-      const response = await wpsService.createWPS(submitData)
+      if (importEntityId) {
+        await smartImportService.publishFormEntity(importEntityId, {
+          payload: submitData,
+          supporting_pqr_decision: supportingDecision,
+          supporting_pqr_id: supportingDecision === 'matched' ? supportingPqrId : undefined,
+        })
+      } else {
+        await wpsService.createWPS(submitData)
+      }
 
-      message.success('WPS创建成功')
+      message.success(importEntityId ? 'WPS 校核完成，已保存为正式模块草稿' : 'WPS创建成功')
       navigate('/wps')
     } catch (error: any) {
       console.error('创建WPS失败:', error)
@@ -236,6 +295,15 @@ const WPSCreate: React.FC = () => {
               closable
               style={{ marginTop: 16 }}
             />
+            {importHandoff && (
+              <Alert
+                message="正在使用现有 WPS 表单校核智能导入草稿"
+                description="必须人工确认支持 PQR。没有合适 PQR 时仍可保存草稿，但该记录不会进入有效企业能力。"
+                type="warning"
+                showIcon
+                style={{ marginTop: 12 }}
+              />
+            )}
           </div>
 
           {/* 步骤指示器 */}
@@ -259,6 +327,37 @@ const WPSCreate: React.FC = () => {
               {/* 第二步：填写数据 */}
               {currentStep === 1 && selectedTemplate && (
                 <>
+                  {importHandoff && (
+                    <Card size="small" title="支持 PQR 人工确认" style={{ marginBottom: 16 }}>
+                      <Space direction="vertical" style={{ width: '100%' }}>
+                        <Radio.Group
+                          value={supportingDecision}
+                          onChange={event => {
+                            setSupportingDecision(event.target.value)
+                            if (event.target.value === 'no_match') setSupportingPqrId(undefined)
+                          }}
+                        >
+                          <Radio value="matched">选择企业已批准 PQR</Radio>
+                          <Radio value="no_match">暂无合适 PQR，仅保存草稿且不形成有效能力</Radio>
+                        </Radio.Group>
+                        {supportingDecision === 'matched' && (
+                          <Select
+                            value={supportingPqrId}
+                            onChange={setSupportingPqrId}
+                            placeholder="请选择一个已批准的 PQR 候选"
+                            options={importHandoff.supporting_pqr_candidates
+                              .filter(item => item.eligible)
+                              .map(item => ({
+                                value: item.pqr_id,
+                                label: `${item.score}% · ${item.pqr_number} · ${item.title}（${item.reasons.join('、')}）`,
+                              }))}
+                            notFoundContent="没有已批准且匹配的 PQR，请选择暂无匹配"
+                            style={{ width: '100%' }}
+                          />
+                        )}
+                      </Space>
+                    </Card>
+                  )}
                   <div style={{ marginBottom: 24 }}>
                     <TemplatePreview
                       template={selectedTemplate}

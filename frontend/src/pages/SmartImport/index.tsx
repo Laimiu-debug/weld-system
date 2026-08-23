@@ -52,6 +52,7 @@ import smartImportService, {
   ImportBatchDetail,
   ImportEntityType,
   SourceDocument,
+  TemplateRecommendationResult,
 } from '@/services/smartImport'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import customModuleService, { CustomModuleSummary } from '@/services/customModules'
@@ -157,6 +158,7 @@ const SmartImportPage: React.FC = () => {
   const [capabilities, setCapabilities] = useState<AICapabilities | null>(null)
   const [quota, setQuota] = useState<AIQuotaStatus | null>(null)
   const [templates, setTemplates] = useState<WPSTemplateSummary[]>([])
+  const [templateRecommendation, setTemplateRecommendation] = useState<TemplateRecommendationResult | null>(null)
   const [modules, setModules] = useState<CustomModuleSummary[]>([])
   const [result, setResult] = useState<ExtractionResult | null>(null)
   const [reviewField, setReviewField] = useState<ExtractedField | null>(null)
@@ -359,6 +361,7 @@ const SmartImportPage: React.FC = () => {
     if (!batch) return
     setActiveDocument(document)
     setBatchExtractionMode(false)
+    setTemplateRecommendation(null)
     setExtractOpen(true)
     smartImportService.getAIQuota(document.page_count || 1).then(setQuota).catch(() => undefined)
     extractForm.resetFields()
@@ -371,7 +374,7 @@ const SmartImportPage: React.FC = () => {
       run_ocr: true,
     })
     try {
-      const [templateResponse, moduleList] = await Promise.all([
+      const [templateResponse, moduleList, recommendation] = await Promise.all([
         batch.target_entity_type === 'welder'
           ? Promise.resolve(null)
           : wpsTemplateService.getTemplates({
@@ -379,6 +382,7 @@ const SmartImportPage: React.FC = () => {
               limit: 100,
             }),
         customModuleService.getCustomModules({ limit: 100 }),
+        smartImportService.recommendTemplates(document.id),
       ])
       setTemplates(templateResponse?.data?.items || [])
       setModules(
@@ -386,6 +390,11 @@ const SmartImportPage: React.FC = () => {
           item => item.module_type === batch.target_entity_type || item.module_type === 'common'
         )
       )
+      setTemplateRecommendation(recommendation)
+      const recommended = recommendation.recommendations[0]
+      if (recommended && recommended.score >= 55) {
+        extractForm.setFieldValue('schema_source', `template:${recommended.template_id}`)
+      }
     } catch (error) {
       message.error(errorMessage(error, '加载模板和模块失败'))
     }
@@ -949,6 +958,17 @@ const SmartImportPage: React.FC = () => {
           className="smart-import__modal-alert"
         />
         <Form form={extractForm} layout="vertical">
+          {templateRecommendation && (
+            <Alert
+              type={templateRecommendation.classification.requires_confirmation ? 'warning' : 'info'}
+              showIcon
+              message={`内容分类：${entityLabels[templateRecommendation.classification.document_type as ImportEntityType] || '未知'}（${Math.round(templateRecommendation.classification.confidence * 100)}%）`}
+              description={templateRecommendation.recommendations[0]
+                ? `已推荐“${templateRecommendation.recommendations[0].name}”：${templateRecommendation.recommendations[0].reasons.join('、')}`
+                : '未找到明显匹配的企业模板，可继续使用内置核心字段或手工指定模板。'}
+              className="smart-import__modal-alert"
+            />
+          )}
           <Form.Item name="schema_source" label="提取字段来源" rules={[{ required: true, message: '请选择提取字段来源' }]}>
             <Select
               showSearch
@@ -958,7 +978,13 @@ const SmartImportPage: React.FC = () => {
                 ...(['wps', 'pqr'].includes(batch?.target_entity_type || '')
                   ? [{ value: 'builtin:auto', label: `自动 · ${entityLabels[batch!.target_entity_type]} 核心字段（推荐）` }]
                   : []),
-                ...templates.map(item => ({ value: `template:${item.id}`, label: `模板 · ${item.name}` })),
+                ...templates.map(item => {
+                  const recommended = templateRecommendation?.recommendations.find(value => value.template_id === item.id)
+                  return {
+                    value: `template:${item.id}`,
+                    label: recommended ? `推荐 ${recommended.score}% · ${item.name}` : `模板 · ${item.name}`,
+                  }
+                }),
                 ...modules.map(item => ({ value: `module:${item.id}`, label: `模块 · ${item.name}` })),
               ]}
               notFoundContent="当前类型尚无可用字段来源"
@@ -1106,15 +1132,25 @@ const SmartImportPage: React.FC = () => {
             {result.entity.status !== 'published' && (
               <>
                 <Button onClick={() => void bulkAccept()}>接受高置信度字段</Button>
-                <Button
-                  type="primary"
-                  icon={<SendOutlined />}
-                  loading={publishing}
-                  disabled={pendingFieldCount > 0 || !['wps', 'pqr'].includes(result.entity.entity_type)}
-                  onClick={() => void publishEntity()}
-                >
-                  发布到正式模块
-                </Button>
+                {['wps', 'pqr'].includes(result.entity.entity_type) && (
+                  <Button
+                    icon={<EditOutlined />}
+                    onClick={() => navigate(`/${result.entity.entity_type}/create?import_entity_id=${result.entity.id}`)}
+                  >
+                    使用现有表单校核
+                  </Button>
+                )}
+                {result.entity.entity_type === 'pqr' && (
+                  <Button
+                    type="primary"
+                    icon={<SendOutlined />}
+                    loading={publishing}
+                    disabled={pendingFieldCount > 0}
+                    onClick={() => void publishEntity()}
+                  >
+                    按已审核字段发布
+                  </Button>
+                )}
               </>
             )}
           </Space>

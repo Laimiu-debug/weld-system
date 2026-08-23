@@ -14,7 +14,7 @@ from app.models.smart_import import (
     ExtractionJob,
     SourceDocument,
 )
-from app.schemas.smart_import import FieldReviewRequest
+from app.schemas.smart_import import FieldReviewRequest, FormPublishRequest
 from app.services.ai_quota_service import AIQuotaError, AIQuotaService
 from app.services.smart_import_review_service import SmartImportReviewService
 
@@ -319,48 +319,53 @@ def test_pqr_publish_uses_existing_service_and_keeps_formal_record_draft() -> No
     assert entity.status == "published"
 
 
-def test_wps_publish_uses_existing_wps_service() -> None:
+def test_wps_quick_publish_requires_existing_form_and_pqr_confirmation() -> None:
     db = Mock()
     entity = _entity("wps")
-    number = _field("wps_number", "WPS-001", "field-number")
-    title = _field("title", "Imported WPS", "field-title")
-    number.module_id = "header_data"
-    title.module_id = "header_data"
-    number.review_status = "accepted"
-    title.review_status = "accepted"
-    job = ExtractionJob(id="job-1", template_id="template-1")
-    document = SourceDocument(id="document-1", batch_id="batch-1")
+    existing_query = Mock()
+    existing_query.filter.return_value.order_by.return_value.first.return_value = None
+    db.query.return_value = existing_query
+    service = SmartImportReviewService(db)
+    service.get_entity = Mock(return_value=entity)
+
+    with pytest.raises(HTTPException) as exc_info:
+        service.publish(entity.id, _user(), _context())
+
+    assert exc_info.value.status_code == 409
+    assert "确认支持 PQR" in exc_info.value.detail
+
+
+def test_wps_existing_form_can_save_without_pqr_but_marks_capability_ineligible() -> (
+    None
+):
+    db = Mock()
+    entity = _entity("wps")
     existing_query = Mock()
     existing_query.filter.return_value.order_by.return_value.first.return_value = None
     fields_query = Mock()
-    fields_query.filter.return_value.all.return_value = [number, title]
-    job_query = Mock()
-    job_query.filter.return_value.first.return_value = job
-    document_query = Mock()
-    document_query.filter.return_value.first.return_value = document
-    db.query.side_effect = [existing_query, fields_query, job_query, document_query]
+    fields_query.filter.return_value.all.return_value = []
+    db.query.side_effect = [existing_query, fields_query]
     service = SmartImportReviewService(db)
     service.get_entity = Mock(return_value=entity)
     service._check_formal_quota = Mock()
     service._increment_formal_quota = Mock()
-    service.smart_import.get_batch = Mock(
-        return_value=SimpleNamespace(
-            processed_documents=1, total_documents=1, status="review", progress=100
-        )
+    request = FormPublishRequest(
+        payload={"wps_number": "WPS-FORM-1", "title": "Imported form"},
+        supporting_pqr_decision="no_match",
     )
 
     with patch(
         "app.services.smart_import_review_service.WPSService.create",
-        return_value=SimpleNamespace(id=202),
+        return_value=SimpleNamespace(id=303),
     ) as create:
-        record = service.publish(entity.id, _user(), _context())
+        record = service.publish_form(entity.id, request, _user(), _context())
 
     payload = create.call_args.kwargs["obj_in"]
-    assert payload.wps_number == "WPS-001"
-    assert payload.title == "Imported WPS"
+    control = payload.modules_data["_import_control"]["data"]
     assert payload.status == "draft"
-    assert record.target_entity_type == "wps"
-    assert record.target_entity_id == "202"
+    assert control["supporting_pqr_decision"] == "no_match"
+    assert control["capability_eligible"] is False
+    assert record.target_entity_id == "303"
 
 
 def test_ai_entitlement_model_is_data_driven() -> None:

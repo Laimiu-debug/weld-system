@@ -88,3 +88,10 @@ AI 权益由 `ai_plan_entitlements` 数据驱动，统一限制单任务页数�
 - `ai_plan_entitlements` 以数据配置各会员层级的月度点数、单任务点数和页数上限；`ai_usage_ledgers` 使用幂等流水记录预占、结算和退款。平台任务失败自动退款，BYOK 只记录 Token 与页数而不扣平台点数。
 - `import_review_records` 保存字段接受、修正、拒绝和发布记录；`entity_publish_records` 将导入草稿与正式 WPS/PQR ID、发布快照关联，重复发布返回同一结果。
 - 前端 `/smart-import` 提供“智能焊序 → 企业能力建库”入口，已打通任务创建、文件上传、分页解析、平台/BYOK 提取及字段置信度、页码和证据原文查看。
+
+## P1 模板推荐与原表单校核
+
+- 解析后的正文会按文档标记、标准和焊接方法进行可解释分类，再对当前工作区可见模板打分；推荐不会替代用户手工指定模板或模块。
+- PQR/WPS 导入草稿可以带模板和识别值进入原动态表单，人工校核完成后由智能导入发布接口调用原 PQR/WPS Service，正式记录保持草稿并保留导入审核与发布关联。
+- WPS 内置提取 Schema 覆盖多方法顺序、焊层/焊道明细和重复参数表。发布前必须人工选择已批准的支持 PQR，或明确选择暂无匹配。
+- 暂无支持 PQR 时允许保存 WPS 草稿，但 `modules_data._import_control.capability_eligible` 固定为 `false`，后续能力聚合不得把该记录当作有效能力。
