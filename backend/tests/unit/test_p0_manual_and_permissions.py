@@ -60,3 +60,27 @@ def test_personal_import_is_owner_scoped_and_enterprise_uses_role_permission(
     db = Mock()
     smart_import.ensure_import_permission(db, user, enterprise, "publish")
     check.assert_called_once_with(db, user, "import", "publish")
+
+
+def test_shared_workspace_resolver_accepts_canonical_and_legacy_enterprise_ids(
+    monkeypatch,
+) -> None:
+    seen: list[str] = []
+    expected = WorkspaceContext(
+        7, WorkspaceType.ENTERPRISE, company_id=3, factory_id=4
+    )
+
+    class FakeWorkspaceService:
+        def __init__(self, db):
+            self.db = db
+
+        def create_workspace_context(self, user, workspace_id):
+            seen.append(workspace_id)
+            return expected
+
+    monkeypatch.setattr(smart_import, "WorkspaceService", FakeWorkspaceService)
+    user = SimpleNamespace(id=7)
+
+    assert smart_import.resolve_workspace(Mock(), user, "enterprise_3") is expected
+    assert smart_import.resolve_workspace(Mock(), user, "company_3") is expected
+    assert seen == ["enterprise_3", "enterprise_3"]

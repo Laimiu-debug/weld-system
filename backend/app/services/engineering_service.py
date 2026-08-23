@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -369,6 +370,90 @@ class EngineeringService:
         self.db.refresh(item)
         return item
 
+    def delete_project(
+        self,
+        project_id: str,
+        user: User,
+        context: WorkspaceContext,
+        storage: DocumentStorage,
+    ) -> None:
+        project = self._get(EngineeringProject, project_id, user, context, True)
+        revisions = (
+            self.db.query(ProductRevision)
+            .join(Product, ProductRevision.product_id == Product.id)
+            .filter(Product.project_id == project.id)
+            .all()
+        )
+        self._delete_revisions_and_documents(revisions, project, storage)
+
+    def delete_revision(
+        self,
+        revision_id: str,
+        user: User,
+        context: WorkspaceContext,
+        storage: DocumentStorage,
+    ) -> None:
+        revision = self._get(ProductRevision, revision_id, user, context, True)
+        product = self._get(Product, revision.product_id, user, context, True)
+        self._delete_revisions_and_documents([revision], revision, storage)
+        latest = (
+            self.db.query(func.max(ProductRevision.revision_number))
+            .filter(ProductRevision.product_id == product.id)
+            .scalar()
+        )
+        product.current_revision_number = latest
+        self.db.commit()
+
+    def _delete_revisions_and_documents(
+        self,
+        revisions: list[ProductRevision],
+        root,
+        storage: DocumentStorage,
+    ) -> None:
+        if any(item.status in {"approved", "superseded"} for item in revisions):
+            raise HTTPException(409, "已批准或已替代的图纸属于审计记录，不能直接删除")
+
+        document_ids = {item.drawing_document_id for item in revisions}
+        documents = (
+            self.db.query(SourceDocument)
+            .filter(SourceDocument.id.in_(document_ids))
+            .all()
+            if document_ids
+            else []
+        )
+        batch_ids = {item.batch_id for item in documents}
+        storage_keys = {item.storage_key for item in documents if item.storage_key}
+        if document_ids:
+            storage_keys.update(
+                key
+                for (key,) in self.db.query(DocumentArtifact.storage_key)
+                .filter(DocumentArtifact.document_id.in_(document_ids))
+                .all()
+                if key
+            )
+
+        try:
+            self.db.delete(root)
+            self.db.flush()
+            if batch_ids:
+                self.db.query(ImportBatch).filter(ImportBatch.id.in_(batch_ids)).delete(
+                    synchronize_session=False
+                )
+            self.db.commit()
+        except IntegrityError as exc:
+            self.db.rollback()
+            raise HTTPException(
+                409, "工程或图纸已被焊序、定额或生产数据引用，不能删除"
+            ) from exc
+
+        for storage_key in storage_keys:
+            try:
+                storage.delete(storage_key)
+            except Exception:
+                # The database deletion is authoritative. Retention cleanup may be
+                # retried separately if an object store is temporarily unavailable.
+                pass
+
     def create_product(self, project_id: str, data: ProductCreate, user, context):
         project = self._get(EngineeringProject, project_id, user, context, True)
         item = Product(
@@ -482,8 +567,23 @@ class EngineeringService:
             change_summary=change_summary,
             **values,
         )
-        self.db.add_all([batch, document, artifact, revision])
-        self.db.commit()
+        # These models deliberately do not declare ORM relationships. Flush
+        # each FK parent before adding dependent rows so PostgreSQL sees a
+        # deterministic batch -> document -> artifact/revision insert order.
+        try:
+            self.db.add(batch)
+            self.db.flush()
+            self.db.add(document)
+            self.db.flush()
+            self.db.add_all([artifact, revision])
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            try:
+                storage.delete(stored.storage_key)
+            except Exception:
+                pass
+            raise
         try:
             parsed_doc, pages = SmartImportService(self.db).parse_document(
                 document.id, user, context, storage, DefaultDocumentParser()
@@ -543,6 +643,8 @@ class EngineeringService:
         user: User,
         context: WorkspaceContext,
         storage: DocumentStorage,
+        point_multiplier: float = 1.0,
+        routing: dict[str, Any] | None = None,
     ):
         revision = self._get(ProductRevision, revision_id, user, context, True)
         if revision.status in {"approved", "superseded"}:
@@ -577,7 +679,9 @@ class EngineeringService:
                     raise HTTPException(422, "未提供 AI 服务或结构化结果")
                 quota = AIQuotaService(self.db)
                 if mode == "platform":
-                    quota.enforce_task_limits(user, context, len(pages))
+                    quota.enforce_task_limits(
+                        user, context, len(pages), point_multiplier
+                    )
                 job = ExtractionJob(
                     id=str(uuid4()),
                     document_id=revision.drawing_document_id,
@@ -588,7 +692,11 @@ class EngineeringService:
                     run_ocr=True,
                     progress=5,
                     schema_version="pressure-vessel-v1",
-                    schema_snapshot=DRAWING_SCHEMA,
+                    schema_snapshot={
+                        **DRAWING_SCHEMA,
+                        "x-weld-routing": routing
+                        or {"point_multiplier": point_multiplier},
+                    },
                     prompt_version="engineering-drawing-v1",
                     request_trace_id=str(uuid4()),
                     status="processing",

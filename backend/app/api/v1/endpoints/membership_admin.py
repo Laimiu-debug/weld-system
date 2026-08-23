@@ -4,6 +4,8 @@ Membership management endpoints for the welding system backend.
 """
 from typing import Any, Dict, List, Optional
 from datetime import datetime, date
+from math import isfinite
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
@@ -11,13 +13,52 @@ from sqlalchemy.orm import Session
 from app.api.admin_deps import get_current_active_admin
 from app.models.admin import Admin
 from app.models.user import User
-from app.models.subscription import SubscriptionPlan, SubscriptionTransaction
+from app.models.subscription import Subscription, SubscriptionPlan, SubscriptionTransaction
 from app.services.membership_service import MembershipService
 from app.services.system_service import SystemService
 from app.services.subscription_plan_seed import parse_plan_features
 from app.core.database import get_db
 
 router = APIRouter()
+
+
+PRICE_FIELDS = ("monthly_price", "quarterly_price", "yearly_price")
+QUOTA_FIELDS = (
+    "max_wps_files", "max_pqr_files", "max_ppqr_files", "max_materials",
+    "max_welders", "max_equipment", "max_factories", "max_employees", "sort_order",
+)
+
+
+def validated_plan_data(plan_data: Dict[str, Any], *, creating: bool = False) -> Dict[str, Any]:
+    values = dict(plan_data)
+    if creating:
+        plan_id = str(values.get("id") or "").strip()
+        if not re.fullmatch(r"[a-z][a-z0-9_]{1,49}", plan_id):
+            raise HTTPException(422, "套餐 ID 只能使用小写字母、数字和下划线")
+        if not str(values.get("name") or "").strip():
+            raise HTTPException(422, "套餐名称不能为空")
+        values["id"] = plan_id
+    for field in PRICE_FIELDS:
+        if field not in values:
+            continue
+        try:
+            number = float(values[field])
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(422, f"{field} 必须是有效金额") from exc
+        if not isfinite(number) or number < 0 or number > 10_000_000:
+            raise HTTPException(422, f"{field} 超出允许范围")
+        values[field] = round(number, 2)
+    for field in QUOTA_FIELDS:
+        if field not in values:
+            continue
+        try:
+            number = int(values[field])
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(422, f"{field} 必须是整数") from exc
+        if number < 0 or number > 10_000_000:
+            raise HTTPException(422, f"{field} 超出允许范围")
+        values[field] = number
+    return values
 
 
 @router.get("/subscription-plans")
@@ -79,6 +120,9 @@ def create_subscription_plan_admin(
             detail="需要超级管理员权限"
         )
 
+    plan_data = validated_plan_data(plan_data, creating=True)
+    if db.query(SubscriptionPlan).filter(SubscriptionPlan.id == plan_data["id"]).first():
+        raise HTTPException(409, "套餐 ID 已存在")
     plan = SubscriptionPlan(
         id=plan_data.get("id"),
         name=plan_data.get("name"),
@@ -99,7 +143,8 @@ def create_subscription_plan_admin(
             if isinstance(plan_data.get("features"), list)
             else (plan_data.get("features") or ""),
         sort_order=plan_data.get("sort_order", 0),
-        is_recommended=plan_data.get("is_recommended", False)
+        is_recommended=plan_data.get("is_recommended", False),
+        is_active=plan_data.get("is_active", True),
     )
 
     db.add(plan)
@@ -142,6 +187,7 @@ def update_subscription_plan_admin(
             detail="需要超级管理员权限"
         )
 
+    plan_data = validated_plan_data(plan_data)
     plan = db.query(SubscriptionPlan).filter(SubscriptionPlan.id == plan_id).first()
     if not plan:
         raise HTTPException(
@@ -345,6 +391,11 @@ def delete_subscription_plan_admin(
         )
 
     plan_name = plan.name
+    if db.query(Subscription).filter(Subscription.plan_id == plan.id).first():
+        raise HTTPException(
+            status_code=409,
+            detail="套餐已有订阅记录，不能删除；请改为停用套餐",
+        )
     db.delete(plan)
     db.commit()
 

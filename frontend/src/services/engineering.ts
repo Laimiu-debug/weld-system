@@ -18,6 +18,9 @@ export const engineeringService = {
   async createProject(data: DataRow): Promise<DataRow> {
     return (await api.post("/engineering/projects", data)).data;
   },
+  async deleteProject(projectId: string): Promise<void> {
+    await api.delete(`/engineering/projects/${projectId}`);
+  },
   async products(projectId: string): Promise<DataRow[]> {
     return (await api.get(`/engineering/projects/${projectId}/products`)).data;
   },
@@ -36,14 +39,14 @@ export const engineeringService = {
     const form = new FormData();
     form.append("file", file);
     if (summary) form.append("change_summary", summary);
-    return (
-      await api.post(`/engineering/products/${productId}/drawings`, form, {
-        headers: { "Content-Type": "multipart/form-data" },
-      })
-    ).data;
+    return (await api.post(`/engineering/products/${productId}/drawings`, form))
+      .data;
   },
   async detail(revisionId: string): Promise<RevisionDetail> {
     return (await api.get(`/engineering/revisions/${revisionId}`)).data;
+  },
+  async deleteRevision(revisionId: string): Promise<void> {
+    await api.delete(`/engineering/revisions/${revisionId}`);
   },
   async preview(revisionId: string, page: number): Promise<Blob> {
     return (

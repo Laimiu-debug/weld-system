@@ -26,7 +26,10 @@ from app.schemas.engineering import (
     ProjectCreate,
     RevisionApprove,
 )
-from app.services.ai_credential_service import AIProviderConfigService
+from app.services.ai_credential_service import (
+    AIProviderConfigService,
+    resolve_platform_ai_config,
+)
 from app.services.ai_extraction_service import AIExtractionRunError, build_provider
 from app.services.document_page_renderer import DocumentPageRenderer
 from app.services.document_storage_service import (
@@ -79,6 +82,21 @@ def create_project(
     context = resolve_workspace(db, current_user, workspace_id)
     permitted(db, current_user, context, "create")
     return row(EngineeringService(db).create_project(data, current_user, context))
+
+
+@router.delete("/projects/{project_id}", status_code=204)
+def delete_project(
+    project_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+    storage: DocumentStorage = Depends(get_document_storage),
+):
+    context = resolve_workspace(db, current_user, workspace_id)
+    permitted(db, current_user, context, "delete")
+    EngineeringService(db).delete_project(
+        project_id, current_user, context, storage
+    )
 
 
 @router.get("/projects/{project_id}/products")
@@ -181,6 +199,21 @@ def revision_detail(
     }
 
 
+@router.delete("/revisions/{revision_id}", status_code=204)
+def delete_revision(
+    revision_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+    storage: DocumentStorage = Depends(get_document_storage),
+):
+    context = resolve_workspace(db, current_user, workspace_id)
+    permitted(db, current_user, context, "delete")
+    EngineeringService(db).delete_revision(
+        revision_id, current_user, context, storage
+    )
+
+
 @router.get("/revisions/{revision_id}/pages/{page_number}/preview")
 def drawing_preview(
     revision_id: str,
@@ -237,6 +270,29 @@ def parse_drawing(
                 )
             else:
                 credentials.enforce_policy(request.mode, None, context)
+                if request.mode == "platform":
+                    platform = resolve_platform_ai_config(
+                        db,
+                        include_key=True,
+                        task_type="drawing_import",
+                        complexity="advanced",
+                    )
+                    if not platform["key_configured"] or not platform["model"]:
+                        raise HTTPException(status_code=503, detail="平台 AI 服务尚未配置")
+                    from types import SimpleNamespace
+
+                    config = SimpleNamespace(
+                        id=None,
+                        provider=platform["provider"],
+                        base_url=platform["base_url"],
+                        model=platform["model"],
+                        complexity_level=platform.get("complexity_level")
+                        or "advanced",
+                        point_multiplier=float(
+                            platform.get("point_multiplier") or 1
+                        ),
+                    )
+                    key = platform["api_key"]
             provider = build_provider(request, config, key)
         run = EngineeringService(db).parse_revision(
             revision_id,
@@ -247,6 +303,15 @@ def parse_drawing(
             current_user,
             context,
             storage,
+            float(getattr(config, "point_multiplier", 1) or 1),
+            {
+                "config_id": getattr(config, "id", None),
+                "task_type": "drawing_import",
+                "complexity": getattr(config, "complexity_level", "advanced"),
+                "point_multiplier": float(
+                    getattr(config, "point_multiplier", 1) or 1
+                ),
+            },
         )
         return row(run)
     except AIExtractionRunError as exc:

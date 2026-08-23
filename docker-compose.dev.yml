@@ -21,6 +21,7 @@ services:
     environment:
       DEVELOPMENT: "true"
       DEBUG: "true"
+      DATABASE_NAME: ${DEV_DATABASE_NAME:-weld_db}
       # 本地点开验证链接用；上线服务器请用 .env.production 里的 https://sdhaohan.cn
       FRONTEND_URL: "http://127.0.0.1:3100"
       # 虎皮椒未开通前：手动收款码（支付宝/微信二维码 + 管理员确认）
@@ -37,6 +38,7 @@ services:
     environment:
       DEVELOPMENT: "true"
       DEBUG: "true"
+      DATABASE_NAME: ${DEV_DATABASE_NAME:-weld_db}
       FRONTEND_URL: "http://127.0.0.1:3100"
 
   celery-beat:
@@ -44,6 +46,7 @@ services:
     environment:
       DEVELOPMENT: "true"
       DEBUG: "true"
+      DATABASE_NAME: ${DEV_DATABASE_NAME:-weld_db}
 
   # 本地默认不运行周期任务和备份，避免产生测试通知与备份文件。
   backup:

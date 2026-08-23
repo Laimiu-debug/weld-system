@@ -131,10 +131,12 @@ def build_provider(
     saved_api_key: str | None = None,
 ) -> OpenAICompatibleProvider:
     if request.mode == "platform":
-        if not settings.AI_PLATFORM_API_KEY or not settings.AI_PLATFORM_MODEL:
+        platform_key = saved_api_key or settings.AI_PLATFORM_API_KEY
+        platform_model = getattr(saved_config, "model", None) or settings.AI_PLATFORM_MODEL
+        if not platform_key or not platform_model:
             raise AIExtractionRunError("platform_not_configured", "平台 AI 服务尚未配置", 503)
-        provider = settings.AI_PLATFORM_PROVIDER
-        base_url = settings.AI_PLATFORM_BASE_URL
+        provider = getattr(saved_config, "provider", None) or settings.AI_PLATFORM_PROVIDER
+        base_url = getattr(saved_config, "base_url", None) or settings.AI_PLATFORM_BASE_URL
         hostname = urlsplit(base_url).hostname or ""
         try:
             base_url = validate_ai_base_url(
@@ -146,8 +148,8 @@ def build_provider(
             raise AIExtractionRunError(
                 "invalid_platform_config", "平台 AI 服务地址配置无效", 503
             ) from exc
-        api_key = settings.AI_PLATFORM_API_KEY
-        model = settings.AI_PLATFORM_MODEL
+        api_key = platform_key
+        model = platform_model
     elif request.mode == "offline":
         offline_base_url = (
             getattr(saved_config, "base_url", None) or settings.AI_OFFLINE_BASE_URL

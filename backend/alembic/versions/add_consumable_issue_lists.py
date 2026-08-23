@@ -51,6 +51,14 @@ def ws():
 
 
 def upgrade():
+    # ``material_transactions`` belonged to an optional legacy inventory
+    # module and is absent from some otherwise valid installations. Preserve
+    # the linkage column everywhere and add the FK only where its target exists.
+    material_transaction_fk = []
+    if sa.inspect(op.get_bind()).has_table("material_transactions"):
+        material_transaction_fk.append(
+            sa.ForeignKey("material_transactions.id", ondelete="RESTRICT")
+        )
     op.add_column(
         "weld_consumable_operations",
         sa.Column(
@@ -218,7 +226,7 @@ def upgrade():
         sa.Column(
             "material_transaction_id",
             sa.Integer(),
-            sa.ForeignKey("material_transactions.id", ondelete="RESTRICT"),
+            *material_transaction_fk,
         ),
         sa.Column("event_type", sa.String(20), nullable=False),
         sa.Column("quantity", sa.Float(), nullable=False),

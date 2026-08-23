@@ -133,6 +133,11 @@ class AIExtractionQueueService:
                     user,
                     context,
                     max(1, int(getattr(document, "page_count", 0) or 0)),
+                    float(
+                        ((schema_snapshot or {}).get("x-weld-routing") or {}).get(
+                            "point_multiplier", 1
+                        )
+                    ),
                 )
             except AIQuotaError as exc:
                 raise HTTPException(

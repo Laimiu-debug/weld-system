@@ -135,6 +135,13 @@ export interface AIQuotaStatus {
   can_run_estimate?: boolean
 }
 
+export interface AIUsageReport {
+  days: number
+  totals: { points: number; input_tokens: number; output_tokens: number; total_tokens: number; tasks: number }
+  by_model: Array<{ provider: string; model: string; points: number; input_tokens: number; output_tokens: number; total_tokens: number; tasks: number }>
+  by_day: Array<{ date: string; points: number; input_tokens: number; output_tokens: number; total_tokens: number; tasks: number }>
+}
+
 export interface AIProviderConfig {
   id: string
   scope_type: 'personal' | 'enterprise'
@@ -321,6 +328,27 @@ class SmartImportService {
     return response.data
   }
 
+  async updateAIProviderConfig(id: string, data: {
+    name?: string
+    provider?: 'openai_responses' | 'openai_compatible_chat'
+    base_url?: string
+    model?: string
+    is_default?: boolean
+  }): Promise<AIProviderConfig> {
+    const response = await api.patch(`/smart-import/ai-provider-configs/${id}`, data)
+    return response.data
+  }
+
+  async testAIProviderConnection(data: {
+    provider: 'openai_responses' | 'openai_compatible_chat'
+    base_url: string
+    model: string
+    api_key: string
+  }): Promise<{ success: boolean; message: string }> {
+    const response = await api.post('/smart-import/ai-provider-configs/test-connection', data)
+    return response.data
+  }
+
   async testAIProviderConfig(id: string): Promise<AIProviderConfig> {
     const response = await api.post(`/smart-import/ai-provider-configs/${id}/test`)
     return response.data
@@ -362,6 +390,11 @@ class SmartImportService {
     const response = await api.get('/smart-import/ai-quota', {
       params: estimatedPages ? { estimated_pages: estimatedPages } : undefined,
     })
+    return response.data
+  }
+
+  async getAIUsage(days = 30): Promise<AIUsageReport> {
+    const response = await api.get('/smart-import/ai-usage', { params: { days } })
     return response.data
   }
 

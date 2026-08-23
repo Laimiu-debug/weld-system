@@ -15,6 +15,17 @@ from app.models.system_log import SystemLog
 from app.services.system_service import SystemService
 from app.services.notification_service import NotificationService
 from app.core.database import get_db
+from app.schemas.smart_import import AIExtractionRequest
+from app.models.smart_import import AIProviderConfig
+from app.services.ai_credential_service import (
+    disable_platform_ai_config,
+    list_platform_ai_configs,
+    resolve_platform_ai_config,
+    update_platform_ai_config,
+)
+from app.services.ai_quota_service import AIQuotaService
+from app.services.ai_extraction_service import AIExtractionRunError, build_provider
+from app.services.ai_provider_service import AIProviderError, StructuredAIRequest
 
 router = APIRouter()
 
@@ -184,6 +195,178 @@ def update_system_config_admin(
         "success": True,
         "message": "系统配置已更新",
         "data": updated_config
+    }
+
+
+@router.post("/config/test-ai")
+def test_platform_ai_config_admin(
+    config_data: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_active_admin),
+) -> Any:
+    if current_admin.admin_level != "super_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="需要超级管理员权限",
+        )
+    saved = resolve_platform_ai_config(db, include_key=True)
+    api_key = str(config_data.get("api_key") or saved.get("api_key") or "").strip()
+    if not api_key:
+        raise HTTPException(status_code=422, detail="请填写 API Key 后再测试")
+    transient = type(
+        "PlatformAITestConfig",
+        (),
+        {
+            "provider": config_data.get("provider") or saved.get("provider"),
+            "base_url": config_data.get("base_url") or saved.get("base_url"),
+            "model": config_data.get("model") or saved.get("model"),
+        },
+    )()
+    try:
+        provider = build_provider(
+            AIExtractionRequest(mode="platform"), transient, api_key
+        )
+        try:
+            provider.structured_response(
+                StructuredAIRequest(
+                    instructions='Return JSON only in the exact shape {"ok": true}.',
+                    input_text="Connection test. Respond with JSON confirming ok is true.",
+                    json_schema={
+                        "type": "object",
+                        "properties": {"ok": {"type": "boolean"}},
+                        "required": ["ok"],
+                        "additionalProperties": False,
+                    },
+                    schema_name="connection_test",
+                )
+            )
+        finally:
+            provider.close()
+        return {"success": True, "message": "连接成功，API Key 与模型均可用"}
+    except (AIProviderError, AIExtractionRunError) as exc:
+        return {"success": False, "message": str(exc)}
+
+
+def _require_super_admin(current_admin: Admin) -> None:
+    if current_admin.admin_level != "super_admin":
+        raise HTTPException(status_code=403, detail="需要超级管理员权限")
+
+
+@router.get("/config/ai-models")
+def list_platform_ai_models_admin(
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_active_admin),
+) -> Any:
+    _require_super_admin(current_admin)
+    return {"success": True, "data": list_platform_ai_configs(db)}
+
+
+@router.post("/config/ai-models", status_code=201)
+def create_platform_ai_model_admin(
+    config_data: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_active_admin),
+) -> Any:
+    _require_super_admin(current_admin)
+    return {
+        "success": True,
+        "data": update_platform_ai_config(db, config_data, create_new=True),
+    }
+
+
+@router.put("/config/ai-models/{config_id}")
+def update_platform_ai_model_admin(
+    config_id: str,
+    config_data: Dict[str, Any],
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_active_admin),
+) -> Any:
+    _require_super_admin(current_admin)
+    return {
+        "success": True,
+        "data": update_platform_ai_config(
+            db, {**config_data, "id": config_id}, create_new=False
+        ),
+    }
+
+
+@router.delete("/config/ai-models/{config_id}", status_code=204)
+def disable_platform_ai_model_admin(
+    config_id: str,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_active_admin),
+) -> None:
+    _require_super_admin(current_admin)
+    disable_platform_ai_config(db, config_id)
+
+
+@router.post("/config/ai-models/{config_id}/test")
+def test_saved_platform_ai_model_admin(
+    config_id: str,
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_active_admin),
+) -> Any:
+    _require_super_admin(current_admin)
+    item = db.query(AIProviderConfig).filter(
+        AIProviderConfig.id == config_id,
+        AIProviderConfig.scope_type == "platform",
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="平台模型配置不存在")
+    saved = resolve_platform_ai_config(
+        db, include_key=True, config_id=config_id
+    )
+    try:
+        provider = build_provider(
+            AIExtractionRequest(mode="platform"), item, saved["api_key"]
+        )
+        try:
+            result = provider.structured_response(
+                StructuredAIRequest(
+                    instructions="Return valid json matching the schema.",
+                    input_text="Return the requested json now.",
+                    json_schema={
+                        "type": "object",
+                        "properties": {"ok": {"type": "boolean"}},
+                        "required": ["ok"],
+                        "additionalProperties": False,
+                    },
+                    schema_name="connection_test",
+                )
+            )
+        finally:
+            provider.close()
+        item.last_test_status = "success"
+        item.last_tested_at = datetime.utcnow()
+        item.last_error = None
+        db.commit()
+        return {
+            "success": True,
+            "message": "连接成功",
+            "usage": {
+                "input_tokens": result.input_tokens,
+                "output_tokens": result.output_tokens,
+                "total_tokens": result.total_tokens,
+            },
+        }
+    except (AIProviderError, AIExtractionRunError) as exc:
+        item.last_test_status = "failed"
+        item.last_tested_at = datetime.utcnow()
+        item.last_error = str(exc)[:300]
+        db.commit()
+        return {"success": False, "message": str(exc)}
+
+
+@router.get("/ai/usage")
+def platform_ai_usage_admin(
+    days: int = Query(30, ge=1, le=366),
+    db: Session = Depends(get_db),
+    current_admin: Admin = Depends(get_current_active_admin),
+) -> Any:
+    _require_super_admin(current_admin)
+    return {
+        "success": True,
+        "data": AIQuotaService(db).usage_report(None, None, days),
     }
 
 

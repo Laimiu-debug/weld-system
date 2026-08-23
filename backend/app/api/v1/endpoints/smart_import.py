@@ -23,7 +23,6 @@ from app.core.data_access import WorkspaceContext, WorkspaceType
 from app.core.config import settings
 from app.core.rate_limit import enforce_rate_limit
 from app.core.module_permissions import ensure_module_permission
-from app.models.company import CompanyEmployee
 from app.models.smart_import import (
     ExtractedEntity,
     ExtractedField,
@@ -37,6 +36,8 @@ from app.schemas.smart_import import (
     AIExtractionRequest,
     AIExtractionResponse,
     AIProviderConfigCreate,
+    AIProviderConnectionTestRequest,
+    AIProviderConnectionTestResponse,
     AIProviderConfigResponse,
     AIProviderConfigUpdate,
     AIProviderKeyRotate,
@@ -83,6 +84,7 @@ from app.services.ai_quota_service import AIQuotaService
 from app.services.ai_credential_service import (
     AIProviderConfigService,
     provider_config_response,
+    resolve_platform_ai_config,
 )
 from app.services.ai_provider_service import AIProviderError, StructuredAIRequest
 from app.services.custom_module_service import CustomModuleService
@@ -107,6 +109,7 @@ from app.services.smart_import_audit_service import SmartImportAuditService
 from app.services.operations_service import OperationsService
 from app.services.smart_import_review_service import SmartImportReviewService
 from app.services.smart_import_template_service import SmartImportTemplateService
+from app.services.workspace_service import WorkspaceService
 from app.services.system_config_service import get_max_upload_bytes
 from app.services.wps_template_service import WPSTemplateService
 from app.services.welder_import_service import WelderImportService
@@ -164,16 +167,16 @@ def get_document_parser() -> DocumentParser:
 
 @router.get("/ai-capabilities")
 def get_ai_capabilities(
+    db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ) -> dict:
     """Expose safe provider capabilities without returning credentials."""
     del current_user
+    platform = resolve_platform_ai_config(db)
     return {
-        "platform_available": bool(
-            settings.AI_PLATFORM_API_KEY and settings.AI_PLATFORM_MODEL
-        ),
-        "platform_provider": settings.AI_PLATFORM_PROVIDER,
-        "platform_model": settings.AI_PLATFORM_MODEL,
+        "platform_available": bool(platform["key_configured"] and platform["model"]),
+        "platform_provider": platform["provider"],
+        "platform_model": platform["model"],
         "byok_providers": ["openai_responses", "openai_compatible_chat"],
         "byok_allowed_hosts": settings.AI_BYOK_ALLOWED_HOSTS,
         "max_document_pages": settings.AI_MAX_DOCUMENT_PAGES,
@@ -206,6 +209,18 @@ def get_ai_quota(
             and result["user_active_tasks"] < result["max_user_concurrent_tasks"]
         )
     return result
+
+
+@router.get("/ai-usage")
+def get_ai_usage(
+    days: int = Query(30, ge=1, le=366),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> dict:
+    context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "view")
+    return AIQuotaService(db).usage_report(current_user, context, days)
 
 
 def build_requested_schema(
@@ -319,30 +334,56 @@ def resolve_offline_provider_config(db, context):
     )
 
 
+def platform_task_route(document) -> tuple[str, str]:
+    task_type = f"{document.document_type}_import"
+    pages = max(1, int(getattr(document, "page_count", 0) or 0))
+    if document.document_type == "drawing" or pages > 12:
+        complexity = "advanced"
+    elif pages <= 3:
+        complexity = "simple"
+    else:
+        complexity = "standard"
+    return task_type, complexity
+
+
+def resolve_platform_provider_config(db, document):
+    task_type, complexity = platform_task_route(document)
+    platform = resolve_platform_ai_config(
+        db,
+        include_key=True,
+        task_type=task_type,
+        complexity=complexity,
+    )
+    if not platform["key_configured"] or not platform["model"]:
+        raise HTTPException(status_code=503, detail="平台 AI 服务尚未配置")
+    return (
+        SimpleNamespace(
+            id=platform["id"],
+            provider=platform["provider"],
+            base_url=platform["base_url"],
+            model=platform["model"],
+            task_types=platform.get("task_types") or [],
+            complexity_level=platform.get("complexity_level") or complexity,
+            point_multiplier=float(platform.get("point_multiplier") or 1),
+        ),
+        platform["api_key"],
+    )
+
+
 def resolve_workspace(
     db: Session, current_user: User, workspace_id: Optional[str]
 ) -> WorkspaceContext:
-    if workspace_id and workspace_id.startswith("company_"):
-        try:
-            company_id = int(workspace_id.removeprefix("company_"))
-        except ValueError:
-            company_id = None
-        employee = (
-            db.query(CompanyEmployee)
-            .filter(
-                CompanyEmployee.user_id == current_user.id,
-                CompanyEmployee.company_id == company_id,
-                CompanyEmployee.status == "active",
-            )
-            .first()
+    if workspace_id:
+        # `enterprise_{id}` is the canonical ID emitted by WorkspaceService.
+        # Keep the old `company_{id}` spelling only as a compatibility alias.
+        canonical_id = (
+            f"enterprise_{workspace_id.removeprefix('company_')}"
+            if workspace_id.startswith("company_")
+            else workspace_id
         )
-        if employee:
-            return WorkspaceContext(
-                user_id=current_user.id,
-                workspace_type=WorkspaceType.ENTERPRISE,
-                company_id=employee.company_id,
-                factory_id=employee.factory_id,
-            )
+        return WorkspaceService(db).create_workspace_context(
+            current_user, canonical_id
+        )
     return WorkspaceContext(
         user_id=current_user.id, workspace_type=WorkspaceType.PERSONAL
     )
@@ -391,6 +432,45 @@ def create_ai_provider_config(
     return provider_config_response(
         AIProviderConfigService(db).create(data, current_user, context)
     )
+
+
+@router.post(
+    "/ai-provider-configs/test-connection",
+    response_model=AIProviderConnectionTestResponse,
+)
+def test_unsaved_ai_provider_config(
+    data: AIProviderConnectionTestRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+) -> AIProviderConnectionTestResponse:
+    enforce_rate_limit(
+        f"ai-provider-draft-test:{current_user.id}", limit=5, window_seconds=60
+    )
+    context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "key_manage")
+    credential_service = AIProviderConfigService(db)
+    credential_service.enforce_policy("byok", None, context)
+    base_url = credential_service._validate_url(data.base_url, context)
+    transient = SimpleNamespace(
+        provider=data.provider,
+        base_url=base_url,
+        model=data.model.strip(),
+    )
+    provider = build_provider(
+        AIExtractionRequest(mode="byok"),
+        transient,
+        data.api_key.get_secret_value().strip(),
+    )
+    try:
+        provider.structured_response(_connection_test_request())
+        return AIProviderConnectionTestResponse(
+            success=True, message="连接成功，API Key 与模型均可用"
+        )
+    except AIProviderError as exc:
+        return AIProviderConnectionTestResponse(success=False, message=str(exc))
+    finally:
+        provider.close()
 
 
 @router.patch(
@@ -464,19 +544,7 @@ def test_ai_provider_config(
         AIExtractionRequest(mode="byok", provider_config_id=item.id), item, key
     )
     try:
-        provider.structured_response(
-            StructuredAIRequest(
-                instructions="Return the requested JSON only.",
-                input_text="Connection test.",
-                json_schema={
-                    "type": "object",
-                    "properties": {"ok": {"type": "boolean"}},
-                    "required": ["ok"],
-                    "additionalProperties": False,
-                },
-                schema_name="connection_test",
-            )
-        )
+        provider.structured_response(_connection_test_request())
         item.last_test_status = "success"
         item.last_error = None
     except AIProviderError as exc:
@@ -489,6 +557,20 @@ def test_ai_provider_config(
     db.commit()
     db.refresh(item)
     return provider_config_response(item)
+
+
+def _connection_test_request() -> StructuredAIRequest:
+    return StructuredAIRequest(
+        instructions='Return JSON only in the exact shape {"ok": true}.',
+        input_text="Connection test. Respond with JSON confirming ok is true.",
+        json_schema={
+            "type": "object",
+            "properties": {"ok": {"type": "boolean"}},
+            "required": ["ok"],
+            "additionalProperties": False,
+        },
+        schema_name="connection_test",
+    )
 
 
 @router.get("/enterprise-ai-policy", response_model=EnterpriseAIPolicyResponse)
@@ -860,6 +942,19 @@ def extract_document(
             saved_key = settings.AI_OFFLINE_API_KEY
         else:
             credential_service.enforce_policy(request.mode, None, context)
+            if request.mode == "platform":
+                provider_config, saved_key = resolve_platform_provider_config(
+                    db, document
+                )
+                schema_snapshot = {
+                    **schema_snapshot,
+                    "x-weld-routing": {
+                        "config_id": provider_config.id,
+                        "task_type": platform_task_route(document)[0],
+                        "complexity": provider_config.complexity_level,
+                        "point_multiplier": provider_config.point_multiplier,
+                    },
+                }
         require_sensitive_document_consent(
             db, document, request, provider_config, current_user, context
         )
@@ -872,7 +967,9 @@ def extract_document(
             run_ocr=request.run_ocr,
             user=current_user,
             context=context,
-            provider_config_id=getattr(provider_config, "id", None),
+            provider_config_id=(
+                getattr(provider_config, "id", None) if request.mode == "byok" else None
+            ),
         )
         return AIExtractionResponse(
             job=job,
@@ -939,10 +1036,9 @@ def queue_document_extraction(
         model_name = provider_config.model
     else:
         credentials.enforce_policy("platform", None, context)
-        if not settings.AI_PLATFORM_API_KEY or not settings.AI_PLATFORM_MODEL:
-            raise HTTPException(status_code=503, detail="平台 AI 服务尚未配置")
-        provider_name = settings.AI_PLATFORM_PROVIDER
-        model_name = settings.AI_PLATFORM_MODEL
+        provider_config, _ = resolve_platform_provider_config(db, document)
+        provider_name = provider_config.provider
+        model_name = provider_config.model
     require_sensitive_document_consent(
         db, document, request, provider_config, current_user, context
     )
@@ -950,6 +1046,13 @@ def queue_document_extraction(
         **schema_snapshot,
         "outbound_consent_id": request.outbound_consent_id,
     }
+    if request.mode == "platform":
+        schema_snapshot["x-weld-routing"] = {
+            "config_id": provider_config.id,
+            "task_type": platform_task_route(document)[0],
+            "complexity": provider_config.complexity_level,
+            "point_multiplier": provider_config.point_multiplier,
+        }
     service = AIExtractionQueueService(db)
     job = service.create_job(
         document_id=document_id,
@@ -958,7 +1061,9 @@ def queue_document_extraction(
         mode=request.mode,
         provider=provider_name,
         model=model_name,
-        provider_config_id=getattr(provider_config, "id", None),
+        provider_config_id=(
+            getattr(provider_config, "id", None) if request.mode == "byok" else None
+        ),
         run_ocr=request.run_ocr,
         user=current_user,
         context=context,
@@ -1127,12 +1232,8 @@ def queue_batch_extraction(
         provider_name, model_name = provider_config.provider, provider_config.model
     else:
         credentials.enforce_policy("platform", None, context)
-        if not settings.AI_PLATFORM_API_KEY or not settings.AI_PLATFORM_MODEL:
-            raise HTTPException(status_code=503, detail="平台 AI 服务尚未配置")
-        provider_name, model_name = (
-            settings.AI_PLATFORM_PROVIDER,
-            settings.AI_PLATFORM_MODEL,
-        )
+        provider_config, _ = resolve_platform_provider_config(db)
+        provider_name, model_name = provider_config.provider, provider_config.model
     queue = AIExtractionQueueService(db)
     items: list[BatchOperationItem] = []
     for document in documents:
@@ -1160,7 +1261,11 @@ def queue_batch_extraction(
                 mode=request.mode,
                 provider=provider_name,
                 model=model_name,
-                provider_config_id=getattr(provider_config, "id", None),
+                provider_config_id=(
+                    getattr(provider_config, "id", None)
+                    if request.mode == "byok"
+                    else None
+                ),
                 run_ocr=request.run_ocr,
                 user=current_user,
                 context=context,

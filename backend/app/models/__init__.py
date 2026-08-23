@@ -13,6 +13,7 @@ from app.models.system_announcement import SystemAnnouncement
 from app.models.system_log import SystemLog
 from app.models.company import Company, Factory, CompanyEmployee, CompanyInvitation
 from app.models.wps_template import WPSTemplate
+from app.models.wps import WPS, WPSRevision
 from app.models.custom_module import CustomModule
 from app.models.shared_library import (
     SharedModule,
@@ -135,6 +136,8 @@ __all__ = [
     "CompanyEmployee",
     "CompanyInvitation",
     "WPSTemplate",
+    "WPS",
+    "WPSRevision",
     "CustomModule",
     "SharedModule",
     "SharedTemplate",

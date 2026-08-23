@@ -187,6 +187,13 @@ def test_quota_settlement_records_tokens_without_charging_byok() -> None:
     assert ledger.total_tokens == 120
 
 
+def test_model_point_multiplier_rounds_up_page_cost() -> None:
+    service = AIQuotaService(Mock())
+
+    assert service.estimate(3, 0.5) == 2
+    assert service.estimate(3, 1.5) == 5
+
+
 def test_failed_platform_job_refunds_reserved_points_once() -> None:
     db = Mock()
     service = AIQuotaService(db)

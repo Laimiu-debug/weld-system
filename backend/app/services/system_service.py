@@ -453,6 +453,10 @@ class SystemService:
         """获取系统配置（持久化运行时配置 + 品牌信息）"""
         from app.services.branding_service import get_branding
         from app.services.system_config_service import get_system_runtime_config
+        from app.services.ai_credential_service import (
+            list_platform_ai_configs,
+            resolve_platform_ai_config,
+        )
 
         branding = get_branding()
         runtime = get_system_runtime_config()
@@ -470,6 +474,8 @@ class SystemService:
             "brand_name": branding["brand_name"],
             "brand_subtitle": branding["brand_subtitle"],
             "org_name": branding["org_name"],
+            "ai_platform": resolve_platform_ai_config(self.db),
+            "ai_platform_models": list_platform_ai_configs(self.db),
         }
 
     def update_system_config(self, config_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -481,6 +487,10 @@ class SystemService:
 
         branding_keys = ("brand_name", "brand_subtitle", "org_name")
         filtered = {k: v for k, v in config_data.items() if k not in branding_keys and k in CONFIG_KEYS}
+        if isinstance(config_data.get("ai_platform"), dict):
+            from app.services.ai_credential_service import update_platform_ai_config
+
+            update_platform_ai_config(self.db, config_data["ai_platform"])
         if filtered:
             update_system_runtime_config(filtered)
 

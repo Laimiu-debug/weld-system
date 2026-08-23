@@ -37,7 +37,7 @@ class ImportBatchResponse(BaseModel):
 class SourceDocumentRegister(BaseModel):
     original_filename: str = Field(min_length=1, max_length=255)
     sha256: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
-    document_type: Literal["wps", "pqr", "ppqr", "welder", "unknown"]
+    document_type: Literal["wps", "pqr", "ppqr", "welder", "drawing", "unknown"]
     mime_type: str | None = Field(None, max_length=120)
     size_bytes: int = Field(default=0, ge=0)
     document_version: str | None = Field(None, max_length=50)
@@ -397,6 +397,18 @@ class AIProviderConfigUpdate(BaseModel):
     is_default: bool | None = None
 
 
+class AIProviderConnectionTestRequest(BaseModel):
+    provider: Literal["openai_responses", "openai_compatible_chat"]
+    base_url: str = Field(min_length=8, max_length=500)
+    model: str = Field(min_length=1, max_length=120)
+    api_key: SecretStr = Field(repr=False)
+
+
+class AIProviderConnectionTestResponse(BaseModel):
+    success: bool
+    message: str
+
+
 class AIProviderKeyRotate(BaseModel):
     api_key: SecretStr = Field(repr=False)
 
@@ -408,6 +420,10 @@ class AIProviderConfigResponse(BaseModel):
     provider: str
     base_url: str
     model: str
+    task_types: list[str] = Field(default_factory=list)
+    complexity_level: str = "standard"
+    point_multiplier: float = 1.0
+    priority: int = 100
     masked_api_key: str
     key_version: int
     is_active: bool

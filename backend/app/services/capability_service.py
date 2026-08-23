@@ -158,9 +158,14 @@ class CapabilityLibraryService:
             CapabilityFilters(factory_id=request.factory_id),
         )
         requirement = request.model_dump()
-        matched = [
+        standard_capabilities = [
             item
             for item in overview["process_capabilities"]
+            if item.get("standard_system") == request.standard_system
+        ]
+        matched = [
+            item
+            for item in standard_capabilities
             if scope_covers_requirement(item["qualified_scope"], requirement)
         ]
         matched_welders = [
@@ -181,9 +186,19 @@ class CapabilityLibraryService:
         resource_ready = bool(matched_materials) and bool(matched_equipment)
         gaps = []
         explanation = []
+        if not standard_capabilities:
+            standard_label = _standard_system_label(request.standard_system)
+            gaps.append(
+                {
+                    "code": "STANDARD_RULE_PACK_NOT_AVAILABLE",
+                    "severity": "blocking",
+                    "message": f"当前工作区没有按{standard_label}计算并确认的有效 WPS/PQR 能力",
+                }
+            )
+            explanation.append(f"已按{standard_label}隔离校核；不同体系的资格范围不会交叉复用")
         if process_capable:
             explanation.append(f"找到 {len(matched)} 条已批准且版本有效的 WPS/PQR 支持链")
-        else:
+        elif standard_capabilities:
             gaps.append(
                 {
                     "code": "PROCESS_SCOPE_NOT_COVERED",
@@ -311,6 +326,8 @@ class CapabilityLibraryService:
                     "pqr_number": pqr.pqr_number,
                     "rule_pack_id": result.rule_pack_id,
                     "rule_pack_version": result.rule_pack_version,
+                    "standard_code": _result_standard_code(result),
+                    "standard_system": _standard_system(_result_standard_code(result)),
                     "supported_processes": link.supported_processes
                     or scope.get("welding_processes", []),
                     "qualified_scope": scope,
@@ -875,6 +892,35 @@ def _dimensions(entries: list[dict[str, Any]]) -> dict[str, list[Any]]:
         "pwht_conditions": sorted(pwht),
         "impact_conditions": sorted(impact),
     }
+
+
+def _result_standard_code(result: PQRQualificationResult) -> str:
+    for item in result.basis or []:
+        standard = item.get("standard") if isinstance(item, dict) else None
+        if standard:
+            return str(standard)
+    # Historical results were produced only by the NB/T 47014 evaluator and may
+    # predate the explicit standard field in the evidence payload.
+    return "NB/T 47014—2023"
+
+
+def _standard_system(standard_code: str) -> str:
+    normalized = standard_code.strip().upper()
+    if normalized.startswith(("GB", "NB/T", "JB/T", "HG/T")):
+        return "china"
+    if normalized.startswith(("ASME", "AWS")):
+        return "asme"
+    if normalized.startswith(("PED", "EN", "ISO")):
+        return "ped"
+    return "other"
+
+
+def _standard_system_label(value: str) -> str:
+    return {
+        "china": "国标/行业标准（NB/T 47014）",
+        "asme": "美标（ASME BPVC Section IX）",
+        "ped": "PED / EN ISO（EN ISO 15614-1）",
+    }.get(value, value)
 
 
 def _link_stale(link: WPSPQRSupportLink, wps: WPS, pqr: PQR) -> bool:

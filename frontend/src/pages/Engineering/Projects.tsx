@@ -17,6 +17,7 @@ import {
   message,
 } from "antd";
 import {
+  DeleteOutlined,
   FileSearchOutlined,
   FolderOpenOutlined,
   PlusOutlined,
@@ -27,6 +28,13 @@ import { DataRow, engineeringService } from "@/services/engineering";
 import "./engineering.css";
 
 const { Title, Text, Paragraph } = Typography;
+
+const errorMessage = (error: any, fallback: string) => {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (typeof detail?.message === "string") return detail.message;
+  return fallback;
+};
 
 const EngineeringProjects: React.FC = () => {
   const navigate = useNavigate();
@@ -91,18 +99,68 @@ const EngineeringProjects: React.FC = () => {
     setProducts(await engineeringService.products(active.id));
   };
   const upload = async (product: DataRow, file: File) => {
-    const rev = await engineeringService.uploadDrawing(
-      product.id,
-      file,
-      "上传新图纸版本",
-    );
-    message.success(`图纸版本 V${rev.revision_number} 已建立`);
-    setRevisions((v) => ({
-      ...v,
-      [product.id]: [rev, ...(v[product.id] || [])],
-    }));
-    navigate(`/engineering/revisions/${rev.id}/review`);
+    try {
+      const rev = await engineeringService.uploadDrawing(
+        product.id,
+        file,
+        "上传新图纸版本",
+      );
+      message.success(`图纸版本 V${rev.revision_number} 已建立`);
+      setRevisions((v) => ({
+        ...v,
+        [product.id]: [rev, ...(v[product.id] || [])],
+      }));
+      navigate(`/engineering/revisions/${rev.id}/review`);
+    } catch (error) {
+      message.error(errorMessage(error, "图纸上传失败，请检查文件格式后重试"));
+    }
     return false;
+  };
+
+  const deleteProject = (project: DataRow) => {
+    Modal.confirm({
+      title: `删除工程“${project.name}”？`,
+      content: "工程内未批准的产品和图纸将一并删除；已被下游数据引用时系统会阻止删除。",
+      okText: "删除",
+      okButtonProps: { danger: true },
+      cancelText: "取消",
+      onOk: async () => {
+        try {
+          await engineeringService.deleteProject(project.id);
+          message.success("工程已删除");
+          if (active?.id === project.id) setActive(null);
+          await loadProjects();
+        } catch (error) {
+          message.error(errorMessage(error, "工程删除失败"));
+          throw error;
+        }
+      },
+    });
+  };
+
+  const deleteRevision = (product: DataRow, revision: DataRow) => {
+    Modal.confirm({
+      title: `删除图纸版本 V${revision.revision_number}？`,
+      content: "未批准的图纸原件及解析结果将被删除；已批准或被下游引用的版本不能删除。",
+      okText: "删除",
+      okButtonProps: { danger: true },
+      cancelText: "取消",
+      onOk: async () => {
+        try {
+          await engineeringService.deleteRevision(revision.id);
+          setRevisions((current) => ({
+            ...current,
+            [product.id]: (current[product.id] || []).filter(
+              (item) => item.id !== revision.id,
+            ),
+          }));
+          message.success("图纸版本已删除");
+        } catch (error) {
+          message.error(errorMessage(error, "图纸删除失败"));
+          throw error;
+        }
+      },
+    });
   };
 
   return (
@@ -139,6 +197,19 @@ const EngineeringProjects: React.FC = () => {
                         : "engineering-project"
                     }
                     onClick={() => setActive(item)}
+                    actions={[
+                      <Button
+                        key="delete"
+                        type="text"
+                        danger
+                        aria-label={`删除工程 ${item.name}`}
+                        icon={<DeleteOutlined />}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          deleteProject(item);
+                        }}
+                      />,
+                    ]}
                   >
                     <List.Item.Meta
                       avatar={<FolderOpenOutlined />}
@@ -217,37 +288,45 @@ const EngineeringProjects: React.FC = () => {
                         </div>
                         <div className="engineering-revisions">
                           {(revisions[product.id] || []).map((rev) => (
-                            <button
-                              key={rev.id}
-                              className="revision-chip"
-                              onClick={() =>
-                                navigate(
-                                  `/engineering/revisions/${rev.id}/review`,
-                                )
-                              }
-                            >
-                              <FileSearchOutlined />
-                              <span>
-                                V{rev.revision_number} · {rev.drawing_filename}
-                              </span>
-                              <Tag
-                                color={
-                                  rev.status === "approved"
-                                    ? "green"
-                                    : rev.parse_status === "failed"
-                                      ? "red"
-                                      : "orange"
+                            <div className="revision-row" key={rev.id}>
+                              <button
+                                className="revision-chip"
+                                onClick={() =>
+                                  navigate(
+                                    `/engineering/revisions/${rev.id}/review`,
+                                  )
                                 }
                               >
-                                {rev.status === "approved"
-                                  ? "已批准"
-                                  : rev.parse_status === "completed"
-                                    ? "待审核"
-                                    : rev.parse_status === "failed"
-                                      ? "解析失败"
-                                      : "待解析"}
-                              </Tag>
-                            </button>
+                                <FileSearchOutlined />
+                                <span>
+                                  V{rev.revision_number} · {rev.drawing_filename}
+                                </span>
+                                <Tag
+                                  color={
+                                    rev.status === "approved"
+                                      ? "green"
+                                      : rev.parse_status === "failed"
+                                        ? "red"
+                                        : "orange"
+                                  }
+                                >
+                                  {rev.status === "approved"
+                                    ? "已批准"
+                                    : rev.parse_status === "completed"
+                                      ? "待审核"
+                                      : rev.parse_status === "failed"
+                                        ? "解析失败"
+                                        : "待解析"}
+                                </Tag>
+                              </button>
+                              <Button
+                                danger
+                                type="text"
+                                aria-label={`删除图纸版本 V${rev.revision_number}`}
+                                icon={<DeleteOutlined />}
+                                onClick={() => deleteRevision(product, rev)}
+                              />
+                            </div>
                           ))}
                           {!(revisions[product.id] || []).length && (
                             <Text type="secondary">尚未上传图纸</Text>

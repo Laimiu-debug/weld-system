@@ -34,10 +34,15 @@ def upgrade() -> None:
         "production_execution_traces",
         ["production_task_id", "idempotency_key"],
     )
-    op.drop_constraint(
-        "uq_operational_alert_fingerprint_status",
-        "operational_alerts",
-        type_="unique",
+    # Older bootstrap databases did not always create this ORM-level
+    # constraint. PostgreSQL aborts the whole migration transaction when a
+    # plain DROP CONSTRAINT targets a missing name, so keep this compatibility
+    # path idempotent as well.
+    op.execute(
+        sa.text(
+            "ALTER TABLE operational_alerts "
+            "DROP CONSTRAINT IF EXISTS uq_operational_alert_fingerprint_status"
+        )
     )
     op.create_index(
         "uq_operational_alert_active_fingerprint",

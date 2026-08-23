@@ -241,7 +241,7 @@ const Layout: React.FC<LayoutProps> = () => {
       children: [
         {
           key: '/capabilities',
-          label: '企业能力库',
+          label: '焊接能力库',
         },
         {
           key: '/smart-import',

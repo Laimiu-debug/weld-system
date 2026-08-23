@@ -45,9 +45,11 @@ import {
   WarningOutlined,
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
+import type { FormInstance } from 'antd'
 import smartImportService, {
   AIExtractionJob,
   AIQuotaStatus,
+  AIUsageReport,
   AIProviderConfig,
   EnterpriseAIPolicy,
   DocumentPage,
@@ -65,6 +67,7 @@ import smartImportService, {
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import customModuleService, { CustomModuleSummary } from '@/services/customModules'
 import wpsTemplateService, { WPSTemplateSummary } from '@/services/wpsTemplates'
+import { workspaceService } from '@/services/workspace'
 import './smartImport.css'
 
 const { Title, Text, Paragraph } = Typography
@@ -151,6 +154,28 @@ function parseEditedValue(original: unknown, value: string): unknown {
   return value
 }
 
+const providerPresets = [
+  { value: 'openai', label: 'OpenAI', provider: 'openai_responses', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+  { value: 'deepseek', label: 'DeepSeek', provider: 'openai_compatible_chat', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash' },
+  { value: 'qwen', label: '阿里云百炼 / 通义千问', provider: 'openai_compatible_chat', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
+  { value: 'kimi', label: 'Moonshot / Kimi', provider: 'openai_compatible_chat', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
+  { value: 'zhipu', label: '智谱 GLM', provider: 'openai_compatible_chat', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' },
+  { value: 'siliconflow', label: '硅基流动', provider: 'openai_compatible_chat', baseUrl: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-72B-Instruct' },
+  { value: 'custom', label: '自定义兼容接口', provider: 'openai_compatible_chat', baseUrl: '', model: '' },
+] as const
+
+type ProviderPreset = typeof providerPresets[number]
+
+function applyProviderPreset(form: FormInstance, value: string) {
+  const preset = providerPresets.find(item => item.value === value) as ProviderPreset | undefined
+  if (!preset) return
+  form.setFieldsValue({
+    provider: preset.provider,
+    base_url: preset.baseUrl,
+    model: preset.model,
+  })
+}
+
 function parseManualValue(fieldType: string, value: string): unknown {
   if (['number', 'integer'].includes(fieldType)) {
     const parsed = Number(value)
@@ -169,6 +194,9 @@ function parseManualValue(fieldType: string, value: string): unknown {
 
 const SmartImportPage: React.FC = () => {
   const navigate = useNavigate()
+  const workspace = workspaceService.getCurrentWorkspaceFromStorage()
+  const isEnterpriseWorkspace = workspace?.type === 'enterprise'
+  const workspaceLabel = isEnterpriseWorkspace ? '企业' : '个人'
   const [searchParams, setSearchParams] = useSearchParams()
   const [batches, setBatches] = useState<ImportBatch[]>([])
   const [batch, setBatch] = useState<ImportBatchDetail | null>(null)
@@ -181,6 +209,7 @@ const SmartImportPage: React.FC = () => {
   const [activeDocument, setActiveDocument] = useState<SourceDocument | null>(null)
   const [capabilities, setCapabilities] = useState<AICapabilities | null>(null)
   const [quota, setQuota] = useState<AIQuotaStatus | null>(null)
+  const [aiUsage, setAIUsage] = useState<AIUsageReport | null>(null)
   const [templates, setTemplates] = useState<WPSTemplateSummary[]>([])
   const [templateRecommendation, setTemplateRecommendation] = useState<TemplateRecommendationResult | null>(null)
   const [modules, setModules] = useState<CustomModuleSummary[]>([])
@@ -205,6 +234,8 @@ const SmartImportPage: React.FC = () => {
   const [providerConfigs, setProviderConfigs] = useState<AIProviderConfig[]>([])
   const [enterprisePolicy, setEnterprisePolicy] = useState<EnterpriseAIPolicy | null>(null)
   const [providerSaving, setProviderSaving] = useState(false)
+  const [providerTesting, setProviderTesting] = useState(false)
+  const [editConfig, setEditConfig] = useState<AIProviderConfig | null>(null)
   const [queuedJob, setQueuedJob] = useState<AIExtractionJob | null>(null)
   const [documentJobs, setDocumentJobs] = useState<Record<string, AIExtractionJob>>({})
   const [batchExtractionMode, setBatchExtractionMode] = useState(false)
@@ -215,17 +246,23 @@ const SmartImportPage: React.FC = () => {
   const [providerForm] = Form.useForm()
   const [policyForm] = Form.useForm()
   const [rotateForm] = Form.useForm()
+  const [editProviderForm] = Form.useForm()
   const [bindForm] = Form.useForm()
   const [manualFieldForm] = Form.useForm()
   const uploadQueueRef = useRef<Promise<void>>(Promise.resolve())
   const pendingUploadCountRef = useRef(0)
   const extractionMode = Form.useWatch('mode', extractForm)
-  const provider = Form.useWatch('provider', extractForm)
+  const extractionProviderPreset = Form.useWatch('provider_preset', extractForm)
+  const savedProviderPreset = Form.useWatch('provider_preset', providerForm)
   const bindAction = Form.useWatch('action', bindForm)
   const manualFieldTarget = Form.useWatch('target', manualFieldForm)
   const loadProviderSettings = useCallback(async () => {
     const configs = await smartImportService.listAIProviderConfigs()
     setProviderConfigs(configs)
+    if (!isEnterpriseWorkspace) {
+      setEnterprisePolicy(null)
+      return
+    }
     try {
       const policy = await smartImportService.getEnterpriseAIPolicy()
       setEnterprisePolicy(policy)
@@ -236,7 +273,7 @@ const SmartImportPage: React.FC = () => {
     } catch {
       setEnterprisePolicy(null)
     }
-  }, [policyForm])
+  }, [isEnterpriseWorkspace, policyForm])
 
   const loadBatches = useCallback(async (preferredId?: string) => {
     setLoading(true)
@@ -268,6 +305,7 @@ const SmartImportPage: React.FC = () => {
     void loadBatches()
     smartImportService.getAICapabilities().then(setCapabilities).catch(() => undefined)
     smartImportService.getAIQuota().then(setQuota).catch(() => undefined)
+    smartImportService.getAIUsage().then(setAIUsage).catch(() => undefined)
     void loadProviderSettings()
   }, [])
 
@@ -464,7 +502,10 @@ const SmartImportPage: React.FC = () => {
     extractForm.resetFields()
     extractForm.setFieldsValue({
       mode: capabilities?.platform_available ? 'platform' : 'byok',
+      provider_preset: 'openai',
       provider: 'openai_responses',
+      base_url: 'https://api.openai.com/v1',
+      model: 'gpt-4o-mini',
       schema_source: ['wps', 'pqr', 'welder'].includes(batch.target_entity_type)
         ? 'builtin:auto'
         : undefined,
@@ -781,12 +822,58 @@ const SmartImportPage: React.FC = () => {
     const values = await providerForm.validateFields()
     setProviderSaving(true)
     try {
-      await smartImportService.createAIProviderConfig(values)
+      const { provider_preset: _preset, ...payload } = values
+      await smartImportService.createAIProviderConfig(payload)
       providerForm.resetFields()
       await loadProviderSettings()
       message.success('模型配置已加密保存')
     } catch (error) {
       message.error(errorMessage(error, '保存模型配置失败'))
+    } finally {
+      setProviderSaving(false)
+    }
+  }
+
+  const testDraftProviderConfig = async () => {
+    const values = await providerForm.validateFields(['provider', 'base_url', 'model', 'api_key'])
+    setProviderTesting(true)
+    try {
+      const result = await smartImportService.testAIProviderConnection({
+        provider: values.provider,
+        base_url: values.base_url.trim(),
+        model: values.model.trim(),
+        api_key: values.api_key,
+      })
+      result.success ? message.success(result.message) : message.error(result.message)
+    } catch (error) {
+      message.error(errorMessage(error, '连接测试失败'))
+    } finally {
+      setProviderTesting(false)
+    }
+  }
+
+  const openEditProviderConfig = (item: AIProviderConfig) => {
+    setEditConfig(item)
+    editProviderForm.setFieldsValue({
+      name: item.name,
+      provider: item.provider,
+      base_url: item.base_url,
+      model: item.model,
+      is_default: item.is_default,
+    })
+  }
+
+  const updateProviderConfig = async () => {
+    if (!editConfig) return
+    const values = await editProviderForm.validateFields()
+    setProviderSaving(true)
+    try {
+      await smartImportService.updateAIProviderConfig(editConfig.id, values)
+      setEditConfig(null)
+      await loadProviderSettings()
+      message.success('模型配置已更新；建议重新测试连接')
+    } catch (error) {
+      message.error(errorMessage(error, '更新模型配置失败'))
     } finally {
       setProviderSaving(false)
     }
@@ -1065,7 +1152,7 @@ const SmartImportPage: React.FC = () => {
     <div className="smart-import">
       <div className="smart-import__header">
         <div>
-          <Title level={2}>企业能力建库 · 智能导入</Title>
+          <Title level={2}>{workspaceLabel}能力建库 · 智能导入</Title>
           <Paragraph type="secondary">上传已有 WPS、PQR 或焊工资质文件，AI 只生成带证据的待审核草稿，不会直接写入正式数据。</Paragraph>
         </div>
         <Space>
@@ -1078,7 +1165,7 @@ const SmartImportPage: React.FC = () => {
         showIcon
         type="info"
         message="AI 是可选输入方式"
-        description="可使用平台额度、临时 API Key 或后端加密保存的个人/企业配置；也可以继续使用原有手工新建功能。"
+        description="可使用平台额度、临时 API Key 或当前工作区已保存的配置；也可以继续使用原有手工新建功能。"
       />
 
       {quota && (
@@ -1087,13 +1174,29 @@ const SmartImportPage: React.FC = () => {
             <WalletOutlined />
             <Text strong>本月平台 AI 点数</Text>
             <Text>{quota.remaining_points} / {quota.monthly_points} 点可用</Text>
-            {quota.estimated_points !== undefined && (
+            {typeof quota.estimated_points === 'number' && (
               <Tag color={quota.can_run_estimate ? 'success' : 'error'}>
                 当前文件预计 {quota.estimated_points} 点
               </Tag>
             )}
             <Text type="secondary">BYOK 不扣平台点数</Text>
           </Space>
+          {aiUsage && (
+            <>
+              <Divider style={{ margin: '12px 0' }} />
+              <Space wrap size={[16, 8]}>
+                <Text type="secondary">近 30 天</Text>
+                <Text>任务 {aiUsage.totals.tasks}</Text>
+                <Text>输入 Token {aiUsage.totals.input_tokens.toLocaleString()}</Text>
+                <Text>输出 Token {aiUsage.totals.output_tokens.toLocaleString()}</Text>
+                <Text>总 Token {aiUsage.totals.total_tokens.toLocaleString()}</Text>
+                <Text>已扣 {aiUsage.totals.points} 点</Text>
+                {aiUsage.by_model.slice(0, 3).map(item => (
+                  <Tag key={`${item.provider}:${item.model}`}>{item.model} · {item.total_tokens.toLocaleString()} Token</Tag>
+                ))}
+              </Space>
+            </>
+          )}
         </Card>
       )}
 
@@ -1173,7 +1276,7 @@ const SmartImportPage: React.FC = () => {
 
                 <Card title="上传已有工艺文件">
                   <Dragger
-                    accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.docx,.xlsx"
+                    accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff,.doc,.docx,.xlsx"
                     multiple
                     maxCount={50}
                     showUploadList={false}
@@ -1182,7 +1285,7 @@ const SmartImportPage: React.FC = () => {
                   >
                     <p className="ant-upload-drag-icon"><CloudUploadOutlined /></p>
                     <p className="ant-upload-text">点击或拖入一个或多个文件</p>
-                    <p className="ant-upload-hint">支持 PDF、扫描图片、TIFF、DOCX 和 XLSX 名册；文件会依次上传，单个失败不影响其他文件。</p>
+                    <p className="ant-upload-hint">支持 PDF、扫描图片、TIFF、DOC、DOCX 和 XLSX 名册；文件会依次上传，单个失败不影响其他文件。</p>
                   </Dragger>
                   {uploadResults.length > 0 && (
                     <List
@@ -1311,23 +1414,29 @@ const SmartImportPage: React.FC = () => {
           )}
           {extractionMode === 'byok' && (
             <>
-              <Form.Item name="provider" label="接口协议" rules={[{ required: true }]}>
-                <Select options={[
-                  { value: 'openai_responses', label: 'OpenAI Responses' },
-                  { value: 'openai_compatible_chat', label: 'OpenAI 兼容 Chat Completions' },
-                ]} />
+              <Form.Item name="provider_preset" label="模型服务商" rules={[{ required: true, message: '请选择模型服务商' }]}>
+                <Select
+                  options={providerPresets.map(({ value, label }) => ({ value, label }))}
+                  onChange={(value) => applyProviderPreset(extractForm, value)}
+                />
               </Form.Item>
+              {extractionProviderPreset === 'custom' ? (
+                <Form.Item name="provider" label="接口协议" rules={[{ required: true }]}>
+                  <Select options={[
+                    { value: 'openai_responses', label: 'OpenAI Responses' },
+                    { value: 'openai_compatible_chat', label: 'OpenAI 兼容 Chat Completions' },
+                  ]} />
+                </Form.Item>
+              ) : <Form.Item name="provider" hidden><Input /></Form.Item>}
               <Form.Item name="model" label="模型名称" rules={[{ required: true, message: '请输入模型名称' }]}>
                 <Input placeholder="例如：gpt-5.4" maxLength={120} />
               </Form.Item>
               <Form.Item name="api_key" label="临时 API Key" rules={[{ required: true, message: '请输入 API Key' }]} extra="只在本次请求中使用，不会保存到数据库。">
                 <Input.Password autoComplete="new-password" maxLength={500} />
               </Form.Item>
-              {provider === 'openai_compatible_chat' && (
-                <Form.Item name="base_url" label="兼容接口地址（可选）" extra={`管理员允许的域名：${capabilities?.byok_allowed_hosts.join('、') || '无'}`}>
-                  <Input placeholder="https://api.openai.com/v1" maxLength={500} />
-                </Form.Item>
-              )}
+              <Form.Item name="base_url" label="接口地址" extra={`已预填，可按服务商文档调整。允许的域名：${capabilities?.byok_allowed_hosts.join('、') || '无'}`}>
+                <Input placeholder="https://api.openai.com/v1" maxLength={500} />
+              </Form.Item>
             </>
           )}
           {extractionMode === 'saved' && (
@@ -1372,6 +1481,7 @@ const SmartImportPage: React.FC = () => {
                     tested.last_test_status === 'success' ? message.success('连接测试成功') : message.error(tested.last_error || '连接测试失败')
                   } catch (error) { message.error(errorMessage(error, '连接测试失败')) }
                 }}>测试</Button>,
+                <Button key="edit" size="small" icon={<EditOutlined />} onClick={() => openEditProviderConfig(item)}>编辑</Button>,
                 <Button key="rotate" size="small" onClick={() => setRotateConfig(item)}>轮换 Key</Button>,
                 <Button key="disable" size="small" danger icon={<DeleteOutlined />} onClick={() => Modal.confirm({
                   title: `停用“${item.name}”？`,
@@ -1388,18 +1498,32 @@ const SmartImportPage: React.FC = () => {
           />
         </Card>
         <Card title="新增配置" size="small" style={{ marginTop: 16 }}>
-          <Form form={providerForm} layout="vertical" initialValues={{ scope_type: 'personal', provider: 'openai_responses', base_url: 'https://api.openai.com/v1' }}>
+          <Form form={providerForm} layout="vertical" initialValues={{ scope_type: isEnterpriseWorkspace ? 'enterprise' : 'personal', provider_preset: 'openai', provider: 'openai_responses', base_url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' }}>
             <Row gutter={12}>
-              <Col span={12}><Form.Item name="scope_type" label="使用范围" rules={[{ required: true }]}><Select options={[{ value: 'personal', label: '仅自己' }, { value: 'enterprise', label: '当前企业（需管理员）' }]} /></Form.Item></Col>
+              <Col span={12}><Form.Item name="scope_type" label="使用范围" rules={[{ required: true }]}><Select options={isEnterpriseWorkspace ? [{ value: 'personal', label: '仅自己' }, { value: 'enterprise', label: '当前企业工作区（需管理员）' }] : [{ value: 'personal', label: '当前个人工作区' }]} /></Form.Item></Col>
               <Col span={12}><Form.Item name="name" label="配置名称" rules={[{ required: true }]}><Input maxLength={100} /></Form.Item></Col>
             </Row>
+            <Form.Item name="provider_preset" label="模型服务商" rules={[{ required: true }]}>
+              <Select
+                options={providerPresets.map(({ value, label }) => ({ value, label }))}
+                onChange={(value) => applyProviderPreset(providerForm, value)}
+              />
+            </Form.Item>
             <Row gutter={12}>
-              <Col span={12}><Form.Item name="provider" label="接口协议" rules={[{ required: true }]}><Select options={[{ value: 'openai_responses', label: 'OpenAI Responses' }, { value: 'openai_compatible_chat', label: '兼容 Chat Completions' }]} /></Form.Item></Col>
+              <Col span={12}>{savedProviderPreset === 'custom' ? <Form.Item name="provider" label="接口协议" rules={[{ required: true }]}><Select options={[{ value: 'openai_responses', label: 'OpenAI Responses' }, { value: 'openai_compatible_chat', label: '兼容 Chat Completions' }]} /></Form.Item> : <Form.Item name="provider" hidden><Input /></Form.Item>}</Col>
               <Col span={12}><Form.Item name="model" label="模型名称" rules={[{ required: true }]}><Input maxLength={120} /></Form.Item></Col>
             </Row>
             <Form.Item name="base_url" label="接口地址" rules={[{ required: true }]}><Input maxLength={500} /></Form.Item>
             <Form.Item name="api_key" label="API Key" rules={[{ required: true }]}><Input.Password autoComplete="new-password" maxLength={500} /></Form.Item>
-            <Button type="primary" loading={providerSaving} onClick={() => void createProviderConfig()}>加密保存</Button>
+            <Space>
+              <Button loading={providerTesting} onClick={() => void testDraftProviderConfig()}>测试连接</Button>
+              <Button type="primary" loading={providerSaving} onClick={() => void createProviderConfig()}>加密保存</Button>
+            </Space>
+            {savedProviderPreset === 'deepseek' && (
+              <div style={{ marginTop: 8 }}>
+                <Text type="secondary">已按新版 DeepSeek Chat Completions 配置：基础地址不含 /v1，默认模型 deepseek-v4-flash。</Text>
+              </div>
+            )}
           </Form>
         </Card>
         {enterprisePolicy && (
@@ -1415,6 +1539,26 @@ const SmartImportPage: React.FC = () => {
           </Card>
         )}
       </Drawer>
+
+      <Modal
+        title={`编辑模型配置 · ${editConfig?.name || ''}`}
+        open={Boolean(editConfig)}
+        onCancel={() => setEditConfig(null)}
+        onOk={() => void updateProviderConfig()}
+        confirmLoading={providerSaving}
+        okText="保存修改"
+      >
+        <Alert type="info" showIcon message="API Key 不会回显；如需更换，请使用“轮换 Key”。" style={{ marginBottom: 16 }} />
+        <Form form={editProviderForm} layout="vertical">
+          <Form.Item name="name" label="配置名称" rules={[{ required: true }]}><Input maxLength={100} /></Form.Item>
+          <Form.Item name="provider" label="接口协议" rules={[{ required: true }]}>
+            <Select options={[{ value: 'openai_responses', label: 'OpenAI Responses' }, { value: 'openai_compatible_chat', label: '兼容 Chat Completions' }]} />
+          </Form.Item>
+          <Form.Item name="model" label="模型名称" rules={[{ required: true }]}><Input maxLength={120} /></Form.Item>
+          <Form.Item name="base_url" label="接口地址" rules={[{ required: true }]}><Input maxLength={500} /></Form.Item>
+          <Form.Item name="is_default" label="设为默认配置" valuePropName="checked"><Switch /></Form.Item>
+        </Form>
+      </Modal>
 
       <Modal title={`轮换 ${rotateConfig?.name || ''} 的 API Key`} open={Boolean(rotateConfig)} onCancel={() => setRotateConfig(null)} onOk={() => void rotateProviderKey()} okText="确认轮换">
         <Form form={rotateForm} layout="vertical">

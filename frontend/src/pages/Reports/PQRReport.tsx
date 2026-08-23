@@ -304,7 +304,7 @@ const PQRReport: React.FC = () => {
       {/* 统计概览 */}
       <Row gutter={[16, 16]} className="mb-6">
         <Col xs={24} sm={12} md={6}>
-          <Card>
+          <Card style={{ height: '100%' }}>
             <Statistic
               title="PQR总数"
               value={stats.total}
@@ -314,7 +314,7 @@ const PQRReport: React.FC = () => {
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
-          <Card>
+          <Card style={{ height: '100%' }}>
             <Statistic
               title="已完成"
               value={stats.completed}
@@ -329,7 +329,7 @@ const PQRReport: React.FC = () => {
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
-          <Card>
+          <Card style={{ height: '100%' }}>
             <Statistic
               title="平均评分"
               value={stats.avgScore}
@@ -340,7 +340,7 @@ const PQRReport: React.FC = () => {
           </Card>
         </Col>
         <Col xs={24} sm={12} md={6}>
-          <Card>
+          <Card style={{ height: '100%' }}>
             <Statistic
               title="进行中"
               value={stats.inProgress}

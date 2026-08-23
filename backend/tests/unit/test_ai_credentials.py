@@ -1,5 +1,6 @@
 from datetime import datetime
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 from cryptography.fernet import Fernet
@@ -14,6 +15,7 @@ from app.services.ai_credential_service import (
     AIProviderConfigService,
     mask_key,
     provider_config_response,
+    resolve_platform_ai_config,
 )
 from app.services.ai_extraction_service import build_provider
 
@@ -127,3 +129,41 @@ def test_enterprise_policy_can_require_enterprise_key() -> None:
         scope_type="enterprise", base_url="https://api.openai.com/v1"
     )
     service.enforce_policy("byok", enterprise_config, context)
+
+
+def test_platform_router_selects_task_and_complexity_specific_model() -> None:
+    now = datetime.utcnow()
+
+    def config(id, name, task_types, complexity, priority):
+        return SimpleNamespace(
+            id=id,
+            name=name,
+            provider="openai_compatible_chat",
+            base_url="https://api.deepseek.com",
+            model=name,
+            task_types=task_types,
+            complexity_level=complexity,
+            point_multiplier=2 if complexity == "advanced" else 1,
+            priority=priority,
+            is_default=complexity == "standard",
+            is_active=True,
+            last_test_status="success",
+            last_tested_at=now,
+            last_error=None,
+            key_last_four="1234",
+            updated_at=now,
+        )
+
+    db = Mock()
+    db.query.return_value.filter.return_value.all.return_value = [
+        config("standard", "flash", [], "standard", 100),
+        config("advanced", "pro", ["drawing_import"], "advanced", 10),
+    ]
+
+    result = resolve_platform_ai_config(
+        db, task_type="drawing_import", complexity="advanced"
+    )
+
+    assert result["id"] == "advanced"
+    assert result["model"] == "pro"
+    assert result["point_multiplier"] == 2

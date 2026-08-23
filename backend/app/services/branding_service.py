@@ -16,6 +16,12 @@ logger = logging.getLogger(__name__)
 BRANDING_KEYS = ("brand_name", "brand_subtitle", "org_name")
 
 
+def _valid_display_text(value: str) -> bool:
+    """Reject legacy values damaged by a non-UTF-8 deployment shell."""
+    stripped = value.strip()
+    return bool(stripped) and any(char not in {"?", "？", "�"} for char in stripped)
+
+
 def _config_path() -> Path:
     """优先显式路径；默认写到 uploads/.system，随现有上传卷持久化."""
     configured = (settings.BRANDING_CONFIG_PATH or "").strip()
@@ -29,9 +35,13 @@ def _config_path() -> Path:
 
 
 def _env_defaults() -> Dict[str, str]:
+    brand_name = (settings.BRAND_NAME or "焊序").strip() or "焊序"
+    brand_subtitle = (settings.BRAND_SUBTITLE or "Hanxu").strip() or "Hanxu"
     return {
-        "brand_name": (settings.BRAND_NAME or "焊序").strip() or "焊序",
-        "brand_subtitle": (settings.BRAND_SUBTITLE or "Hanxu").strip() or "Hanxu",
+        "brand_name": brand_name if _valid_display_text(brand_name) else "焊序",
+        "brand_subtitle": brand_subtitle
+        if _valid_display_text(brand_subtitle)
+        else "Hanxu",
         "org_name": (settings.ORG_NAME or "").strip(),
     }
 
@@ -60,7 +70,8 @@ def get_branding() -> Dict[str, str]:
     overrides = _read_file_overrides()
     for key, value in overrides.items():
         if key in BRANDING_KEYS:
-            merged[key] = value
+            if key == "org_name" or _valid_display_text(value):
+                merged[key] = value
     # 副标题：有企业名时优先展示企业名
     display_subtitle = merged["org_name"] or merged["brand_subtitle"]
     collapsed = merged["brand_name"][:2] if merged["brand_name"] else "焊序"

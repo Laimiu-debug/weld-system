@@ -3,6 +3,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 from typing import Any, BinaryIO, Protocol
 from zipfile import BadZipFile, ZipFile
 
@@ -22,6 +25,7 @@ MAX_DOCX_COMPRESSION_RATIO = 200
 MAX_IMAGE_PIXELS = 50_000_000
 MAX_XLSX_ROWS_PER_SHEET = 100_000
 MAX_XLSX_COLUMNS = 1_000
+MAX_LEGACY_DOC_TEXT_BYTES = 20 * 1024 * 1024
 
 
 class DocumentParseError(ValueError):
@@ -63,12 +67,12 @@ class DefaultDocumentParser:
                 return self._parse_pdf(stream)
             if suffix == ".docx":
                 return self._parse_docx(stream)
+            if suffix == ".doc":
+                return self._parse_doc(stream)
             if suffix == ".xlsx":
                 return self._parse_xlsx(stream)
             if suffix in {".png", ".jpg", ".jpeg", ".tif", ".tiff"}:
                 return self._parse_image(stream, suffix)
-            if suffix == ".doc":
-                raise DocumentParseError("旧版 DOC 暂不支持直接解析，请先转换为 DOCX 或 PDF")
             raise DocumentParseError("该文件类型暂不支持分页解析")
         except DocumentParseError:
             raise
@@ -145,6 +149,30 @@ class DefaultDocumentParser:
         ]
         return ParsedDocument(
             pages=pages, parser="python-docx", page_numbering="logical"
+        )
+
+    def _parse_doc(self, stream: BinaryIO) -> ParsedDocument:
+        text = _extract_legacy_doc_text(stream)
+        logical_pages = text.split("\f")
+        if len(logical_pages) > MAX_DOCUMENT_PAGES:
+            raise DocumentParseError(f"文档逻辑页数不能超过 {MAX_DOCUMENT_PAGES} 页")
+        pages = [
+            ParsedPage(
+                page_number=number,
+                text_content=_bounded_text(_clean_text(page)),
+                ocr_status="not_required",
+                metadata={
+                    "source_format": "doc",
+                    "page_numbering": "logical",
+                    "text_chars": len(_clean_text(page)),
+                },
+            )
+            for number, page in enumerate(logical_pages, start=1)
+        ]
+        if not any(page.text_content for page in pages):
+            raise DocumentParseError("DOC 中没有可提取的文本，请转换为 DOCX 或 PDF")
+        return ParsedDocument(
+            pages=pages, parser="antiword", page_numbering="logical"
         )
 
     def _parse_image(self, stream: BinaryIO, suffix: str) -> ParsedDocument:
@@ -238,6 +266,40 @@ def _validate_docx_archive(stream: BinaryIO) -> None:
         raise DocumentParseError("DOCX 文件损坏或格式无法识别") from exc
     finally:
         stream.seek(0)
+
+
+def _extract_legacy_doc_text(stream: BinaryIO) -> str:
+    executable = shutil.which("antiword")
+    if not executable:
+        raise DocumentParseError("服务器 DOC 解析组件未安装，请转换为 DOCX 或 PDF")
+    stream.seek(0)
+    with tempfile.TemporaryDirectory(prefix="weld-doc-") as directory:
+        input_path = Path(directory) / "source.doc"
+        output_path = Path(directory) / "output.txt"
+        with input_path.open("wb") as target:
+            shutil.copyfileobj(stream, target, length=1024 * 1024)
+        try:
+            with output_path.open("wb") as output:
+                result = subprocess.run(
+                    [executable, "-m", "UTF-8.txt", str(input_path)],
+                    stdin=subprocess.DEVNULL,
+                    stdout=output,
+                    stderr=subprocess.PIPE,
+                    timeout=30,
+                    check=False,
+                )
+        except subprocess.TimeoutExpired as exc:
+            raise DocumentParseError("DOC 解析超时，请转换为 DOCX 或 PDF") from exc
+        if result.returncode != 0:
+            raise DocumentParseError("DOC 文件损坏、加密或格式无法识别")
+        if output_path.stat().st_size > MAX_LEGACY_DOC_TEXT_BYTES:
+            raise DocumentParseError("DOC 提取后的文本超过系统安全限制")
+        try:
+            return output_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise DocumentParseError("DOC 文本编码无法识别") from exc
+        finally:
+            stream.seek(0)
 
 
 def _validate_xlsx_archive(stream: BinaryIO) -> None:

@@ -29,6 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpangocairo-1.0-0 \
     libcairo2 \
     libgdk-pixbuf-2.0-0 \
+    antiword \
     shared-mime-info \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean

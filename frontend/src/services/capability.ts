@@ -41,6 +41,7 @@ export interface CapabilityOverview {
 }
 
 export interface CapabilityCheckRequest {
+  standard_system: 'china' | 'asme' | 'ped'
   factory_id?: number
   welding_process: string
   material_group: string

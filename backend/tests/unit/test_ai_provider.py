@@ -109,9 +109,7 @@ def test_provider_rejects_non_json_structured_output() -> None:
         ),
         httpx.Client(
             transport=httpx.MockTransport(
-                lambda request: httpx.Response(
-                    200, json={"output_text": "not-json"}
-                )
+                lambda request: httpx.Response(200, json={"output_text": "not-json"})
             )
         ),
     )
@@ -163,6 +161,82 @@ def test_chat_compatible_provider_parses_structured_output() -> None:
 
     assert result.response_id == "chat-1"
     assert result.total_tokens == 7
+
+
+def test_deepseek_uses_json_object_mode_and_schema_in_prompt() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == "https://api.deepseek.com/chat/completions"
+        body = json.loads(request.content)
+        assert body["model"] == "deepseek-v4-flash"
+        assert body["response_format"] == {"type": "json_object"}
+        assert body["thinking"] == {"type": "disabled"}
+        assert "JSON Schema" in body["messages"][0]["content"]
+        assert "required_value" in body["messages"][0]["content"]
+        return httpx.Response(
+            200,
+            json={
+                "id": "deepseek-1",
+                "choices": [
+                    {
+                        "message": {
+                            "content": json.dumps(
+                                {"required_value": "Q345R", "optional_value": None}
+                            )
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 3},
+            },
+        )
+
+    provider = OpenAICompatibleProvider(
+        AIProviderConfig(
+            provider="openai_compatible_chat",
+            base_url="https://api.deepseek.com",
+            api_key="deepseek-key",
+            model="deepseek-v4-flash",
+        ),
+        httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    result = provider.structured_response(
+        StructuredAIRequest("Return JSON.", "source", SCHEMA)
+    )
+
+    assert result.response_id == "deepseek-1"
+    assert result.total_tokens == 8
+
+
+def test_deepseek_retries_one_empty_json_response() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        content = "" if calls == 1 else json.dumps(
+            {"required_value": "Q345R", "optional_value": None}
+        )
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": content}}], "usage": {}},
+        )
+
+    provider = OpenAICompatibleProvider(
+        AIProviderConfig(
+            provider="openai_compatible_chat",
+            base_url="https://api.deepseek.com",
+            api_key="temporary-key",
+            model="deepseek-v4-flash",
+        ),
+        httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    result = provider.structured_response(
+        StructuredAIRequest("Return JSON.", "source", SCHEMA)
+    )
+
+    assert calls == 2
+    assert result.data["required_value"] == "Q345R"
 
 
 def test_byok_url_requires_https_and_allowlisted_host() -> None:

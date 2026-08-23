@@ -107,6 +107,13 @@ class OpenAICompatibleProvider:
                 if self.config.provider == "openai_responses"
                 else body["choices"][0]["message"]["content"]
             )
+            if self._is_deepseek() and not str(output or "").strip():
+                # DeepSeek documents that JSON mode can occasionally return an
+                # empty content. Retry once so a healthy endpoint is not reported
+                # as disconnected and extraction jobs are less brittle.
+                response = self._post(endpoint, payload)
+                body = response.json()
+                output = body["choices"][0]["message"]["content"]
             data = json.loads(output)
             if not isinstance(data, dict):
                 raise TypeError("structured output is not an object")
@@ -175,7 +182,7 @@ class OpenAICompatibleProvider:
             {"type": "input_image", "image_url": image.data_url, "detail": "high"}
             for image in request.images
         )
-        return {
+        payload = {
             "model": self.config.model,
             "instructions": request.instructions,
             "input": [{"role": "user", "content": content}],
@@ -190,6 +197,7 @@ class OpenAICompatibleProvider:
             "max_output_tokens": self.config.max_output_tokens,
             "store": False,
         }
+        return payload
 
     def _chat_payload(
         self, request: StructuredAIRequest, schema: dict[str, Any]
@@ -202,22 +210,42 @@ class OpenAICompatibleProvider:
             }
             for image in request.images
         )
-        return {
-            "model": self.config.model,
-            "messages": [
-                {"role": "system", "content": request.instructions},
-                {"role": "user", "content": content},
-            ],
-            "response_format": {
+        if self._is_deepseek():
+            instructions = (
+                f"{request.instructions}\n\n"
+                "Return valid JSON matching this JSON Schema exactly:\n"
+                f"{json.dumps(schema, ensure_ascii=False)}"
+            )
+            response_format: dict[str, Any] = {"type": "json_object"}
+        else:
+            instructions = request.instructions
+            response_format = {
                 "type": "json_schema",
                 "json_schema": {
                     "name": request.schema_name,
                     "strict": True,
                     "schema": schema,
                 },
-            },
+            }
+        payload = {
+            "model": self.config.model,
+            "messages": [
+                {"role": "system", "content": instructions},
+                {"role": "user", "content": content},
+            ],
+            "response_format": response_format,
             "max_tokens": self.config.max_output_tokens,
         }
+        if self._is_deepseek():
+            # DeepSeek V4 enables thinking by default. Structured extraction and
+            # connectivity checks need the final JSON rather than reasoning tokens.
+            payload["thinking"] = {"type": "disabled"}
+        return payload
+
+    def _is_deepseek(self) -> bool:
+        return (
+            urlsplit(self.config.base_url).hostname or ""
+        ).lower() == "api.deepseek.com"
 
 
 def make_strict_provider_schema(schema: dict[str, Any]) -> dict[str, Any]:

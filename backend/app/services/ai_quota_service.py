@@ -1,5 +1,7 @@
 """Transactional platform-AI point reservation and settlement."""
-from datetime import UTC, date, datetime
+from collections import defaultdict
+from datetime import UTC, date, datetime, timedelta
+from math import ceil
 from typing import Any
 from uuid import uuid4
 
@@ -25,8 +27,8 @@ class AIQuotaService:
     def __init__(self, db: Session):
         self.db = db
 
-    def estimate(self, pages: int) -> int:
-        return max(1, pages)
+    def estimate(self, pages: int, point_multiplier: float = 1.0) -> int:
+        return max(1, ceil(max(1, pages) * max(0.01, point_multiplier)))
 
     def get_status(self, user: User, context: WorkspaceContext) -> dict[str, Any]:
         entitlement = self._get_entitlement(user, context, lock=False)
@@ -88,7 +90,11 @@ class AIQuotaService:
         }
 
     def enforce_task_limits(
-        self, user: User, context: WorkspaceContext, pages: int
+        self,
+        user: User,
+        context: WorkspaceContext,
+        pages: int,
+        point_multiplier: float = 1.0,
     ) -> None:
         entitlement = self._get_entitlement(user, context, lock=True)
         if entitlement is None or not entitlement.is_enabled:
@@ -97,6 +103,18 @@ class AIQuotaService:
             raise AIQuotaError(
                 "ai_task_limit_exceeded",
                 f"单次最多解析 {entitlement.max_pages_per_task} 页",
+                422,
+            )
+        max_points_per_task = int(
+            getattr(entitlement, "max_points_per_task", 0) or 0
+        )
+        if (
+            max_points_per_task > 0
+            and self.estimate(pages, point_multiplier) > max_points_per_task
+        ):
+            raise AIQuotaError(
+                "ai_task_limit_exceeded",
+                f"当前模型单次预计消耗 {self.estimate(pages, point_multiplier)} 点，超过套餐上限",
                 422,
             )
         day_start = self._day_start()
@@ -148,7 +166,7 @@ class AIQuotaService:
         entitlement = self._get_entitlement(user, context, lock=True)
         if entitlement is None or not entitlement.is_enabled:
             raise AIQuotaError("ai_plan_not_enabled", "当前会员套餐未开通平台 AI 额度")
-        points = self.estimate(pages)
+        points = self.estimate(pages, self._job_multiplier(job))
         if (
             pages > entitlement.max_pages_per_task
             or points > entitlement.max_points_per_task
@@ -205,7 +223,7 @@ class AIQuotaService:
             if reservation is None:
                 raise AIQuotaError("ai_reservation_missing", "平台 AI 额度预占记录不存在", 409)
             source = "platform"
-            points = self.estimate(pages)
+            points = self.estimate(pages, self._job_multiplier(job))
             delta = reservation.points - points
         self.db.add(
             self._new_ledger(
@@ -363,8 +381,90 @@ class AIQuotaService:
             ocr_pages=ocr_pages,
             period_start=self._period_start(),
             idempotency_key=idempotency_key,
-            metadata_json={"provider": job.provider, "model": job.model},
+            metadata_json={
+                "provider": job.provider,
+                "model": job.model,
+                "routing": (job.schema_snapshot or {}).get("x-weld-routing", {}),
+            },
         )
+
+    @staticmethod
+    def _job_multiplier(job: ExtractionJob) -> float:
+        routing = (job.schema_snapshot or {}).get("x-weld-routing") or {}
+        try:
+            return max(0.01, float(routing.get("point_multiplier", 1)))
+        except (TypeError, ValueError):
+            return 1.0
+
+    def usage_report(
+        self,
+        user: User | None,
+        context: WorkspaceContext | None,
+        days: int = 30,
+    ) -> dict[str, Any]:
+        since = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=days - 1)
+        query = self.db.query(AIUsageLedger).filter(
+            AIUsageLedger.transaction_type == "settlement",
+            AIUsageLedger.created_at >= since.replace(hour=0, minute=0, second=0, microsecond=0),
+        )
+        if context is not None and user is not None:
+            query = query.filter(
+                AIUsageLedger.workspace_type == str(context.workspace_type)
+            )
+            if context.workspace_type == WorkspaceType.ENTERPRISE:
+                query = query.filter(AIUsageLedger.company_id == context.company_id)
+            else:
+                query = query.filter(AIUsageLedger.user_id == user.id)
+        rows = query.order_by(AIUsageLedger.created_at.asc()).all()
+        by_model: dict[str, dict[str, Any]] = {}
+        by_day: dict[str, dict[str, int]] = defaultdict(
+            lambda: {"points": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "tasks": 0}
+        )
+        by_user: dict[int, dict[str, int]] = defaultdict(
+            lambda: {"points": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "tasks": 0}
+        )
+        totals = {"points": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "tasks": 0}
+        for row in rows:
+            metadata = row.metadata_json or {}
+            model = str(metadata.get("model") or "unknown")
+            provider = str(metadata.get("provider") or "unknown")
+            model_key = f"{provider}:{model}"
+            bucket = by_model.setdefault(
+                model_key,
+                {"provider": provider, "model": model, "points": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "tasks": 0},
+            )
+            day = row.created_at.date().isoformat()
+            values = {
+                "points": int(row.points or 0),
+                "input_tokens": int(row.input_tokens or 0),
+                "output_tokens": int(row.output_tokens or 0),
+                "total_tokens": int(row.total_tokens or 0),
+                "tasks": 1,
+            }
+            for key, value in values.items():
+                totals[key] += value
+                bucket[key] += value
+                by_day[day][key] += value
+                by_user[int(row.user_id)][key] += value
+        users = []
+        if context is None and by_user:
+            names = {
+                item.id: (item.username or item.email or f"用户 {item.id}")
+                for item in self.db.query(User).filter(User.id.in_(by_user)).all()
+            }
+            users = [
+                {"user_id": user_id, "user_name": names.get(user_id, f"用户 {user_id}"), **values}
+                for user_id, values in sorted(
+                    by_user.items(), key=lambda item: item[1]["total_tokens"], reverse=True
+                )
+            ]
+        return {
+            "days": days,
+            "totals": totals,
+            "by_model": sorted(by_model.values(), key=lambda item: item["total_tokens"], reverse=True),
+            "by_day": [{"date": day, **values} for day, values in sorted(by_day.items())],
+            "by_user": users,
+        }
 
     @staticmethod
     def _period_start() -> date:

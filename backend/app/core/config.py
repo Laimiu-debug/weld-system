@@ -164,7 +164,14 @@ class Settings(BaseSettings):
     AI_PLATFORM_BASE_URL: str = "https://api.openai.com/v1"
     AI_PLATFORM_API_KEY: Optional[str] = None
     AI_PLATFORM_MODEL: Optional[str] = None
-    AI_BYOK_ALLOWED_HOSTS: List[str] = ["api.openai.com"]
+    AI_BYOK_ALLOWED_HOSTS: List[str] = [
+        "api.openai.com",
+        "api.deepseek.com",
+        "dashscope.aliyuncs.com",
+        "api.moonshot.cn",
+        "open.bigmodel.cn",
+        "api.siliconflow.cn",
+    ]
     # Fernet key used only for saved AI credentials. When absent, temporary BYOK
     # and the platform provider still work, but credentials cannot be persisted.
     AI_CREDENTIAL_ENCRYPTION_KEY: Optional[str] = None

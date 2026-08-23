@@ -1,5 +1,5 @@
 """Schemas for the enterprise welding capability library."""
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -29,6 +29,7 @@ class CapabilityOverviewResponse(BaseModel):
 
 
 class CapabilityCheckRequest(BaseModel):
+    standard_system: Literal["china", "asme", "ped"] = "china"
     factory_id: int | None = Field(None, gt=0)
     welding_process: str = Field(min_length=1, max_length=100)
     material_group: str = Field(min_length=1, max_length=100)

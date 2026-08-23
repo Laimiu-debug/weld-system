@@ -49,44 +49,21 @@ def ws():
 
 
 def upgrade():
-    op.add_column("welding_materials", sa.Column("density_g_cm3", sa.Float()))
-    op.add_column(
-        "welding_materials", sa.Column("default_deposition_efficiency", sa.Float())
-    )
-    op.add_column(
-        "welding_materials", sa.Column("default_deposition_rate_kg_h", sa.Float())
-    )
-    op.add_column("welding_materials", sa.Column("consumable_type", sa.String(50)))
-    op.add_column(
-        "welding_materials",
-        sa.Column(
-            "applicable_welding_methods",
-            postgresql.JSONB(),
-            nullable=False,
-            server_default=sa.text("'[]'::jsonb"),
-        ),
-    )
-    op.add_column(
-        "welding_materials",
-        sa.Column(
-            "parameter_version", sa.Integer(), nullable=False, server_default="1"
-        ),
-    )
-    op.add_column(
-        "welding_materials",
-        sa.Column(
-            "parameter_approval_status",
-            sa.String(20),
-            nullable=False,
-            server_default="draft",
-        ),
-    )
-    op.add_column(
-        "welding_materials", sa.Column("parameter_effective_from", sa.DateTime())
-    )
-    op.add_column(
-        "welding_materials", sa.Column("parameter_effective_to", sa.DateTime())
-    )
+    # Some installations were bootstrapped from newer ORM metadata and already
+    # contain these columns. Keep the historical migration convergent instead
+    # of aborting the transaction on the first duplicate column.
+    for ddl in (
+        "ADD COLUMN IF NOT EXISTS density_g_cm3 DOUBLE PRECISION",
+        "ADD COLUMN IF NOT EXISTS default_deposition_efficiency DOUBLE PRECISION",
+        "ADD COLUMN IF NOT EXISTS default_deposition_rate_kg_h DOUBLE PRECISION",
+        "ADD COLUMN IF NOT EXISTS consumable_type VARCHAR(50)",
+        "ADD COLUMN IF NOT EXISTS applicable_welding_methods JSONB NOT NULL DEFAULT '[]'::jsonb",
+        "ADD COLUMN IF NOT EXISTS parameter_version INTEGER NOT NULL DEFAULT 1",
+        "ADD COLUMN IF NOT EXISTS parameter_approval_status VARCHAR(20) NOT NULL DEFAULT 'draft'",
+        "ADD COLUMN IF NOT EXISTS parameter_effective_from TIMESTAMP WITHOUT TIME ZONE",
+        "ADD COLUMN IF NOT EXISTS parameter_effective_to TIMESTAMP WITHOUT TIME ZONE",
+    ):
+        op.execute(sa.text(f"ALTER TABLE welding_materials {ddl}"))
 
     for name, default in (
         ("electrode_stub_loss_ratio", "0"),

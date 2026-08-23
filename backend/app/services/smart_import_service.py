@@ -184,6 +184,11 @@ class SmartImportService:
             status="stored" if data.storage_key else "registered",
             **self._workspace_values(user, context, batch.access_level),
         )
+        # SourceDocument and DocumentArtifact intentionally do not expose an
+        # ORM relationship. Flush the parent first so PostgreSQL never chooses
+        # the artifact INSERT ahead of its required document row.
+        self.db.add(document)
+        self.db.flush()
         workspace = self._workspace_values(user, context, batch.access_level)
         original_artifact = DocumentArtifact(
             id=str(uuid4()),
@@ -199,7 +204,6 @@ class SmartImportService:
             **workspace,
         )
         batch.total_documents = (batch.total_documents or 0) + 1
-        self.db.add(document)
         self.db.add(original_artifact)
         self.db.commit()
         self.db.refresh(document)

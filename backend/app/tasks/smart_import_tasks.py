@@ -9,7 +9,10 @@ from app.core.data_access import WorkspaceContext
 from app.models.smart_import import ExtractionJob, ImportBatch, SourceDocument
 from app.models.user import User
 from app.schemas.smart_import import AIExtractionRequest
-from app.services.ai_credential_service import AIProviderConfigService
+from app.services.ai_credential_service import (
+    AIProviderConfigService,
+    resolve_platform_ai_config,
+)
 from app.services.ai_extraction_service import (
     AIExtractionRunError,
     AIExtractionService,
@@ -190,6 +193,26 @@ def run_smart_import_extraction(job_id: str) -> dict:
                     model=model,
                 )
                 saved_key = settings.AI_OFFLINE_API_KEY
+            else:
+                routing = (job.schema_snapshot or {}).get("x-weld-routing") or {}
+                platform = resolve_platform_ai_config(
+                    db,
+                    include_key=True,
+                    task_type=routing.get("task_type"),
+                    complexity=routing.get("complexity"),
+                    config_id=routing.get("config_id"),
+                )
+                if not platform["key_configured"] or not platform["model"]:
+                    _mark_setup_failure(
+                        db, job, "platform_not_configured", "平台 AI 服务尚未配置"
+                    )
+                    return {"job_id": job.id, "status": "failed"}
+                saved_config = SimpleNamespace(
+                    provider=platform["provider"],
+                    base_url=platform["base_url"],
+                    model=platform["model"],
+                )
+                saved_key = platform["api_key"]
         document = (
             db.query(SourceDocument)
             .filter(SourceDocument.id == job.document_id)
@@ -202,9 +225,7 @@ def run_smart_import_extraction(job_id: str) -> dict:
         ):
             OperationsService(db).require_consent(
                 document.id,
-                saved_config.base_url
-                if saved_config
-                else settings.AI_PLATFORM_BASE_URL,
+                saved_config.base_url,
                 user,
                 context,
                 request.outbound_consent_id,

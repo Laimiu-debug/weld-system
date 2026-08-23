@@ -499,6 +499,10 @@ class AIProviderConfig(Base):
     provider = Column(String(80), nullable=False)
     base_url = Column(String(500), nullable=False)
     model = Column(String(120), nullable=False)
+    task_types = Column(JSONB, nullable=False, default=list)
+    complexity_level = Column(String(20), nullable=False, default="standard")
+    point_multiplier = Column(Float, nullable=False, default=1.0)
+    priority = Column(Integer, nullable=False, default=100)
     encrypted_api_key = Column(Text, nullable=False)
     key_last_four = Column(String(8), nullable=False)
     key_version = Column(Integer, nullable=False, default=1)
@@ -528,6 +532,14 @@ class AIProviderConfig(Base):
         CheckConstraint(
             "last_test_status IN ('untested','success','failed')",
             name="ck_ai_provider_config_test_status",
+        ),
+        CheckConstraint(
+            "complexity_level IN ('simple','standard','advanced')",
+            name="ck_ai_provider_config_complexity",
+        ),
+        CheckConstraint(
+            "point_multiplier > 0 AND point_multiplier <= 20 AND priority >= 0",
+            name="ck_ai_provider_config_routing_values",
         ),
     )
 

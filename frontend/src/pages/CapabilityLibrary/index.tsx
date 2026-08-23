@@ -39,6 +39,7 @@ import {
   WarningOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
+import { workspaceService } from '@/services/workspace'
 import {
   capabilityService,
   CapabilityCheckRequest,
@@ -64,8 +65,38 @@ const decisionLabels = {
   not_capable: { text: '当前不具备完整能力', status: 'error' as const },
 }
 
+const standardSystemOptions = [
+  { value: 'china', label: '国标/行业标准 · NB/T 47014—2023' },
+  { value: 'asme', label: '美标 · ASME BPVC Section IX' },
+  { value: 'ped', label: 'PED / EN ISO · EN ISO 15614-1' },
+]
+
+const referenceDimensions: Record<CapabilityCheckRequest['standard_system'], {
+  processes: string[]
+  materialGroups: string[]
+  positions: string[]
+}> = {
+  china: {
+    processes: ['GTAW', 'SMAW', 'GMAW', 'FCAW', 'SAW'],
+    materialGroups: ['Fe-1', 'Fe-3', 'Fe-4', 'Fe-5A', 'Fe-5B', 'Fe-8'],
+    positions: ['PA', 'PB', 'PC', 'PD', 'PE', 'PF', 'PG'],
+  },
+  asme: {
+    processes: ['GTAW', 'SMAW', 'GMAW', 'FCAW', 'SAW'],
+    materialGroups: ['P-No. 1', 'P-No. 3', 'P-No. 4', 'P-No. 5A', 'P-No. 5B', 'P-No. 8'],
+    positions: ['1G', '2G', '3G', '4G', '5G', '6G'],
+  },
+  ped: {
+    processes: ['GTAW', 'SMAW', 'GMAW', 'FCAW', 'SAW'],
+    materialGroups: ['ISO/TR 15608 Group 1', 'ISO/TR 15608 Group 2', 'ISO/TR 15608 Group 5', 'ISO/TR 15608 Group 8', 'ISO/TR 15608 Group 10'],
+    positions: ['PA', 'PB', 'PC', 'PD', 'PE', 'PF', 'PG'],
+  },
+}
+
 const CapabilityLibraryPage: React.FC = () => {
   const navigate = useNavigate()
+  const workspace = workspaceService.getCurrentWorkspaceFromStorage()
+  const workspaceLabel = workspace?.type === 'enterprise' ? '企业' : '个人'
   const [filterForm] = Form.useForm<CapabilityFilters>()
   const [checkForm] = Form.useForm<CapabilityCheckRequest>()
   const [overview, setOverview] = useState<CapabilityOverview | null>(null)
@@ -76,13 +107,18 @@ const CapabilityLibraryPage: React.FC = () => {
   const [checkOpen, setCheckOpen] = useState(false)
   const [checking, setChecking] = useState(false)
   const [checkResult, setCheckResult] = useState<CapabilityCheckResult | null>(null)
+  const selectedStandard = Form.useWatch('standard_system', checkForm) || 'china'
+  const checkDimensions = referenceDimensions[selectedStandard]
+  const filterProcesses = mergeOptions(referenceDimensions.china.processes, referenceDimensions.asme.processes, overview?.dimensions.processes)
+  const filterMaterials = mergeOptions(referenceDimensions.china.materialGroups, referenceDimensions.asme.materialGroups, referenceDimensions.ped.materialGroups, overview?.dimensions.material_groups)
+  const filterPositions = mergeOptions(referenceDimensions.china.positions, referenceDimensions.asme.positions, overview?.dimensions.positions)
 
   const loadOverview = useCallback(async (filters: CapabilityFilters = {}) => {
     setLoading(true)
     try {
       setOverview(await capabilityService.getOverview(filters))
     } catch {
-      message.error('加载企业焊接能力库失败')
+      message.error('加载当前工作区焊接能力库失败')
     } finally {
       setLoading(false)
     }
@@ -333,7 +369,7 @@ const CapabilityLibraryPage: React.FC = () => {
         <div>
           <Space align="center" size={12}>
             <SafetyCertificateOutlined className="capability-title-icon" />
-            <Title level={2}>企业焊接能力库</Title>
+            <Title level={2}>{workspaceLabel}焊接能力库</Title>
           </Space>
           <Paragraph type="secondary">
             仅展示已批准、未停用且具有当前有效 PQR 支持链的能力。边界与资料不足不会计为可用。
@@ -351,7 +387,7 @@ const CapabilityLibraryPage: React.FC = () => {
 
       <Spin spinning={loading}>
         <Row gutter={[16, 16]} className="capability-summary">
-          <Col xs={24} md={8} xl={5}>
+          <Col xs={24} md={24} xl={8}>
             <Card className="health-card">
               <Text type="secondary">数据健康度</Text>
               <div className="health-content">
@@ -388,17 +424,17 @@ const CapabilityLibraryPage: React.FC = () => {
               </Col>
               <Col xs={12} md={8} xl={4}>
                 <Form.Item name="process" label="焊接方法">
-                  <Select allowClear options={selectOptions(overview?.dimensions.processes)} />
+                  <Select allowClear showSearch options={selectOptions(filterProcesses)} />
                 </Form.Item>
               </Col>
               <Col xs={12} md={8} xl={4}>
                 <Form.Item name="material_group" label="材料组">
-                  <Select allowClear options={selectOptions(overview?.dimensions.material_groups)} />
+                  <Select allowClear showSearch options={selectOptions(filterMaterials)} />
                 </Form.Item>
               </Col>
               <Col xs={12} md={8} xl={4}>
                 <Form.Item name="position" label="焊接位置">
-                  <Select allowClear options={selectOptions(overview?.dimensions.positions)} />
+                  <Select allowClear showSearch options={selectOptions(filterPositions)} />
                 </Form.Item>
               </Col>
               <Col xs={12} md={8} xl={3}>
@@ -450,7 +486,7 @@ const CapabilityLibraryPage: React.FC = () => {
             <Col xs={24} md={8}>
               <div className="gap-actions">
                 <Text strong>发现能力缺口？</Text>
-                <Text type="secondary">导入企业已有资料，或创建新的预焊接工艺规程。</Text>
+                <Text type="secondary">导入当前工作区已有资料，或创建新的预焊接工艺规程。</Text>
                 <Space wrap>
                   <Button icon={<LinkOutlined />} onClick={() => navigate('/smart-import')}>智能导入</Button>
                   <Button icon={<PlusOutlined />} onClick={() => navigate('/ppqr/create')}>新建 pPQR</Button>
@@ -480,24 +516,32 @@ const CapabilityLibraryPage: React.FC = () => {
         <Alert
           type="info"
           showIcon
-          message="只有工艺范围、有效焊工资质和资源均明确覆盖时，系统才会判定完整具备。"
+          message="下拉项是标准参考值，不代表当前已具备能力；只有同一标准体系下的有效 PQR→WPS 支持链完整覆盖时，系统才会判定工艺具备。"
           className="check-alert"
         />
         <Form
           form={checkForm}
           layout="vertical"
-          initialValues={{ pwht_required: false, impact_required: false }}
+          initialValues={{ standard_system: 'china', pwht_required: false, impact_required: false }}
           onFinish={(values) => void submitCheck(values)}
         >
           <Row gutter={12}>
+            <Col span={24}>
+              <Form.Item name="standard_system" label="校核标准体系" rules={[{ required: true }]}>
+                <Select options={standardSystemOptions} onChange={() => {
+                  checkForm.setFieldsValue({ welding_process: undefined, material_group: undefined, welding_position: undefined })
+                  setCheckResult(null)
+                }} />
+              </Form.Item>
+            </Col>
             <Col span={12}>
               <Form.Item name="welding_process" label="焊接方法" rules={[{ required: true }]}>
-                <Select showSearch options={selectOptions(overview?.dimensions.processes)} placeholder="例如 GTAW" />
+                <Select showSearch options={selectOptions(mergeOptions(checkDimensions.processes, overview?.dimensions.processes))} placeholder="例如 GTAW" />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item name="material_group" label="材料组" rules={[{ required: true }]}>
-                <Select showSearch options={selectOptions(overview?.dimensions.material_groups)} placeholder="例如 Fe-1" />
+                <Select showSearch options={selectOptions(mergeOptions(checkDimensions.materialGroups, overview?.dimensions.material_groups))} placeholder="选择或搜索材料组" />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -512,7 +556,7 @@ const CapabilityLibraryPage: React.FC = () => {
             </Col>
             <Col span={12}>
               <Form.Item name="welding_position" label="焊接位置" rules={[{ required: true }]}>
-                <Select showSearch options={selectOptions(overview?.dimensions.positions)} />
+                <Select showSearch options={selectOptions(mergeOptions(checkDimensions.positions, overview?.dimensions.positions))} />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -537,7 +581,7 @@ const CapabilityLibraryPage: React.FC = () => {
 }
 
 const SummaryCard: React.FC<{ title: string; value: number; hint: string; icon: React.ReactNode; tone?: 'warning' }> = ({ title, value, hint, icon, tone }) => (
-  <Col xs={12} md={8} xl={4}>
+  <Col xs={12} md={6} xl={4}>
     <Card className={`metric-card ${tone ? 'metric-warning' : ''}`}>
       <div className="metric-icon">{icon}</div>
       <Title level={2}>{value}</Title>
@@ -679,6 +723,10 @@ const StatusBlock: React.FC<{ label: string; ready: boolean }> = ({ label, ready
 
 function selectOptions(items?: string[]) {
   return (items || []).map((value) => ({ label: value, value }))
+}
+
+function mergeOptions(...groups: Array<string[] | undefined>) {
+  return Array.from(new Set(groups.flatMap((items) => items || [])))
 }
 
 function tagList(items?: string[], color?: string) {

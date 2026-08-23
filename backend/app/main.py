@@ -74,21 +74,21 @@ async def startup_event():
         logger.warning(
             "Skipping implicit create_all(); run `alembic upgrade head` for schema changes"
         )
-        try:
-            from app.core.database import SessionLocal
-            from app.services.subscription_plan_seed import ensure_subscription_plans
-
-            db = SessionLocal()
-            try:
-                created = ensure_subscription_plans(db)
-                if created:
-                    logger.info("Initialized %s subscription plans for empty database", created)
-            finally:
-                db.close()
-        except Exception as exc:
-            logger.warning("Failed to ensure subscription plans: %s", exc)
     else:
         assert_ready_or_raise()
+    try:
+        from app.core.database import SessionLocal
+        from app.services.subscription_plan_seed import ensure_subscription_plans
+
+        db = SessionLocal()
+        try:
+            created = ensure_subscription_plans(db)
+            if created:
+                logger.info("Initialized %s subscription plans for empty database", created)
+        finally:
+            db.close()
+    except Exception as exc:
+        logger.warning("Failed to ensure subscription plans: %s", exc)
     logger.info("Hanxu Backend started")
 
 

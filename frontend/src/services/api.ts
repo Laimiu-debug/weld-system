@@ -39,8 +39,11 @@ class ApiService {
           }
         }
 
-        // 确保Content-Type包含charset
-        if (!config.headers['Content-Type']) {
+        // FormData 必须由浏览器写入带 boundary 的 Content-Type，否则后端
+        // 无法解析 file/Form 字段，会在进入业务接口前返回 422。
+        if (config.data instanceof FormData) {
+          delete config.headers['Content-Type']
+        } else if (!config.headers['Content-Type']) {
           config.headers['Content-Type'] = 'application/json; charset=utf-8'
         }
 

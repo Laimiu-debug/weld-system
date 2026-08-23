@@ -117,8 +117,27 @@ def test_multipage_tiff_creates_one_ocr_page_per_frame() -> None:
     assert parsed.pages[1].metadata["width_pixels"] == 40
 
 
-def test_legacy_doc_requires_conversion() -> None:
-    with pytest.raises(DocumentParseError, match="转换为 DOCX 或 PDF"):
+def test_legacy_doc_uses_antiword_and_preserves_logical_pages(monkeypatch) -> None:
+    monkeypatch.setattr(
+        document_parser_service,
+        "_extract_legacy_doc_text",
+        lambda stream: "WPS No. WPS-003\fPQR No. PQR-003",
+    )
+
+    parsed = DefaultDocumentParser().parse(BytesIO(b"legacy"), "legacy.doc")
+
+    assert parsed.parser == "antiword"
+    assert parsed.page_numbering == "logical"
+    assert [page.text_content for page in parsed.pages] == [
+        "WPS No. WPS-003",
+        "PQR No. PQR-003",
+    ]
+
+
+def test_legacy_doc_reports_missing_server_parser(monkeypatch) -> None:
+    monkeypatch.setattr(document_parser_service.shutil, "which", lambda name: None)
+
+    with pytest.raises(DocumentParseError, match="解析组件未安装"):
         DefaultDocumentParser().parse(BytesIO(b"legacy"), "legacy.doc")
 
 

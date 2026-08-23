@@ -29,6 +29,7 @@ import {
   CloseOutlined,
   CheckCircleOutlined,
   WarningOutlined,
+  PlusOutlined,
 } from '@ant-design/icons';
 import apiService from '../services/api';
 
@@ -115,6 +116,18 @@ const PricingManagement: React.FC = () => {
     setEditModalVisible(true);
   };
 
+  const handleCreate = () => {
+    setCurrentPlan(null);
+    form.resetFields();
+    form.setFieldsValue({
+      currency: 'CNY', monthly_price: 0, quarterly_price: 0, yearly_price: 0,
+      max_wps_files: 0, max_pqr_files: 0, max_ppqr_files: 0, max_materials: 0,
+      max_welders: 0, max_equipment: 0, max_factories: 0, max_employees: 0,
+      features: [], sort_order: plans.length + 1, is_recommended: false, is_active: true,
+    });
+    setEditModalVisible(true);
+  };
+
   const handleSetDiscount = (plan: SubscriptionPlan) => {
     setCurrentPlan(plan);
     discountForm.setFieldsValue({
@@ -146,8 +159,12 @@ const PricingManagement: React.FC = () => {
         features,
       };
 
-      await apiService.updateSubscriptionPlan(String(currentPlan?.id), updateData);
-      message.success('订阅计划更新成功');
+      if (currentPlan) {
+        await apiService.updateSubscriptionPlan(String(currentPlan.id), updateData);
+      } else {
+        await apiService.createSubscriptionPlan(updateData);
+      }
+      message.success(currentPlan ? '订阅计划更新成功' : '订阅计划创建成功');
       setEditModalVisible(false);
       loadPlans();
     } catch (error: any) {
@@ -273,13 +290,13 @@ const PricingManagement: React.FC = () => {
       key: 'quarterly_price',
       width: 120,
       render: (price: number, record: SubscriptionPlan) => {
-        const discount = record.monthly_price > 0 
-          ? ((1 - price / (record.monthly_price * 3)) * 100).toFixed(0)
-          : 0;
+        const discount = record.monthly_price > 0
+          ? (price / (record.monthly_price * 3) * 10).toFixed(1)
+          : '10.0';
         return (
           <Space direction="vertical" size={0}>
             <span style={{ color: '#52c41a', fontWeight: 500 }}>¥{price.toFixed(2)}</span>
-            {Number(discount) > 0 && <Tag color="green">{discount}折</Tag>}
+            {Number(discount) < 10 && <Tag color="green">{discount} 折</Tag>}
           </Space>
         );
       },
@@ -291,12 +308,12 @@ const PricingManagement: React.FC = () => {
       width: 120,
       render: (price: number, record: SubscriptionPlan) => {
         const discount = record.monthly_price > 0
-          ? ((1 - price / (record.monthly_price * 12)) * 100).toFixed(0)
-          : 0;
+          ? (price / (record.monthly_price * 12) * 10).toFixed(1)
+          : '10.0';
         return (
           <Space direction="vertical" size={0}>
             <span style={{ color: '#f5222d', fontWeight: 500 }}>¥{price.toFixed(2)}</span>
-            {Number(discount) > 0 && <Tag color="red">{discount}折</Tag>}
+            {Number(discount) < 10 && <Tag color="red">{discount} 折</Tag>}
           </Space>
         );
       },
@@ -358,6 +375,9 @@ const PricingManagement: React.FC = () => {
           <TagsOutlined /> 订阅计划与价格管理
         </h1>
         <Space>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
+            新建套餐
+          </Button>
           <Button icon={<ReloadOutlined />} onClick={loadPlans} loading={loading}>
             刷新
           </Button>
@@ -385,7 +405,7 @@ const PricingManagement: React.FC = () => {
 
       {/* 编辑计划模态框 */}
       <Modal
-        title={`编辑订阅计划: ${currentPlan?.name}`}
+        title={currentPlan ? `编辑订阅计划: ${currentPlan.name}` : '新建订阅计划'}
         open={editModalVisible}
         onCancel={() => setEditModalVisible(false)}
         onOk={handleSaveEdit}
@@ -394,6 +414,13 @@ const PricingManagement: React.FC = () => {
       >
         <Form form={form} layout="vertical">
           <Row gutter={16}>
+            {!currentPlan && (
+              <Col span={12}>
+                <Form.Item name="id" label="套餐 ID" rules={[{ required: true, pattern: /^[a-z][a-z0-9_]{1,49}$/, message: '使用小写字母、数字和下划线' }]}>
+                  <Input placeholder="例如 personal_team" />
+                </Form.Item>
+              </Col>
+            )}
             <Col span={12}>
               <Form.Item name="name" label="计划名称" rules={[{ required: true }]}>
                 <Input />

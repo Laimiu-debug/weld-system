@@ -17,6 +17,7 @@ from app.api.v1.endpoints.smart_import import (
 )
 from app.models.smart_import import (
     AIUsageLedger,
+    DocumentArtifact,
     DocumentPage,
     EntityPublishRecord,
     ExtractedEntity,
@@ -229,3 +230,39 @@ def test_creator_can_view_own_enterprise_batch_without_new_role_definition() -> 
     service._check_view(resource, user, context)
 
     service.data_access.check_access.assert_not_called()
+
+
+def test_register_document_flushes_parent_before_original_artifact() -> None:
+    events: list[str] = []
+    db = Mock()
+    db.add.side_effect = lambda item: events.append(f"add:{type(item).__name__}")
+    db.flush.side_effect = lambda: events.append("flush")
+    db.refresh.side_effect = lambda _item: None
+    duplicate_query = Mock()
+    duplicate_query.filter.return_value.first.return_value = None
+    service = SmartImportService(db)
+    service.get_batch = Mock(
+        return_value=SimpleNamespace(
+            id="batch-1", status="draft", total_documents=0, access_level="private"
+        )
+    )
+    service._scope_query = Mock(return_value=duplicate_query)
+    user = SimpleNamespace(id=7)
+    context = WorkspaceContext(user_id=7, workspace_type=WorkspaceType.PERSONAL)
+
+    service.register_document(
+        "batch-1",
+        SourceDocumentRegister(
+            original_filename="sample.doc",
+            storage_key="private/sample.doc",
+            sha256="a" * 64,
+            mime_type="application/msword",
+            size_bytes=100,
+            document_type="pqr",
+        ),
+        user,
+        context,
+    )
+
+    assert events[:3] == ["add:SourceDocument", "flush", "add:DocumentArtifact"]
+    assert DocumentArtifact.__tablename__ == "document_artifacts"

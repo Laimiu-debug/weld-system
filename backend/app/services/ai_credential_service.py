@@ -1,6 +1,8 @@
 """Encrypted AI credentials and enterprise AI governance."""
 from __future__ import annotations
 
+import base64
+import hashlib
 from urllib.parse import urlsplit
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -23,11 +25,29 @@ from app.schemas.smart_import import (
 from app.services.ai_provider_service import validate_ai_base_url
 
 
+PLATFORM_AI_TASK_TYPES = {
+    "wps_import",
+    "pqr_import",
+    "ppqr_import",
+    "welder_import",
+    "drawing_import",
+    "general",
+}
+PLATFORM_AI_COMPLEXITIES = {"simple", "standard", "advanced"}
+
+
 class AICredentialCipher:
     def __init__(self, key: str | None = None):
         raw = key or settings.AI_CREDENTIAL_ENCRYPTION_KEY
         if not raw:
-            raise HTTPException(status_code=503, detail="服务器尚未启用 AI 密钥安全存储")
+            # Existing installations already have a stable application secret.
+            # Derive a dedicated Fernet key so the admin UI can safely persist
+            # provider credentials without adding another mandatory setup step.
+            raw = base64.urlsafe_b64encode(
+                hashlib.sha256(
+                    f"weldsystem-ai-credentials:{settings.SECRET_KEY}".encode("utf-8")
+                ).digest()
+            ).decode("ascii")
         try:
             self._fernet = Fernet(raw.encode("ascii"))
         except (ValueError, UnicodeEncodeError) as exc:
@@ -45,6 +65,228 @@ class AICredentialCipher:
 
 def mask_key(last_four: str) -> str:
     return f"••••••••{last_four}"
+
+
+def _platform_config_payload(item: AIProviderConfig, *, include_key: bool) -> dict:
+    result = {
+        "id": item.id,
+        "name": item.name,
+        "provider": item.provider,
+        "base_url": item.base_url,
+        "model": item.model,
+        "task_types": list(item.task_types or []),
+        "complexity_level": item.complexity_level or "standard",
+        "point_multiplier": float(item.point_multiplier or 1),
+        "priority": int(item.priority or 100),
+        "is_default": bool(item.is_default),
+        "is_active": bool(item.is_active),
+        "last_test_status": item.last_test_status,
+        "last_tested_at": item.last_tested_at,
+        "last_error": item.last_error,
+        "key_configured": True,
+        "masked_api_key": mask_key(item.key_last_four),
+        "source": "admin",
+    }
+    if include_key:
+        result["api_key"] = AICredentialCipher().decrypt(item.encrypted_api_key)
+    return result
+
+
+def list_platform_ai_configs(
+    db: Session, *, include_inactive: bool = True
+) -> list[dict]:
+    query = db.query(AIProviderConfig).filter(
+        AIProviderConfig.scope_type == "platform"
+    )
+    if not include_inactive:
+        query = query.filter(AIProviderConfig.is_active == True)  # noqa: E712
+    return [
+        _platform_config_payload(item, include_key=False)
+        for item in query.order_by(
+            AIProviderConfig.is_default.desc(),
+            AIProviderConfig.priority.asc(),
+            AIProviderConfig.updated_at.desc(),
+        ).all()
+    ]
+
+
+def resolve_platform_ai_config(
+    db: Session,
+    *,
+    include_key: bool = False,
+    task_type: str | None = None,
+    complexity: str | None = None,
+    config_id: str | None = None,
+) -> dict:
+    """Resolve a routed platform model, falling back to environment defaults."""
+    items = (
+        db.query(AIProviderConfig)
+        .filter(
+            AIProviderConfig.scope_type == "platform",
+            AIProviderConfig.is_active == True,  # noqa: E712
+        )
+        .all()
+    )
+    if config_id:
+        selected = next((item for item in items if item.id == config_id), None)
+        if selected is not None:
+            return _platform_config_payload(selected, include_key=include_key)
+    candidates = [
+        item
+        for item in items
+        if not task_type or not item.task_types or task_type in item.task_types
+    ] or items
+    target = complexity if complexity in PLATFORM_AI_COMPLEXITIES else "standard"
+    rank = {"standard": 1, "simple": 2, "advanced": 3}
+    rank[target] = 0
+    item = min(
+        candidates,
+        key=lambda value: (
+            rank.get(value.complexity_level or "standard", 4),
+            not bool(value.is_default),
+            int(value.priority or 100),
+        ),
+        default=None,
+    )
+    if item:
+        return _platform_config_payload(item, include_key=include_key)
+
+    result = {
+        "id": None,
+        "name": "环境变量默认模型",
+        "provider": settings.AI_PLATFORM_PROVIDER,
+        "base_url": settings.AI_PLATFORM_BASE_URL,
+        "model": settings.AI_PLATFORM_MODEL or "",
+        "task_types": [],
+        "complexity_level": "standard",
+        "point_multiplier": 1.0,
+        "priority": 100,
+        "is_default": True,
+        "is_active": True,
+        "last_test_status": "untested",
+        "last_tested_at": None,
+        "last_error": None,
+        "key_configured": bool(settings.AI_PLATFORM_API_KEY),
+        "masked_api_key": mask_key(settings.AI_PLATFORM_API_KEY[-4:])
+        if settings.AI_PLATFORM_API_KEY
+        else "",
+        "source": "environment",
+    }
+    if include_key:
+        result["api_key"] = settings.AI_PLATFORM_API_KEY or ""
+    return result
+
+
+def update_platform_ai_config(
+    db: Session, data: dict, *, create_new: bool = False
+) -> dict:
+    """Create or update one platform model and its routing rule."""
+    provider = str(data.get("provider") or "openai_responses").strip()
+    if provider not in {"openai_responses", "openai_compatible_chat"}:
+        raise HTTPException(status_code=422, detail="不支持的平台模型接口协议")
+    base_url = str(data.get("base_url") or "").strip()
+    model = str(data.get("model") or "").strip()
+    if not base_url or not model:
+        raise HTTPException(status_code=422, detail="接口地址和模型名称不能为空")
+    task_types = sorted(
+        {str(value).strip() for value in data.get("task_types") or [] if str(value).strip()}
+    )
+    if any(value not in PLATFORM_AI_TASK_TYPES for value in task_types):
+        raise HTTPException(status_code=422, detail="包含不支持的平台模型任务类型")
+    complexity = str(data.get("complexity_level") or "standard").strip()
+    if complexity not in PLATFORM_AI_COMPLEXITIES:
+        raise HTTPException(status_code=422, detail="模型复杂度等级无效")
+    try:
+        multiplier = float(data.get("point_multiplier", 1))
+        priority = int(data.get("priority", 100))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="积分倍率或路由优先级无效") from exc
+    if not 0 < multiplier <= 20 or priority < 0:
+        raise HTTPException(status_code=422, detail="积分倍率或路由优先级超出范围")
+    hostname = (urlsplit(base_url).hostname or "").lower()
+    try:
+        base_url = validate_ai_base_url(
+            base_url,
+            [hostname],
+            allow_private=settings.AI_ALLOW_PRIVATE_PLATFORM_URL,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    item = None
+    config_id = str(data.get("id") or "").strip()
+    if config_id:
+        item = db.query(AIProviderConfig).filter(
+            AIProviderConfig.id == config_id,
+            AIProviderConfig.scope_type == "platform",
+        ).first()
+        if item is None:
+            raise HTTPException(status_code=404, detail="平台模型配置不存在")
+    elif not create_new:
+        item = (
+            db.query(AIProviderConfig)
+            .filter(AIProviderConfig.scope_type == "platform")
+            .order_by(
+                AIProviderConfig.is_default.desc(), AIProviderConfig.updated_at.desc()
+            )
+            .first()
+        )
+    api_key = str(data.get("api_key") or "").strip()
+    if item is None and not api_key:
+        raise HTTPException(status_code=422, detail="首次配置平台模型时必须填写 API Key")
+    if item is None:
+        item = AIProviderConfig(
+            scope_type="platform",
+            name=str(data.get("name") or model).strip(),
+            provider=provider,
+            base_url=base_url,
+            model=model,
+            encrypted_api_key=AICredentialCipher().encrypt(api_key),
+            key_last_four=api_key[-4:],
+            task_types=task_types,
+            complexity_level=complexity,
+            point_multiplier=multiplier,
+            priority=priority,
+            is_default=bool(data.get("is_default", False)),
+        )
+        db.add(item)
+    else:
+        item.name = str(data.get("name") or item.name).strip()
+        item.provider = provider
+        item.base_url = base_url
+        item.model = model
+        item.is_active = True
+        item.task_types = task_types
+        item.complexity_level = complexity
+        item.point_multiplier = multiplier
+        item.priority = priority
+        item.is_default = bool(data.get("is_default", item.is_default))
+        item.last_test_status = "untested"
+        item.last_error = None
+        if api_key:
+            item.encrypted_api_key = AICredentialCipher().encrypt(api_key)
+            item.key_last_four = api_key[-4:]
+            item.key_version += 1
+    if item.is_default:
+        db.query(AIProviderConfig).filter(
+            AIProviderConfig.scope_type == "platform",
+            AIProviderConfig.id != item.id,
+        ).update({AIProviderConfig.is_default: False}, synchronize_session=False)
+    db.commit()
+    db.refresh(item)
+    return _platform_config_payload(item, include_key=False)
+
+
+def disable_platform_ai_config(db: Session, config_id: str) -> None:
+    item = db.query(AIProviderConfig).filter(
+        AIProviderConfig.id == config_id,
+        AIProviderConfig.scope_type == "platform",
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="平台模型配置不存在")
+    item.is_active = False
+    item.is_default = False
+    db.commit()
 
 
 class AIProviderConfigService:
@@ -210,6 +452,9 @@ class AIProviderConfigService:
         values = data.model_dump(exclude_none=True)
         if "base_url" in values:
             values["base_url"] = self._validate_url(values["base_url"], context)
+        if any(field in values for field in ("provider", "base_url", "model")):
+            item.last_test_status = "untested"
+            item.last_error = None
         if values.get("is_default"):
             self._clear_defaults(item.scope_type, item.user_id, item.company_id)
         for field, value in values.items():
@@ -313,7 +558,7 @@ class AIProviderConfigService:
             raise HTTPException(status_code=403, detail="企业不允许使用临时个人 AI Key")
         if mode == "byok" and not policy.allow_external_providers:
             platform_host = (
-                urlsplit(settings.AI_PLATFORM_BASE_URL).hostname or ""
+                urlsplit(resolve_platform_ai_config(self.db)["base_url"]).hostname or ""
             ).lower()
             item_host = (urlsplit(item.base_url).hostname or "").lower() if item else ""
             if not item or item_host != platform_host:
@@ -337,6 +582,10 @@ def provider_config_response(item: AIProviderConfig) -> AIProviderConfigResponse
         provider=item.provider,
         base_url=item.base_url,
         model=item.model,
+        task_types=list(getattr(item, "task_types", None) or []),
+        complexity_level=getattr(item, "complexity_level", "standard") or "standard",
+        point_multiplier=float(getattr(item, "point_multiplier", 1) or 1),
+        priority=int(getattr(item, "priority", 100) or 100),
         masked_api_key=mask_key(item.key_last_four),
         key_version=item.key_version,
         is_active=item.is_active,
