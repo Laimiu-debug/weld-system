@@ -12,6 +12,7 @@ from app.core.data_access import WorkspaceContext, WorkspaceType
 from app.core.module_permissions import user_can_manage_employees
 from app.models.company import Company
 from app.models.smart_import import AIProviderConfig, EnterpriseAIPolicy
+from app.models.operations import CredentialRotationAudit, DeploymentProfile
 from app.models.user import User
 from app.schemas.smart_import import (
     AIProviderConfigCreate,
@@ -226,12 +227,26 @@ class AIProviderConfigService:
         key = key.strip()
         if not key or len(key) > 500:
             raise HTTPException(status_code=422, detail="API Key 无效")
+        old_version = item.key_version
         item.encrypted_api_key = AICredentialCipher().encrypt(key)
         item.key_last_four = key[-4:]
         item.key_version += 1
         item.last_test_status = "untested"
         item.last_error = None
         item.updated_by = user.id
+        self.db.add(
+            CredentialRotationAudit(
+                credential_type="ai_api_key",
+                credential_ref=item.id,
+                scope_type=item.scope_type,
+                company_id=item.company_id,
+                user_id=item.user_id,
+                old_version=old_version,
+                new_version=item.key_version,
+                rotated_by=user.id,
+                reason="用户主动轮换 AI API Key",
+            )
+        )
         self.db.commit()
         self.db.refresh(item)
         return item
@@ -258,6 +273,26 @@ class AIProviderConfigService:
     def enforce_policy(
         self, mode: str, item: AIProviderConfig | None, context: WorkspaceContext
     ) -> None:
+        deployment = (
+            self.db.query(DeploymentProfile)
+            .filter(DeploymentProfile.company_id == context.company_id)
+            .first()
+            if self.db is not None and context.company_id
+            else None
+        )
+        deployment_mode = (
+            deployment.deployment_mode if deployment else settings.DEPLOYMENT_MODE
+        )
+        network_policy = (
+            deployment.network_policy
+            if deployment
+            else ("offline" if deployment_mode == "offline" else "external_allowed")
+        )
+        if mode in {"platform", "byok"} and network_policy == "offline":
+            raise HTTPException(
+                status_code=503,
+                detail="当前为完全离线模式，请使用企业本地模型或手工录入",
+            )
         policy = self.get_policy(context)
         if not policy:
             return

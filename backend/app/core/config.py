@@ -175,6 +175,14 @@ class Settings(BaseSettings):
     AI_MAX_INPUT_CHARS: int = 120000
     AI_MAX_CONCURRENT_TASKS: int = 2
     AI_MAX_QUEUED_TASKS: int = 50
+    # P8 deployment modes: saas, private, offline. Offline mode never selects
+    # an external provider and always keeps manual entry available.
+    DEPLOYMENT_MODE: str = "saas"
+    AI_OFFLINE_BASE_URL: Optional[str] = None
+    AI_OFFLINE_MODEL: Optional[str] = None
+    AI_OFFLINE_PROVIDER: str = "openai_compatible_chat"
+    AI_OFFLINE_API_KEY: str = "local-no-key"
+    OCR_OFFLINE_ENABLED: bool = False
 
     # 安全配置
     BCRYPT_ROUNDS: int = 12
@@ -410,6 +418,13 @@ class Settings(BaseSettings):
         if isinstance(v, list):
             return [str(item).strip().lower() for item in v if str(item).strip()]
         raise ValueError(v)
+
+    @field_validator("DEPLOYMENT_MODE", mode="before")
+    def validate_deployment_mode(cls, v: str) -> str:
+        value = str(v).strip().lower()
+        if value not in {"saas", "private", "offline"}:
+            raise ValueError("DEPLOYMENT_MODE must be saas, private, or offline")
+        return value
 
 # 创建全局设置实例
 settings = Settings()

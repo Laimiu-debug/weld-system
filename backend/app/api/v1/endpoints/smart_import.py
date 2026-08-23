@@ -1,5 +1,6 @@
 """Smart-import extraction, review, and controlled publication endpoints."""
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Iterator, Optional
 from urllib.parse import quote
 
@@ -103,6 +104,7 @@ from app.services.extraction_schema_service import (
 )
 from app.services.smart_import_service import SmartImportService
 from app.services.smart_import_audit_service import SmartImportAuditService
+from app.services.operations_service import OperationsService
 from app.services.smart_import_review_service import SmartImportReviewService
 from app.services.smart_import_template_service import SmartImportTemplateService
 from app.services.system_config_service import get_max_upload_bytes
@@ -259,12 +261,62 @@ def validate_ai_extraction_request(request: AIExtractionRequest) -> None:
             raise HTTPException(status_code=422, detail="临时 API Key 无效")
         if not request.model or not request.model.strip():
             raise HTTPException(status_code=422, detail="BYOK 模式必须指定模型")
+    elif request.mode == "offline":
+        if (
+            request.api_key is not None
+            or request.base_url is not None
+            or request.provider_config_id
+            or request.model is not None
+            or request.provider is not None
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="离线模式只使用服务端或企业本地模型配置",
+            )
     elif (
         request.api_key is not None
         or request.base_url is not None
         or request.provider_config_id
     ):
         raise HTTPException(status_code=422, detail="平台模式不接收客户端 API Key 或服务地址")
+
+
+def require_sensitive_document_consent(
+    db, document, request, provider_config, current_user, context
+) -> None:
+    """Drawings and procedure records require explicit, versioned outbound consent."""
+    if document.document_type not in {"drawing", "pqr"}:
+        return
+    if request.mode == "offline":
+        return
+    provider_url = (
+        provider_config.base_url
+        if provider_config is not None
+        else request.base_url or settings.AI_PLATFORM_BASE_URL
+    )
+    OperationsService(db).require_consent(
+        document.id,
+        provider_url,
+        current_user,
+        context,
+        request.outbound_consent_id,
+    )
+
+
+def resolve_offline_provider_config(db, context):
+    profile = OperationsService(db).get_deployment_profile(context)
+    base_url = (
+        getattr(profile, "local_ai_base_url", None) or settings.AI_OFFLINE_BASE_URL
+    )
+    model = getattr(profile, "local_ai_model", None) or settings.AI_OFFLINE_MODEL
+    if not base_url or not model:
+        raise HTTPException(status_code=503, detail="本地离线模型尚未配置")
+    return SimpleNamespace(
+        id=None,
+        provider=settings.AI_OFFLINE_PROVIDER,
+        base_url=base_url,
+        model=model,
+    )
 
 
 def resolve_workspace(
@@ -801,8 +853,15 @@ def extract_document(
             provider_config, saved_key = credential_service.resolve_for_use(
                 request.provider_config_id, current_user, context
             )
+        elif request.mode == "offline":
+            credential_service.enforce_policy("offline", None, context)
+            provider_config = resolve_offline_provider_config(db, context)
+            saved_key = settings.AI_OFFLINE_API_KEY
         else:
             credential_service.enforce_policy(request.mode, None, context)
+        require_sensitive_document_consent(
+            db, document, request, provider_config, current_user, context
+        )
         provider = build_provider(request, provider_config, saved_key)
         job, entity, pages = AIExtractionService(db, storage, provider).run(
             document_id=document_id,
@@ -812,7 +871,7 @@ def extract_document(
             run_ocr=request.run_ocr,
             user=current_user,
             context=context,
-            provider_config_id=provider_config.id if provider_config else None,
+            provider_config_id=getattr(provider_config, "id", None),
         )
         return AIExtractionResponse(
             job=job,
@@ -872,12 +931,24 @@ def queue_document_extraction(
         )
         provider_name = provider_config.provider
         model_name = provider_config.model
+    elif request.mode == "offline":
+        credentials.enforce_policy("offline", None, context)
+        provider_config = resolve_offline_provider_config(db, context)
+        provider_name = provider_config.provider
+        model_name = provider_config.model
     else:
         credentials.enforce_policy("platform", None, context)
         if not settings.AI_PLATFORM_API_KEY or not settings.AI_PLATFORM_MODEL:
             raise HTTPException(status_code=503, detail="平台 AI 服务尚未配置")
         provider_name = settings.AI_PLATFORM_PROVIDER
         model_name = settings.AI_PLATFORM_MODEL
+    require_sensitive_document_consent(
+        db, document, request, provider_config, current_user, context
+    )
+    schema_snapshot = {
+        **schema_snapshot,
+        "outbound_consent_id": request.outbound_consent_id,
+    }
     service = AIExtractionQueueService(db)
     job = service.create_job(
         document_id=document_id,
@@ -886,7 +957,7 @@ def queue_document_extraction(
         mode=request.mode,
         provider=provider_name,
         model=model_name,
-        provider_config_id=provider_config.id if provider_config else None,
+        provider_config_id=getattr(provider_config, "id", None),
         run_ocr=request.run_ocr,
         user=current_user,
         context=context,
@@ -1049,6 +1120,10 @@ def queue_batch_extraction(
             request.provider_config_id, current_user, context
         )
         provider_name, model_name = provider_config.provider, provider_config.model
+    elif request.mode == "offline":
+        credentials.enforce_policy("offline", None, context)
+        provider_config = resolve_offline_provider_config(db, context)
+        provider_name, model_name = provider_config.provider, provider_config.model
     else:
         credentials.enforce_policy("platform", None, context)
         if not settings.AI_PLATFORM_API_KEY or not settings.AI_PLATFORM_MODEL:
@@ -1061,14 +1136,30 @@ def queue_batch_extraction(
     items: list[BatchOperationItem] = []
     for document in documents:
         try:
+            document_request = request.model_copy(
+                update={
+                    "outbound_consent_id": request.outbound_consent_ids.get(document.id)
+                }
+            )
+            require_sensitive_document_consent(
+                db,
+                document,
+                document_request,
+                provider_config,
+                current_user,
+                context,
+            )
             job = queue.create_job(
                 document_id=document.id,
-                schema_snapshot=schema_snapshot,
+                schema_snapshot={
+                    **schema_snapshot,
+                    "outbound_consent_id": document_request.outbound_consent_id,
+                },
                 template_id=template_id,
                 mode=request.mode,
                 provider=provider_name,
                 model=model_name,
-                provider_config_id=provider_config.id if provider_config else None,
+                provider_config_id=getattr(provider_config, "id", None),
                 run_ocr=request.run_ocr,
                 user=current_user,
                 context=context,

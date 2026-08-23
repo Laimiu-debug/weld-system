@@ -37,6 +37,8 @@ alembic downgrade -1    # 仅在明确需要回滚时
 
 ## 备份与恢复
 
+P8 的备份登记接口会检查数据库、原始文件、字段证据、规则版本和审批记录五类覆盖范围；只有校验和通过并完成隔离恢复演练，状态才会是 `passed`。详细清单与外发、离线部署、租户删除流程见 `docs/P8_OPERATIONS_SECURITY.md`。
+
 生产 Compose 默认启动 `backup` 服务：每天生成 PostgreSQL custom-format
 备份和上传目录压缩包，保存到 `postgres_backups` volume，默认保留 14 天。
 可通过 `BACKUP_INTERVAL_SECONDS` 和 `BACKUP_RETENTION_DAYS` 调整。该 volume

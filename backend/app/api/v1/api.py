@@ -48,6 +48,7 @@ from app.api.v1.endpoints import (
     matching,
     sequence,
     consumable,
+    operations,
 )
 
 api_router = APIRouter()
@@ -99,6 +100,7 @@ api_router.include_router(engineering.router, prefix="/engineering", tags=["工�
 api_router.include_router(matching.router, prefix="/matching", tags=["WPS/PQR 自动匹配"])
 api_router.include_router(sequence.router, prefix="/sequences", tags=["焊序编排"])
 api_router.include_router(consumable.router, prefix="/consumables", tags=["焊材定额与领用"])
+api_router.include_router(operations.router, prefix="/operations", tags=["运维与私有化"])
 
 # 角色权限管理路由
 api_router.include_router(roles.router, prefix="/roles", tags=["角色权限管理"])

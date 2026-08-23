@@ -127,12 +127,17 @@ class AIExtractionQueueService:
         document = self.smart_import.get_document(document_id, user, context)
         if document.status not in {"ready", "failed"}:
             raise HTTPException(status_code=422, detail="请先完成文档分页解析")
-        try:
-            self.quota.enforce_task_limits(
-                user, context, max(1, int(getattr(document, "page_count", 0) or 0))
-            )
-        except AIQuotaError as exc:
-            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        if mode != "offline":
+            try:
+                self.quota.enforce_task_limits(
+                    user,
+                    context,
+                    max(1, int(getattr(document, "page_count", 0) or 0)),
+                )
+            except AIQuotaError as exc:
+                raise HTTPException(
+                    status_code=exc.status_code, detail=str(exc)
+                ) from exc
         duplicate = (
             self.smart_import._scope_query(
                 self.db.query(ExtractionJob), ExtractionJob, user, context

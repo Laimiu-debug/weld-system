@@ -1,8 +1,10 @@
 """Celery tasks for persistent smart-import extraction jobs."""
 import logging
 from datetime import UTC, datetime
+from types import SimpleNamespace
 
 from app.core.database import SessionLocal
+from app.core.config import settings
 from app.core.data_access import WorkspaceContext
 from app.models.smart_import import ExtractionJob, ImportBatch, SourceDocument
 from app.models.user import User
@@ -17,6 +19,7 @@ from app.services.ai_extraction_queue_service import AIExtractionQueueService
 from app.services.document_storage_service import get_document_storage
 from app.services.document_parser_service import DefaultDocumentParser
 from app.services.smart_import_service import SmartImportService
+from app.services.operations_service import OperationsService
 from app.tasks.celery_app import celery_app
 
 
@@ -105,6 +108,16 @@ def run_smart_import_parse(job_id: str) -> dict:
             _mark_setup_failure(db, job, "parse_failed", "后台文档解析失败")
         return {"job_id": job_id, "status": "failed", "error_code": "parse_failed"}
     finally:
+        try:
+            measured = (
+                db.query(ExtractionJob).filter(ExtractionJob.id == job_id).first()
+            )
+            if measured:
+                OperationsService(db).record_extraction_job(measured)
+                db.commit()
+        except Exception:
+            logger.exception("Could not persist parse task metrics for %s", job_id)
+            db.rollback()
         db.close()
 
 
@@ -139,11 +152,63 @@ def run_smart_import_extraction(job_id: str) -> dict:
                 job.provider_config_id, user, context
             )
             request = AIExtractionRequest(
-                mode="byok", provider_config_id=saved_config.id
+                mode="byok",
+                provider_config_id=saved_config.id,
+                outbound_consent_id=(job.schema_snapshot or {}).get(
+                    "outbound_consent_id"
+                ),
             )
         else:
             credentials.enforce_policy(job.mode, None, context)
-            request = AIExtractionRequest(mode="platform")
+            request = AIExtractionRequest(
+                mode="offline" if job.mode == "offline" else "platform",
+                outbound_consent_id=(job.schema_snapshot or {}).get(
+                    "outbound_consent_id"
+                ),
+            )
+            if job.mode == "offline":
+                profile = OperationsService(db).get_deployment_profile(context)
+                base_url = (
+                    getattr(profile, "local_ai_base_url", None)
+                    or settings.AI_OFFLINE_BASE_URL
+                )
+                model = (
+                    getattr(profile, "local_ai_model", None)
+                    or settings.AI_OFFLINE_MODEL
+                )
+                if not base_url or not model:
+                    _mark_setup_failure(
+                        db,
+                        job,
+                        "offline_model_not_configured",
+                        "本地离线模型尚未配置",
+                    )
+                    return {"job_id": job.id, "status": "failed"}
+                saved_config = SimpleNamespace(
+                    provider=settings.AI_OFFLINE_PROVIDER,
+                    base_url=base_url,
+                    model=model,
+                )
+                saved_key = settings.AI_OFFLINE_API_KEY
+        document = (
+            db.query(SourceDocument)
+            .filter(SourceDocument.id == job.document_id)
+            .first()
+        )
+        if (
+            document
+            and document.document_type in {"drawing", "pqr"}
+            and request.mode != "offline"
+        ):
+            OperationsService(db).require_consent(
+                document.id,
+                saved_config.base_url
+                if saved_config
+                else settings.AI_PLATFORM_BASE_URL,
+                user,
+                context,
+                request.outbound_consent_id,
+            )
         provider = build_provider(request, saved_config, saved_key)
         completed, entity, _ = AIExtractionService(
             db, get_document_storage(), provider
@@ -183,6 +248,16 @@ def run_smart_import_extraction(job_id: str) -> dict:
             _refresh_job_batch(db, job_id)
         except Exception:
             logger.exception("Could not refresh batch state for task %s", job_id)
+        try:
+            measured = (
+                db.query(ExtractionJob).filter(ExtractionJob.id == job_id).first()
+            )
+            if measured:
+                OperationsService(db).record_extraction_job(measured)
+                db.commit()
+        except Exception:
+            logger.exception("Could not persist extraction task metrics for %s", job_id)
+            db.rollback()
         db.close()
 
 

@@ -359,12 +359,13 @@ class AIQuotaStatusResponse(BaseModel):
 
 
 class AIExtractionRequest(BaseModel):
-    mode: Literal["platform", "byok"] = "platform"
+    mode: Literal["platform", "byok", "offline"] = "platform"
     provider: Literal["openai_responses", "openai_compatible_chat"] | None = None
     model: str | None = Field(None, min_length=1, max_length=120)
     base_url: str | None = Field(None, min_length=8, max_length=500)
     api_key: SecretStr | None = Field(None, repr=False)
     provider_config_id: str | None = Field(None, max_length=36)
+    outbound_consent_id: str | None = Field(None, max_length=36)
     template_id: str | None = Field(None, max_length=100)
     module_id: str | None = Field(None, max_length=100)
     run_ocr: bool = True
@@ -463,6 +464,7 @@ class AIExtractionQueuedResponse(BaseModel):
 
 class BatchAIExtractionRequest(AIExtractionRequest):
     document_ids: list[str] = Field(default_factory=list, max_length=100)
+    outbound_consent_ids: dict[str, str] = Field(default_factory=dict)
 
 
 class BatchOperationItem(BaseModel):

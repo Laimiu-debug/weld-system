@@ -9,8 +9,12 @@ from app.tasks.notification_tasks import (
     run_daily_notification_tasks,
     run_hourly_notification_tasks,
 )
-from app.tasks.smart_import_tasks import run_smart_import_extraction, run_smart_import_parse
+from app.tasks.smart_import_tasks import (
+    run_smart_import_extraction,
+    run_smart_import_parse,
+)
 from app.tasks.document_tasks import purge_expired_document_artifacts
+from app.tasks.operations_tasks import detect_operations_alerts
 
 
 def test_notification_tasks_are_registered() -> None:
@@ -19,6 +23,7 @@ def test_notification_tasks_are_registered() -> None:
     assert run_smart_import_extraction.name == "smart_import.extract"
     assert run_smart_import_parse.name == "smart_import.parse"
     assert purge_expired_document_artifacts.name == "documents.purge_expired_artifacts"
+    assert detect_operations_alerts.name == "operations.detect_alerts"
 
 
 def test_notification_schedule_contains_daily_and_hourly_jobs() -> None:
@@ -30,3 +35,4 @@ def test_notification_schedule_contains_daily_and_hourly_jobs() -> None:
         == "documents.purge_expired_artifacts"
     )
     assert celery_app.conf.worker_concurrency >= 1
+    assert schedule["hourly-operations-alerts"]["task"] == "operations.detect_alerts"

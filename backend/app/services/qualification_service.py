@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 from datetime import date, datetime
 from typing import Any
 from uuid import uuid4
@@ -23,6 +24,7 @@ from app.models.wps import WPS
 from app.schemas.qualification import WPSPQRSupportConfirm, WPSPQRSupportCreate
 from app.services.pqr_service import PQRService
 from app.services.wps_service import WPSService
+from app.services.operations_service import OperationsService
 
 
 NBT47014_2023_PACK_ID = "47014000-2023-4000-8000-000000000001"
@@ -316,6 +318,7 @@ class QualificationService:
         fact_overrides: dict[str, Any] | None = None,
         force_recalculate: bool = False,
     ) -> PQRQualificationResult:
+        metric_started = time.perf_counter()
         pqr = self._get_pqr(pqr_id, user, context)
         pack = self.get_rule_pack(rule_pack_id or NBT47014_2023_PACK_ID)
         if (
@@ -353,6 +356,20 @@ class QualificationService:
             .first()
         )
         if existing and not force_recalculate:
+            try:
+                OperationsService(self.db).record_task_event(
+                    "rule",
+                    f"qualification:{existing.id}",
+                    "completed",
+                    context,
+                    user.id,
+                    duration_ms=int((time.perf_counter() - metric_started) * 1000),
+                    log_context={"cached": True, "rule_pack_id": pack.id},
+                )
+                self.db.commit()
+            except Exception:  # pragma: no cover - observability is fail-open
+                # Metrics must never make a deterministic rule result unavailable.
+                pass
             return existing
         evaluated = evaluate_nbt47014_2023(facts)
         current = (
@@ -388,6 +405,18 @@ class QualificationService:
             **_workspace(pqr),
         )
         self.db.add(result)
+        try:
+            OperationsService(self.db).record_task_event(
+                "rule",
+                f"qualification:{result.id}",
+                "completed",
+                context,
+                user.id,
+                duration_ms=int((time.perf_counter() - metric_started) * 1000),
+                log_context={"cached": False, "rule_pack_id": pack.id},
+            )
+        except Exception:  # pragma: no cover - observability is fail-open
+            pass
         self.db.commit()
         self.db.refresh(result)
         return result

@@ -148,6 +148,33 @@ def build_provider(
             ) from exc
         api_key = settings.AI_PLATFORM_API_KEY
         model = settings.AI_PLATFORM_MODEL
+    elif request.mode == "offline":
+        offline_base_url = (
+            getattr(saved_config, "base_url", None) or settings.AI_OFFLINE_BASE_URL
+        )
+        offline_model = (
+            getattr(saved_config, "model", None) or settings.AI_OFFLINE_MODEL
+        )
+        if not offline_base_url or not offline_model:
+            raise AIExtractionRunError(
+                "offline_model_not_configured", "本地离线模型尚未配置", 503
+            )
+        provider = (
+            getattr(saved_config, "provider", None) or settings.AI_OFFLINE_PROVIDER
+        )
+        hostname = urlsplit(offline_base_url).hostname or ""
+        try:
+            base_url = validate_ai_base_url(
+                offline_base_url,
+                [hostname],
+                allow_private=True,
+            )
+        except ValueError as exc:
+            raise AIExtractionRunError(
+                "invalid_offline_model_config", "本地离线模型地址配置无效", 503
+            ) from exc
+        api_key = saved_api_key or settings.AI_OFFLINE_API_KEY
+        model = offline_model
     elif saved_config is not None and saved_api_key is not None:
         provider = saved_config.provider
         base_url = saved_config.base_url

@@ -51,6 +51,16 @@ from app.models.production_release import (
     ProductionResourceAuthorization,
     ProductionSequenceChangeRequest,
 )
+from app.models.operations import (
+    AIProviderHealthCheck,
+    BackupVerification,
+    CredentialRotationAudit,
+    DataOutboundConsent,
+    DeploymentProfile,
+    OperationalAlert,
+    OperationalTaskEvent,
+    TenantLifecycleJob,
+)
 from app.models.quality import QualityInspection, QualityStandard
 from app.models.business_extensions import EmployeePerformance, ReportTemplate
 from app.models.feedback import UserFeedback

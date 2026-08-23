@@ -20,6 +20,7 @@ celery_app = Celery(
         "app.tasks.notification_tasks",
         "app.tasks.smart_import_tasks",
         "app.tasks.document_tasks",
+        "app.tasks.operations_tasks",
     ],
 )
 
@@ -44,6 +45,10 @@ celery_app.conf.update(
         "daily-document-retention-cleanup": {
             "task": "documents.purge_expired_artifacts",
             "schedule": crontab(hour=2, minute=30),
+        },
+        "hourly-operations-alerts": {
+            "task": "operations.detect_alerts",
+            "schedule": crontab(minute=15),
         },
     },
 )
