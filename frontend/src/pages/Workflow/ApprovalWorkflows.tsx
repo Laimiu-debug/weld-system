@@ -53,6 +53,8 @@ const DOCUMENT_TYPES = [
   { value: 'equipment', label: '设备管理' },
   { value: 'material', label: '焊材管理' },
   { value: 'welder', label: '焊工管理' },
+  { value: 'product_version', label: '产品图纸版本' },
+  { value: 'weld_sequence_version', label: '焊序版本' },
 ]
 
 // 审批模式选项

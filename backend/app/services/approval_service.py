@@ -294,6 +294,19 @@ class ApprovalService:
             else str(instance.document_type)
         )
         model = model_by_type.get(document_type)
+        if document_type == DocumentType.WELD_SEQUENCE_VERSION.value:
+            from app.models.sequence import WeldSequenceRevision
+
+            sequence = (
+                self.db.query(WeldSequenceRevision)
+                .filter(WeldSequenceRevision.id == instance.document_ref)
+                .first()
+            )
+            if sequence is None:
+                raise HTTPException(status_code=409, detail="审批焊序版本已不存在")
+            if sequence.approval_snapshot_hash != instance.snapshot_hash:
+                raise HTTPException(status_code=409, detail="焊序版本已变化，请基于新版本重新提交")
+            return
         if model is None:
             return
         document = self.db.query(model).filter(model.id == instance.document_id).first()
@@ -861,7 +874,11 @@ class ApprovalService:
             return False
 
         permissions = permissions_by_company.get(company_id) or {}
-        module_key = f"{instance.document_type}_management"
+        module_key = (
+            "engineering_management"
+            if instance.document_type == DocumentType.WELD_SEQUENCE_VERSION
+            else f"{instance.document_type}_management"
+        )
         module_perms = permissions.get(module_key, {}) or {}
         if not bool(module_perms.get("approve", False)):
             return False
@@ -1005,6 +1022,28 @@ class ApprovalService:
                 document.status = new_status
                 document.updated_at = datetime.utcnow()
 
+        elif instance.document_type == DocumentType.WELD_SEQUENCE_VERSION:
+            from app.models.sequence import WeldSequenceRevision
+
+            document = (
+                self.db.query(WeldSequenceRevision)
+                .filter(WeldSequenceRevision.id == instance.document_ref)
+                .first()
+            )
+            if document:
+                document.status = new_status
+                document.updated_at = datetime.utcnow()
+                if new_status == "approved":
+                    document.frozen_snapshot = instance.version_snapshot
+                    document.frozen_hash = instance.snapshot_hash
+                    document.approved_at = datetime.utcnow()
+                    document.approved_by = instance.final_approver_id
+                    self.db.query(WeldSequenceRevision).filter(
+                        WeldSequenceRevision.product_revision_id
+                        == document.product_revision_id,
+                        WeldSequenceRevision.status == "approved",
+                        WeldSequenceRevision.id != document.id,
+                    ).update({"status": "superseded"}, synchronize_session=False)
         elif instance.document_type == DocumentType.PPQR:
             from app.models.ppqr import PPQR
 

@@ -224,6 +224,11 @@ const WPSMatching: React.FC = () => {
           </Space>
           <Space wrap>
             <Button
+              onClick={() => navigate(`/engineering/revisions/${id}/sequence`)}
+            >
+              进入焊序编排
+            </Button>
+            <Button
               icon={<ReloadOutlined />}
               loading={running}
               onClick={() => void run(true)}

@@ -45,6 +45,7 @@ from app.api.v1.endpoints import (
     smart_import,
     engineering,
     matching,
+    sequence,
 )
 
 api_router = APIRouter()
@@ -94,6 +95,7 @@ api_router.include_router(
 )
 api_router.include_router(engineering.router, prefix="/engineering", tags=["工程图纸与焊缝"])
 api_router.include_router(matching.router, prefix="/matching", tags=["WPS/PQR 自动匹配"])
+api_router.include_router(sequence.router, prefix="/sequences", tags=["焊序编排"])
 
 # 角色权限管理路由
 api_router.include_router(roles.router, prefix="/roles", tags=["角色权限管理"])

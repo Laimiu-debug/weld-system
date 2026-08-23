@@ -86,6 +86,7 @@ from app.models.matching import (
     WPSCapabilityGap,
     WPSMatchFreeze,
 )
+from app.models.sequence import StepDependency, WeldSequenceRevision, WeldSequenceStep
 
 __all__ = [
     "User",
@@ -168,4 +169,7 @@ __all__ = [
     "WPSMatchCriterion",
     "WPSCapabilityGap",
     "WPSMatchFreeze",
+    "WeldSequenceRevision",
+    "WeldSequenceStep",
+    "StepDependency",
 ]

@@ -389,6 +389,11 @@ const DrawingReview: React.FC = () => {
               WPS/PQR 匹配
             </Button>
             <Button
+              onClick={() => navigate(`/engineering/revisions/${id}/sequence`)}
+            >
+              焊序编排
+            </Button>
+            <Button
               icon={<ArrowLeftOutlined />}
               onClick={() => navigate("/engineering")}
             />
