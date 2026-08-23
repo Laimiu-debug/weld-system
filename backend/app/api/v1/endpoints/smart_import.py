@@ -89,6 +89,7 @@ from app.services.extraction_schema_service import (
     build_template_extraction_schema,
 )
 from app.services.smart_import_service import SmartImportService
+from app.services.smart_import_audit_service import SmartImportAuditService
 from app.services.smart_import_review_service import SmartImportReviewService
 from app.services.system_config_service import get_max_upload_bytes
 from app.services.wps_template_service import WPSTemplateService
@@ -276,6 +277,18 @@ def resolve_workspace(
     )
 
 
+def ensure_import_permission(
+    db: Session, user: User, context: WorkspaceContext, action: str
+) -> None:
+    """Personal data is owner-only; enterprise actions use fine-grained roles."""
+    if (
+        getattr(context, "workspace_type", WorkspaceType.PERSONAL)
+        != WorkspaceType.ENTERPRISE
+    ):
+        return
+    ensure_module_permission(db, user, "import", action)
+
+
 @router.get("/ai-provider-configs", response_model=list[AIProviderConfigResponse])
 def list_ai_provider_configs(
     db: Session = Depends(deps.get_db),
@@ -283,6 +296,7 @@ def list_ai_provider_configs(
     workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
 ) -> list[AIProviderConfigResponse]:
     context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "key_manage")
     return [
         provider_config_response(item)
         for item in AIProviderConfigService(db).list(current_user, context)
@@ -302,6 +316,7 @@ def create_ai_provider_config(
         f"ai-provider-config:{current_user.id}", limit=10, window_seconds=60
     )
     context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "key_manage")
     return provider_config_response(
         AIProviderConfigService(db).create(data, current_user, context)
     )
@@ -318,6 +333,7 @@ def update_ai_provider_config(
     workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
 ) -> AIProviderConfigResponse:
     context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "key_manage")
     service = AIProviderConfigService(db)
     item = service.get(config_id, current_user, context)
     return provider_config_response(service.update(item, data, current_user, context))
@@ -334,6 +350,7 @@ def rotate_ai_provider_key(
     workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
 ) -> AIProviderConfigResponse:
     context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "key_manage")
     service = AIProviderConfigService(db)
     item = service.get(config_id, current_user, context)
     return provider_config_response(
@@ -349,6 +366,7 @@ def disable_ai_provider_config(
     workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
 ) -> None:
     context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "key_manage")
     service = AIProviderConfigService(db)
     service.disable(
         service.get(config_id, current_user, context), current_user, context
@@ -368,6 +386,7 @@ def test_ai_provider_config(
         f"ai-provider-test:{current_user.id}", limit=5, window_seconds=60
     )
     context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "key_manage")
     service = AIProviderConfigService(db)
     item, key = service.resolve_for_use(config_id, current_user, context)
     provider = build_provider(
@@ -434,6 +453,7 @@ def create_batch(
     workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
 ) -> ImportBatchResponse:
     context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "upload")
     return SmartImportService(db).create_batch(data, current_user, context)
 
 
@@ -509,6 +529,7 @@ def upload_document(
     if not file.filename:
         raise HTTPException(status_code=400, detail="没有选择文件")
     context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "upload")
     service = SmartImportService(db)
     batch = service.get_batch(batch_id, current_user, context)
     stored = None
@@ -525,7 +546,14 @@ def upload_document(
             document_type=document_type or batch.target_entity_type,
             document_version=document_version,
         )
-        return service.register_document(batch.id, registration, current_user, context)
+        document = service.register_document(
+            batch.id, registration, current_user, context
+        )
+        SmartImportAuditService(db).record_file_access(
+            "upload", document, current_user.id, context
+        )
+        db.commit()
+        return document
     except DocumentUploadError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValidationError as exc:
@@ -551,6 +579,7 @@ def download_document(
         f"smart-import-download:{current_user.id}", limit=30, window_seconds=60
     )
     context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "view")
     document = SmartImportService(db).get_document(document_id, current_user, context)
     if not document.storage_key:
         raise HTTPException(status_code=404, detail="该记录没有可下载的原件")
@@ -558,6 +587,10 @@ def download_document(
         stream = storage.open_stream(document.storage_key)
     except DocumentUploadError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    SmartImportAuditService(db).record_file_access(
+        "download", document, current_user.id, context
+    )
+    db.commit()
 
     def content() -> Iterator[bytes]:
         try:
@@ -591,6 +624,7 @@ def parse_document(
         f"smart-import-parse:{current_user.id}", limit=10, window_seconds=60
     )
     context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "extract")
     document, pages = SmartImportService(db).parse_document(
         document_id, current_user, context, storage, parser
     )
@@ -642,6 +676,7 @@ def extract_document(
         f"smart-import-extract:{current_user.id}", limit=5, window_seconds=60
     )
     context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "extract")
     validate_ai_extraction_request(request)
     document = SmartImportService(db).get_document(document_id, current_user, context)
     schema_snapshot, template_id = build_requested_schema(
@@ -708,6 +743,7 @@ def queue_document_extraction(
         f"smart-import-extract-queue:{current_user.id}", limit=10, window_seconds=60
     )
     context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "extract")
     validate_ai_extraction_request(request)
     if request.mode == "byok" and not request.provider_config_id:
         raise HTTPException(
@@ -856,6 +892,7 @@ def queue_batch_extraction(
     workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
 ) -> BatchOperationResponse:
     context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "extract")
     validate_ai_extraction_request(request)
     if request.mode == "byok" and not request.provider_config_id:
         raise HTTPException(status_code=422, detail="批量任务必须使用平台额度或已保存配置")
@@ -1008,6 +1045,7 @@ def publish_reviewed_batch_entities(
     workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
 ) -> BatchOperationResponse:
     context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "publish")
     smart_import = SmartImportService(db)
     batch = smart_import.get_batch(batch_id, current_user, context)
     documents = smart_import.get_batch_documents(batch, current_user, context)
@@ -1119,6 +1157,7 @@ def review_extracted_field(
     workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
 ) -> ExtractedEntityDetailResponse:
     context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "review")
     service = SmartImportReviewService(db)
     entity = service.get_entity(entity_id, current_user, context)
     ensure_module_permission(db, current_user, entity.entity_type, "update")
@@ -1138,6 +1177,7 @@ def bulk_accept_extracted_fields(
     workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
 ) -> ExtractedEntityDetailResponse:
     context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "review")
     service = SmartImportReviewService(db)
     entity = service.get_entity(entity_id, current_user, context)
     ensure_module_permission(db, current_user, entity.entity_type, "update")
@@ -1173,6 +1213,7 @@ def publish_extracted_entity(
     workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
 ) -> EntityPublishResponse:
     context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "publish")
     service = SmartImportReviewService(db)
     entity = service.get_entity(entity_id, current_user, context)
     ensure_module_permission(db, current_user, entity.entity_type, "create")
@@ -1199,6 +1240,7 @@ def create_manual_draft(
     workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
 ) -> ExtractedEntityResponse:
     context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "modify")
     return SmartImportService(db).create_manual_draft(
         document_id, data, current_user, context
     )

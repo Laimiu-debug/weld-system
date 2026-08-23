@@ -40,7 +40,13 @@ _RESOURCE_TO_MODULE = {
     "factories": "factory_management",
     "factory": "factory_management",
     "reports": "reports_management",
+    "engineering": "engineering_management",
+    "import": "import_management",
+    "capability": "capability_management",
+    "rules": "rules_management",
 }
+
+_SMART_DOMAIN_RESOURCES = frozenset({"engineering", "import", "capability", "rules"})
 
 _DEFAULT_EMPLOYEE_ACTIONS = frozenset({"read", "view", "create"})
 
@@ -91,7 +97,9 @@ def resolve_company_for_user(db: Session, user: User) -> Company:
     raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="未找到企业信息")
 
 
-def _module_allowed_from_role(permissions: Dict[str, Any], module: str, action: str) -> bool:
+def _module_allowed_from_role(
+    permissions: Dict[str, Any], module: str, action: str
+) -> bool:
     role_key = _ACTION_TO_ROLE_KEY.get(action, action)
     module_perms = permissions.get(module)
     if isinstance(module_perms, bool):
@@ -101,7 +109,9 @@ def _module_allowed_from_role(permissions: Dict[str, Any], module: str, action: 
     return False
 
 
-def user_has_module_permission(db: Session, user: User, resource: str, action: str) -> bool:
+def user_has_module_permission(
+    db: Session, user: User, resource: str, action: str
+) -> bool:
     if getattr(user, "is_superuser", False) or getattr(user, "is_admin", False):
         return True
 
@@ -132,10 +142,15 @@ def user_has_module_permission(db: Session, user: User, resource: str, action: s
 
     from app.services.user_service import user_service
 
+    if resource in _SMART_DOMAIN_RESOURCES and getattr(user, "is_active", False):
+        return True
+
     return user_service.has_permission(db, user.id, resource, action)
 
 
-def ensure_module_permission(db: Session, user: User, resource: str, action: str) -> None:
+def ensure_module_permission(
+    db: Session, user: User, resource: str, action: str
+) -> None:
     if not user_has_module_permission(db, user, resource, action):
         raise HTTPException(
             status_code=http_status.HTTP_403_FORBIDDEN,
@@ -226,7 +241,9 @@ def validate_invite_targets(
     return company_role_id, factory_id
 
 
-def flatten_company_role_permissions(role_permissions: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def flatten_company_role_permissions(
+    role_permissions: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
     out: Dict[str, Any] = {}
     if not role_permissions:
         return out

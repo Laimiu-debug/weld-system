@@ -2,6 +2,12 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+from fastapi import HTTPException
+from fastapi.encoders import jsonable_encoder
+
+from app.models.approval import DocumentType
+from app.models.wps import WPS
 from app.services.approval_service import ApprovalService
 
 
@@ -72,7 +78,49 @@ def test_current_step_config_is_one_based():
             {"step_number": 2, "approver_type": "user", "approver_ids": [9]},
         ]
     )
-    instance = SimpleNamespace(current_step=2, workflow_id=1, workflow_definition=workflow)
+    instance = SimpleNamespace(
+        current_step=2, workflow_id=1, workflow_definition=workflow
+    )
     step = service._current_step_config(instance, workflow)
     assert step["approver_type"] == "user"
     assert step["approver_ids"] == [9]
+
+
+def test_new_versioned_approval_document_types_are_registered():
+    assert {
+        DocumentType.IMPORT_DRAFT.value,
+        DocumentType.RULE_PACKAGE.value,
+        DocumentType.PRODUCT_VERSION.value,
+        DocumentType.WELD_SEQUENCE_VERSION.value,
+    } == {
+        "import_draft",
+        "rule_package",
+        "product_version",
+        "weld_sequence_version",
+    }
+
+
+def test_approval_detects_silent_document_change():
+    db = MagicMock()
+    document = WPS(id=11, title="Original", wps_number="WPS-11")
+    snapshot = jsonable_encoder(
+        {
+            column.name: getattr(document, column.name)
+            for column in document.__table__.columns
+            if column.name not in {"status", "updated_at"}
+        }
+    )
+    service = ApprovalService(db)
+    instance = SimpleNamespace(
+        document_type="wps",
+        document_id=11,
+        snapshot_hash=service._snapshot_hash(snapshot),
+    )
+    db.query.return_value.filter.return_value.first.return_value = document
+
+    service._assert_snapshot_unchanged(instance)
+    document.title = "Changed without resubmission"
+
+    with pytest.raises(HTTPException) as exc_info:
+        service._assert_snapshot_unchanged(instance)
+    assert exc_info.value.status_code == 409

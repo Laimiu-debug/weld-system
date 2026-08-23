@@ -3,10 +3,13 @@ Approval workflow service for the welding system backend.
 审批工作流服务
 """
 from typing import List, Optional, Dict, Any, Tuple
+import hashlib
+import json
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 from fastapi import HTTPException, status
+from fastapi.encoders import jsonable_encoder
 
 from app.models.approval import (
     ApprovalWorkflowDefinition,
@@ -15,7 +18,7 @@ from app.models.approval import (
     ApprovalNotification,
     ApprovalStatus,
     ApprovalAction,
-    DocumentType
+    DocumentType,
 )
 from app.models.user import User
 from app.models.company import CompanyRole, CompanyEmployee
@@ -24,24 +27,22 @@ from app.schemas.approval import (
     WorkflowDefinitionCreate,
     ApprovalInstanceCreate,
     ApprovalHistoryCreate,
-    ApprovalNotificationCreate
+    ApprovalNotificationCreate,
 )
 from app.services.notification_service import NotificationService
 
 
 class ApprovalService:
     """审批服务类"""
-    
+
     def __init__(self, db: Session):
         self.db = db
         self.notification_service = NotificationService(db)
-    
+
     # ==================== 工作流定义管理 ====================
-    
+
     def get_workflow_for_document(
-        self,
-        document_type: str,
-        workspace_context: WorkspaceContext
+        self, document_type: str, workspace_context: WorkspaceContext
     ) -> Optional[ApprovalWorkflowDefinition]:
         """
         获取文档类型对应的工作流定义
@@ -50,35 +51,43 @@ class ApprovalService:
         # 如果是个人工作区，不需要审批流程
         if workspace_context.is_personal():
             return None
-        
+
         # 企业工作区：查找企业自定义工作流
         if workspace_context.company_id:
-            workflow = self.db.query(ApprovalWorkflowDefinition).filter(
-                ApprovalWorkflowDefinition.document_type == document_type,
-                ApprovalWorkflowDefinition.company_id == workspace_context.company_id,
-                ApprovalWorkflowDefinition.is_active == True
-            ).order_by(
-                ApprovalWorkflowDefinition.is_default.desc(),
-                ApprovalWorkflowDefinition.created_at.desc()
-            ).first()
-            
+            workflow = (
+                self.db.query(ApprovalWorkflowDefinition)
+                .filter(
+                    ApprovalWorkflowDefinition.document_type == document_type,
+                    ApprovalWorkflowDefinition.company_id
+                    == workspace_context.company_id,
+                    ApprovalWorkflowDefinition.is_active == True,
+                )
+                .order_by(
+                    ApprovalWorkflowDefinition.is_default.desc(),
+                    ApprovalWorkflowDefinition.created_at.desc(),
+                )
+                .first()
+            )
+
             if workflow:
                 return workflow
-        
+
         # 查找系统默认工作流
-        workflow = self.db.query(ApprovalWorkflowDefinition).filter(
-            ApprovalWorkflowDefinition.document_type == document_type,
-            ApprovalWorkflowDefinition.company_id.is_(None),
-            ApprovalWorkflowDefinition.is_active == True,
-            ApprovalWorkflowDefinition.is_default == True
-        ).first()
-        
+        workflow = (
+            self.db.query(ApprovalWorkflowDefinition)
+            .filter(
+                ApprovalWorkflowDefinition.document_type == document_type,
+                ApprovalWorkflowDefinition.company_id.is_(None),
+                ApprovalWorkflowDefinition.is_active == True,
+                ApprovalWorkflowDefinition.is_default == True,
+            )
+            .first()
+        )
+
         return workflow
-    
+
     def create_workflow_definition(
-        self,
-        workflow_data: WorkflowDefinitionCreate,
-        current_user: User
+        self, workflow_data: WorkflowDefinitionCreate, current_user: User
     ) -> ApprovalWorkflowDefinition:
         """创建工作流定义"""
         workflow = ApprovalWorkflowDefinition(
@@ -91,21 +100,19 @@ class ApprovalService:
             steps=workflow_data.steps,
             is_active=workflow_data.is_active,
             is_default=workflow_data.is_default,
-            created_by=current_user.id
+            created_by=current_user.id,
         )
-        
+
         self.db.add(workflow)
         self.db.commit()
         self.db.refresh(workflow)
-        
+
         return workflow
-    
+
     # ==================== 审批实例管理 ====================
-    
+
     def should_require_approval(
-        self,
-        document_type: str,
-        workspace_context: WorkspaceContext
+        self, document_type: str, workspace_context: WorkspaceContext
     ) -> bool:
         """
         判断是否需要审批
@@ -115,26 +122,28 @@ class ApprovalService:
         # 个人工作区不需要审批
         if workspace_context.is_personal():
             return False
-        
+
         # 企业工作区需要审批
         if workspace_context.is_enterprise():
             # 检查是否有对应的工作流
             workflow = self.get_workflow_for_document(document_type, workspace_context)
             return workflow is not None
-        
+
         return False
-    
+
     def submit_for_approval(
         self,
         document_type: str,
-        document_id: int,
+        document_id: int | str,
         document_number: str,
         document_title: str,
         current_user: User,
         workspace_context: WorkspaceContext,
         notes: Optional[str] = None,
         priority: str = "normal",
-        workflow_id: Optional[int] = None
+        workflow_id: Optional[int] = None,
+        version_snapshot: Optional[Dict[str, Any]] = None,
+        version_key: Optional[str] = None,
     ) -> ApprovalInstance:
         """
         提交文档审批
@@ -142,31 +151,42 @@ class ApprovalService:
         Args:
             workflow_id: 指定的工作流ID,如果为None则使用默认工作流
         """
+        if not version_snapshot:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="审批必须绑定非空版本快照",
+            )
+        snapshot_hash = self._snapshot_hash(version_snapshot)
+
         # 检查是否需要审批
         if not self.should_require_approval(document_type, workspace_context):
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="该工作区不需要审批流程"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="该工作区不需要审批流程"
             )
 
         # 获取工作流定义
         if workflow_id:
             # 使用指定的工作流
-            workflow = self.db.query(ApprovalWorkflowDefinition).filter(
-                ApprovalWorkflowDefinition.id == workflow_id,
-                ApprovalWorkflowDefinition.document_type == document_type,
-                ApprovalWorkflowDefinition.is_active == True
-            ).first()
+            workflow = (
+                self.db.query(ApprovalWorkflowDefinition)
+                .filter(
+                    ApprovalWorkflowDefinition.id == workflow_id,
+                    ApprovalWorkflowDefinition.document_type == document_type,
+                    ApprovalWorkflowDefinition.is_active == True,
+                )
+                .first()
+            )
             if not workflow:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="指定的工作流不存在或已停用"
+                    status_code=status.HTTP_404_NOT_FOUND, detail="指定的工作流不存在或已停用"
                 )
             # 验证权限
-            if workflow.company_id and workflow.company_id != workspace_context.company_id:
+            if (
+                workflow.company_id
+                and workflow.company_id != workspace_context.company_id
+            ):
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="无权使用此工作流"
+                    status_code=status.HTTP_403_FORBIDDEN, detail="无权使用此工作流"
                 )
         else:
             # 使用默认工作流
@@ -174,30 +194,41 @@ class ApprovalService:
             if not workflow:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"未找到{document_type}的审批工作流"
+                    detail=f"未找到{document_type}的审批工作流",
                 )
-        
+
         # 检查是否已有待审批的实例
-        existing_instance = self.db.query(ApprovalInstance).filter(
-            ApprovalInstance.document_type == document_type,
-            ApprovalInstance.document_id == document_id,
-            ApprovalInstance.status.in_([
-                ApprovalStatus.PENDING,
-                ApprovalStatus.IN_PROGRESS
-            ])
-        ).first()
-        
+        document_ref = str(document_id)
+        existing_instance = (
+            self.db.query(ApprovalInstance)
+            .filter(
+                ApprovalInstance.document_type == document_type,
+                ApprovalInstance.document_ref == document_ref,
+                ApprovalInstance.status.in_(
+                    [ApprovalStatus.PENDING, ApprovalStatus.IN_PROGRESS]
+                ),
+            )
+            .first()
+        )
+
         if existing_instance:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="该文档已有待审批的流程"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="该文档已有待审批的流程"
             )
-        
+
         # 创建审批实例
         instance = ApprovalInstance(
             workflow_id=workflow.id,
             document_type=document_type,
-            document_id=document_id,
+            document_id=(
+                int(document_id)
+                if isinstance(document_id, int) or str(document_id).isdigit()
+                else None
+            ),
+            document_ref=document_ref,
+            version_key=version_key or snapshot_hash[:16],
+            version_snapshot=version_snapshot,
+            snapshot_hash=snapshot_hash,
             document_number=document_number,
             document_title=document_title,
             workspace_type=workspace_context.workspace_type,
@@ -205,16 +236,18 @@ class ApprovalService:
             factory_id=workspace_context.factory_id,
             status=ApprovalStatus.PENDING,
             current_step=1,
-            current_step_name=workflow.steps[0]['step_name'] if workflow.steps else None,
+            current_step_name=workflow.steps[0]["step_name"]
+            if workflow.steps
+            else None,
             submitter_id=current_user.id,
             submitted_at=datetime.utcnow(),
             priority=priority,
-            notes=notes
+            notes=notes,
         )
-        
+
         self.db.add(instance)
         self.db.flush()
-        
+
         # 记录提交历史
         self._add_history(
             instance_id=instance.id,
@@ -223,23 +256,68 @@ class ApprovalService:
             action=ApprovalAction.SUBMIT,
             operator_id=current_user.id,
             operator_name=current_user.username or current_user.email,
-            comment=notes or "提交审批申请"
+            comment=notes or "提交审批申请",
         )
-        
+
         # 发送通知给审批人
         self._notify_approvers(instance, workflow.steps[0] if workflow.steps else None)
-        
+
         self.db.commit()
         self.db.refresh(instance)
-        
+
         return instance
-    
+
+    @staticmethod
+    def _snapshot_hash(snapshot: Dict[str, Any]) -> str:
+        payload = json.dumps(
+            snapshot,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
+
+    def _assert_snapshot_unchanged(self, instance: ApprovalInstance) -> None:
+        from app.models.pqr import PQR
+        from app.models.ppqr import PPQR
+        from app.models.wps import WPS
+
+        model_by_type = {
+            DocumentType.WPS.value: WPS,
+            DocumentType.PQR.value: PQR,
+            DocumentType.PPQR.value: PPQR,
+        }
+        document_type = (
+            instance.document_type.value
+            if isinstance(instance.document_type, DocumentType)
+            else str(instance.document_type)
+        )
+        model = model_by_type.get(document_type)
+        if model is None:
+            return
+        document = self.db.query(model).filter(model.id == instance.document_id).first()
+        if document is None:
+            raise HTTPException(status_code=409, detail="审批对象已不存在")
+        current = jsonable_encoder(
+            {
+                column.name: getattr(document, column.name)
+                for column in document.__table__.columns
+                if column.name not in {"status", "updated_at"}
+            }
+        )
+        if self._snapshot_hash(current) != instance.snapshot_hash:
+            raise HTTPException(
+                status_code=409,
+                detail="审批对象已发生变化，请撤销后基于新版本重新提交",
+            )
+
     def approve_document(
         self,
         instance_id: int,
         current_user: User,
         comment: str,
-        attachments: List[str] = []
+        attachments: List[str] = [],
     ) -> ApprovalInstance:
         """批准文档"""
         return self._process_approval(
@@ -247,15 +325,15 @@ class ApprovalService:
             current_user=current_user,
             action=ApprovalAction.APPROVE,
             comment=comment,
-            attachments=attachments
+            attachments=attachments,
         )
-    
+
     def reject_document(
         self,
         instance_id: int,
         current_user: User,
         comment: str,
-        attachments: List[str] = []
+        attachments: List[str] = [],
     ) -> ApprovalInstance:
         """拒绝文档"""
         return self._process_approval(
@@ -263,15 +341,15 @@ class ApprovalService:
             current_user=current_user,
             action=ApprovalAction.REJECT,
             comment=comment,
-            attachments=attachments
+            attachments=attachments,
         )
-    
+
     def return_document(
         self,
         instance_id: int,
         current_user: User,
         comment: str,
-        attachments: List[str] = []
+        attachments: List[str] = [],
     ) -> ApprovalInstance:
         """退回文档"""
         return self._process_approval(
@@ -279,43 +357,37 @@ class ApprovalService:
             current_user=current_user,
             action=ApprovalAction.RETURN,
             comment=comment,
-            attachments=attachments
+            attachments=attachments,
         )
-    
+
     def cancel_approval(
-        self,
-        instance_id: int,
-        current_user: User,
-        comment: str
+        self, instance_id: int, current_user: User, comment: str
     ) -> ApprovalInstance:
         """取消审批（仅提交人可操作）"""
-        instance = self.db.query(ApprovalInstance).filter(
-            ApprovalInstance.id == instance_id
-        ).first()
-        
+        instance = (
+            self.db.query(ApprovalInstance)
+            .filter(ApprovalInstance.id == instance_id)
+            .first()
+        )
+
         if not instance:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="审批实例不存在"
-            )
-        
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="审批实例不存在")
+
         # 检查权限：只有提交人可以取消
         if instance.submitter_id != current_user.id:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="只有提交人可以取消审批"
+                status_code=status.HTTP_403_FORBIDDEN, detail="只有提交人可以取消审批"
             )
-        
+
         # 检查状态：只有待审批或审批中的可以取消
         if instance.status not in [ApprovalStatus.PENDING, ApprovalStatus.IN_PROGRESS]:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="当前状态不允许取消"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="当前状态不允许取消"
             )
-        
+
         instance.status = ApprovalStatus.CANCELLED
         instance.updated_at = datetime.utcnow()
-        
+
         # 记录历史
         self._add_history(
             instance_id=instance.id,
@@ -324,9 +396,9 @@ class ApprovalService:
             action=ApprovalAction.CANCEL,
             operator_id=current_user.id,
             operator_name=current_user.username or current_user.email,
-            comment=comment
+            comment=comment,
         )
-        
+
         self.db.commit()
         self.db.refresh(instance)
 
@@ -340,7 +412,8 @@ class ApprovalService:
         document_ids: List[int],
         current_user: User,
         workspace_context: WorkspaceContext,
-        notes: Optional[str] = None
+        notes: Optional[str] = None,
+        version_snapshots: Optional[Dict[int, Dict[str, Any]]] = None,
     ) -> List[ApprovalInstance]:
         """批量提交审批"""
         instances = []
@@ -357,7 +430,8 @@ class ApprovalService:
                     document_title=f"Document {doc_id}",
                     current_user=current_user,
                     workspace_context=workspace_context,
-                    notes=notes
+                    notes=notes,
+                    version_snapshot=(version_snapshots or {}).get(doc_id),
                 )
                 instances.append(instance)
             except Exception as e:
@@ -369,10 +443,7 @@ class ApprovalService:
         return instances
 
     def batch_approve(
-        self,
-        instance_ids: List[int],
-        current_user: User,
-        comment: str
+        self, instance_ids: List[int], current_user: User, comment: str
     ) -> Tuple[List[ApprovalInstance], List[Dict]]:
         """批量批准"""
         approved = []
@@ -381,9 +452,7 @@ class ApprovalService:
         for instance_id in instance_ids:
             try:
                 instance = self.approve_document(
-                    instance_id=instance_id,
-                    current_user=current_user,
-                    comment=comment
+                    instance_id=instance_id, current_user=current_user, comment=comment
                 )
                 approved.append(instance)
             except Exception as e:
@@ -392,10 +461,7 @@ class ApprovalService:
         return approved, errors
 
     def batch_reject(
-        self,
-        instance_ids: List[int],
-        current_user: User,
-        comment: str
+        self, instance_ids: List[int], current_user: User, comment: str
     ) -> Tuple[List[ApprovalInstance], List[Dict]]:
         """批量拒绝"""
         rejected = []
@@ -404,9 +470,7 @@ class ApprovalService:
         for instance_id in instance_ids:
             try:
                 instance = self.reject_document(
-                    instance_id=instance_id,
-                    current_user=current_user,
-                    comment=comment
+                    instance_id=instance_id, current_user=current_user, comment=comment
                 )
                 rejected.append(instance)
             except Exception as e:
@@ -421,14 +485,18 @@ class ApprovalService:
         current_user: User,
         workspace_context: WorkspaceContext,
         page: int = 1,
-        page_size: int = 20
+        page_size: int = 20,
     ) -> Tuple[List[ApprovalInstance], int]:
         """获取待我审批的列表（按当前步骤审批人配置过滤）"""
-        employee = self.db.query(CompanyEmployee).filter(
-            CompanyEmployee.user_id == current_user.id,
-            CompanyEmployee.company_id == workspace_context.company_id,
-            CompanyEmployee.status == "active"
-        ).first()
+        employee = (
+            self.db.query(CompanyEmployee)
+            .filter(
+                CompanyEmployee.user_id == current_user.id,
+                CompanyEmployee.company_id == workspace_context.company_id,
+                CompanyEmployee.status == "active",
+            )
+            .first()
+        )
 
         if not employee:
             return [], 0
@@ -441,10 +509,12 @@ class ApprovalService:
             )
             .filter(
                 ApprovalInstance.company_id == workspace_context.company_id,
-                ApprovalInstance.status.in_([
-                    ApprovalStatus.PENDING,
-                    ApprovalStatus.IN_PROGRESS,
-                ]),
+                ApprovalInstance.status.in_(
+                    [
+                        ApprovalStatus.PENDING,
+                        ApprovalStatus.IN_PROGRESS,
+                    ]
+                ),
             )
             .order_by(
                 ApprovalInstance.priority.desc(),
@@ -468,7 +538,7 @@ class ApprovalService:
 
         total = len(matched)
         start = max(0, (page - 1) * page_size)
-        return matched[start:start + page_size], total
+        return matched[start : start + page_size], total
 
     def get_my_submissions(
         self,
@@ -476,7 +546,7 @@ class ApprovalService:
         workspace_context: WorkspaceContext,
         status_filter: Optional[str] = None,
         page: int = 1,
-        page_size: int = 20
+        page_size: int = 20,
     ) -> Tuple[List[ApprovalInstance], int]:
         """获取我提交的审批列表"""
         query = self.db.query(ApprovalInstance).filter(
@@ -492,25 +562,26 @@ class ApprovalService:
             query = query.filter(ApprovalInstance.status == status_filter)
 
         total = query.count()
-        instances = query.order_by(
-            ApprovalInstance.submitted_at.desc()
-        ).offset((page - 1) * page_size).limit(page_size).all()
+        instances = (
+            query.order_by(ApprovalInstance.submitted_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
 
         return instances, total
 
-    def get_approval_history(
-        self,
-        instance_id: int
-    ) -> List[ApprovalHistory]:
+    def get_approval_history(self, instance_id: int) -> List[ApprovalHistory]:
         """获取审批历史"""
-        return self.db.query(ApprovalHistory).filter(
-            ApprovalHistory.instance_id == instance_id
-        ).order_by(ApprovalHistory.created_at.asc()).all()
+        return (
+            self.db.query(ApprovalHistory)
+            .filter(ApprovalHistory.instance_id == instance_id)
+            .order_by(ApprovalHistory.created_at.asc())
+            .all()
+        )
 
     def get_approval_statistics(
-        self,
-        current_user: User,
-        workspace_context: WorkspaceContext
+        self, current_user: User, workspace_context: WorkspaceContext
     ) -> Dict[str, int]:
         """获取审批统计信息"""
         stats = {
@@ -519,27 +590,41 @@ class ApprovalService:
             "total_rejected": 0,
             "my_pending": 0,
             "my_submitted": 0,
-            "overdue": 0
+            "overdue": 0,
         }
 
         if not workspace_context.company_id:
             return stats
 
         # 企业总体统计
-        stats["total_pending"] = self.db.query(ApprovalInstance).filter(
-            ApprovalInstance.company_id == workspace_context.company_id,
-            ApprovalInstance.status.in_([ApprovalStatus.PENDING, ApprovalStatus.IN_PROGRESS])
-        ).count()
+        stats["total_pending"] = (
+            self.db.query(ApprovalInstance)
+            .filter(
+                ApprovalInstance.company_id == workspace_context.company_id,
+                ApprovalInstance.status.in_(
+                    [ApprovalStatus.PENDING, ApprovalStatus.IN_PROGRESS]
+                ),
+            )
+            .count()
+        )
 
-        stats["total_approved"] = self.db.query(ApprovalInstance).filter(
-            ApprovalInstance.company_id == workspace_context.company_id,
-            ApprovalInstance.status == ApprovalStatus.APPROVED
-        ).count()
+        stats["total_approved"] = (
+            self.db.query(ApprovalInstance)
+            .filter(
+                ApprovalInstance.company_id == workspace_context.company_id,
+                ApprovalInstance.status == ApprovalStatus.APPROVED,
+            )
+            .count()
+        )
 
-        stats["total_rejected"] = self.db.query(ApprovalInstance).filter(
-            ApprovalInstance.company_id == workspace_context.company_id,
-            ApprovalInstance.status == ApprovalStatus.REJECTED
-        ).count()
+        stats["total_rejected"] = (
+            self.db.query(ApprovalInstance)
+            .filter(
+                ApprovalInstance.company_id == workspace_context.company_id,
+                ApprovalInstance.status == ApprovalStatus.REJECTED,
+            )
+            .count()
+        )
 
         # 待我审批
         _, my_pending_total = self.get_pending_approvals(
@@ -551,10 +636,16 @@ class ApprovalService:
         stats["my_pending"] = my_pending_total
 
         # 我提交的
-        stats["my_submitted"] = self.db.query(ApprovalInstance).filter(
-            ApprovalInstance.submitter_id == current_user.id,
-            ApprovalInstance.status.in_([ApprovalStatus.PENDING, ApprovalStatus.IN_PROGRESS])
-        ).count()
+        stats["my_submitted"] = (
+            self.db.query(ApprovalInstance)
+            .filter(
+                ApprovalInstance.submitter_id == current_user.id,
+                ApprovalInstance.status.in_(
+                    [ApprovalStatus.PENDING, ApprovalStatus.IN_PROGRESS]
+                ),
+            )
+            .count()
+        )
 
         return stats
 
@@ -566,42 +657,42 @@ class ApprovalService:
         current_user: User,
         action: ApprovalAction,
         comment: str,
-        attachments: List[str] = []
+        attachments: List[str] = [],
     ) -> ApprovalInstance:
         """处理审批操作的通用方法"""
-        instance = self.db.query(ApprovalInstance).filter(
-            ApprovalInstance.id == instance_id
-        ).first()
+        instance = (
+            self.db.query(ApprovalInstance)
+            .filter(ApprovalInstance.id == instance_id)
+            .first()
+        )
 
         if not instance:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="审批实例不存在"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="审批实例不存在")
 
         # 检查状态
         if instance.status not in [ApprovalStatus.PENDING, ApprovalStatus.IN_PROGRESS]:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="当前状态不允许审批"
+                status_code=status.HTTP_400_BAD_REQUEST, detail="当前状态不允许审批"
             )
+
+        self._assert_snapshot_unchanged(instance)
 
         # 检查权限：模块审批权限 + 当前步骤审批人
         if not self._can_approve(instance, current_user, enforce_step=True):
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="您没有权限审批此文档"
+                status_code=status.HTTP_403_FORBIDDEN, detail="您没有权限审批此文档"
             )
 
         # 获取工作流定义
-        workflow = self.db.query(ApprovalWorkflowDefinition).filter(
-            ApprovalWorkflowDefinition.id == instance.workflow_id
-        ).first()
+        workflow = (
+            self.db.query(ApprovalWorkflowDefinition)
+            .filter(ApprovalWorkflowDefinition.id == instance.workflow_id)
+            .first()
+        )
 
         if not workflow:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="工作流定义不存在"
+                status_code=status.HTTP_404_NOT_FOUND, detail="工作流定义不存在"
             )
 
         # 记录审批历史
@@ -614,7 +705,7 @@ class ApprovalService:
             operator_name=current_user.username or current_user.email,
             comment=comment,
             attachments=attachments,
-            result=action.value
+            result=action.value,
         )
 
         # 根据操作类型更新状态
@@ -623,11 +714,15 @@ class ApprovalService:
             if instance.current_step < len(workflow.steps):
                 # 进入下一步
                 instance.current_step += 1
-                instance.current_step_name = workflow.steps[instance.current_step - 1]['step_name']
+                instance.current_step_name = workflow.steps[instance.current_step - 1][
+                    "step_name"
+                ]
                 instance.status = ApprovalStatus.IN_PROGRESS
 
                 # 通知下一步审批人
-                self._notify_approvers(instance, workflow.steps[instance.current_step - 1])
+                self._notify_approvers(
+                    instance, workflow.steps[instance.current_step - 1]
+                )
             else:
                 # 所有步骤完成
                 instance.status = ApprovalStatus.APPROVED
@@ -679,7 +774,9 @@ class ApprovalService:
         )
         permissions_by_company: Dict[int, Dict[str, Any]] = {}
         for employee, role in rows:
-            permissions_by_company[employee.company_id] = (role.permissions or {}) if role else {}
+            permissions_by_company[employee.company_id] = (
+                (role.permissions or {}) if role else {}
+            )
         return permissions_by_company
 
     def _current_step_config(
@@ -776,11 +873,15 @@ class ApprovalService:
         if step is None:
             return True
 
-        employee = self.db.query(CompanyEmployee).filter(
-            CompanyEmployee.user_id == user.id,
-            CompanyEmployee.company_id == company_id,
-            CompanyEmployee.status == "active",
-        ).first()
+        employee = (
+            self.db.query(CompanyEmployee)
+            .filter(
+                CompanyEmployee.user_id == user.id,
+                CompanyEmployee.company_id == company_id,
+                CompanyEmployee.status == "active",
+            )
+            .first()
+        )
         if not employee:
             return False
         return self._is_current_step_approver(step, user=user, employee=employee)
@@ -795,7 +896,7 @@ class ApprovalService:
         operator_name: str,
         comment: str,
         attachments: List[str] = [],
-        result: Optional[str] = None
+        result: Optional[str] = None,
     ):
         """添加审批历史记录"""
         history = ApprovalHistory(
@@ -807,7 +908,7 @@ class ApprovalService:
             operator_name=operator_name,
             comment=comment,
             attachments=attachments,
-            result=result
+            result=result,
         )
 
         self.db.add(history)
@@ -818,27 +919,31 @@ class ApprovalService:
         if not step_config:
             return
 
-        approver_type = step_config.get('approver_type')
-        approver_ids = step_config.get('approver_ids', [])
+        approver_type = step_config.get("approver_type")
+        approver_ids = step_config.get("approver_ids", [])
 
         # 根据审批人类型获取实际的用户ID列表
         user_ids = []
 
-        if approver_type == 'role':
+        if approver_type == "role":
             # 根据角色ID查找用户
             for role_id in approver_ids:
-                employees = self.db.query(CompanyEmployee).filter(
-                    CompanyEmployee.company_role_id == role_id,
-                    CompanyEmployee.company_id == instance.company_id,
-                    CompanyEmployee.status == "active"
-                ).all()
+                employees = (
+                    self.db.query(CompanyEmployee)
+                    .filter(
+                        CompanyEmployee.company_role_id == role_id,
+                        CompanyEmployee.company_id == instance.company_id,
+                        CompanyEmployee.status == "active",
+                    )
+                    .all()
+                )
                 user_ids.extend([emp.user_id for emp in employees])
 
-        elif approver_type == 'user':
+        elif approver_type == "user":
             # 直接使用用户ID
             user_ids = approver_ids
 
-        elif approver_type == 'department':
+        elif approver_type == "department":
             # 按工厂 ID 或部门名称匹配（无独立 department_id 字段）
             for dept_key in approver_ids:
                 filters = [
@@ -867,7 +972,7 @@ class ApprovalService:
                 approver_ids=user_ids,
                 document_type=instance.document_type,
                 document_title=instance.document_title,
-                instance_id=instance.id
+                instance_id=instance.id,
             )
 
     def _notify_submitter(self, instance: ApprovalInstance, result: str):
@@ -878,7 +983,7 @@ class ApprovalService:
             document_title=instance.document_title,
             result=result,
             comment="",
-            instance_id=instance.id
+            instance_id=instance.id,
         )
 
     def _update_document_status(self, instance: ApprovalInstance, new_status: str):
@@ -886,6 +991,7 @@ class ApprovalService:
         # 根据文档类型更新对应的文档状态
         if instance.document_type == DocumentType.WPS:
             from app.models.wps import WPS
+
             document = self.db.query(WPS).filter(WPS.id == instance.document_id).first()
             if document:
                 document.status = new_status
@@ -893,6 +999,7 @@ class ApprovalService:
 
         elif instance.document_type == DocumentType.PQR:
             from app.models.pqr import PQR
+
             document = self.db.query(PQR).filter(PQR.id == instance.document_id).first()
             if document:
                 document.status = new_status
@@ -900,8 +1007,10 @@ class ApprovalService:
 
         elif instance.document_type == DocumentType.PPQR:
             from app.models.ppqr import PPQR
-            document = self.db.query(PPQR).filter(PPQR.id == instance.document_id).first()
+
+            document = (
+                self.db.query(PPQR).filter(PPQR.id == instance.document_id).first()
+            )
             if document:
                 document.status = new_status
                 document.updated_at = datetime.utcnow()
-

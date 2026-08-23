@@ -41,6 +41,7 @@ from app.services.document_page_renderer import DocumentPageRenderer
 from app.services.document_parser_service import DocumentParseError
 from app.services.document_storage_service import DocumentStorage
 from app.services.smart_import_service import SmartImportService
+from app.services.smart_import_audit_service import SmartImportAuditService
 
 
 OCR_SCHEMA = {
@@ -146,6 +147,7 @@ class AIExtractionService:
         self.renderer = renderer or DocumentPageRenderer()
         self.quota = quota_service or AIQuotaService(db)
         self.smart_import = SmartImportService(db)
+        self.audit = SmartImportAuditService(db)
 
     def run(
         self,
@@ -242,6 +244,18 @@ class AIExtractionService:
             for stage_index, stage in enumerate(stages):
                 self._ensure_active(job)
                 runtime_schema = relax_business_required_fields(stage["json_schema"])
+                self.audit.record_ai_disclosure(
+                    job_id=job.id,
+                    document_id=document.id,
+                    user_id=document.user_id,
+                    provider=self.provider.provider_name,
+                    model=self.provider.model_name,
+                    phase=stage["name"],
+                    page_numbers=[page.page_number for page in pages],
+                    workspace_type=str(document.workspace_type),
+                    company_id=document.company_id,
+                )
+                self.db.commit()
                 result = self.provider.structured_response(
                     StructuredAIRequest(
                         instructions=(
@@ -338,6 +352,18 @@ class AIExtractionService:
                 data_url = "data:image/png;base64," + base64.b64encode(png).decode(
                     "ascii"
                 )
+                self.audit.record_ai_disclosure(
+                    job_id=job.id,
+                    document_id=document.id,
+                    user_id=document.user_id,
+                    provider=self.provider.provider_name,
+                    model=self.provider.model_name,
+                    phase="ocr",
+                    page_numbers=[page.page_number],
+                    workspace_type=str(document.workspace_type),
+                    company_id=document.company_id,
+                )
+                self.db.commit()
                 result = self.provider.structured_response(
                     StructuredAIRequest(
                         instructions=OCR_INSTRUCTIONS,
