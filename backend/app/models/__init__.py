@@ -87,6 +87,8 @@ from app.models.matching import (
     WPSMatchFreeze,
 )
 from app.models.sequence import StepDependency, WeldSequenceRevision, WeldSequenceStep
+from app.models.consumable import ConsumableGeometryInput, WeldConsumableOperation
+from app.models.material import WeldingMaterial
 
 __all__ = [
     "User",
@@ -172,4 +174,7 @@ __all__ = [
     "WeldSequenceRevision",
     "WeldSequenceStep",
     "StepDependency",
+    "ConsumableGeometryInput",
+    "WeldConsumableOperation",
+    "WeldingMaterial",
 ]
