@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 from app.core.data_access import DataAccessAction, DataAccessMiddleware
 from app.core.document_access import require_document_access
-from app.models.company import Company, CompanyEmployee
+from app.models.company import Company, CompanyEmployee, CompanyRole
 
 
 def _query_returning(first_value):
@@ -115,6 +115,84 @@ class TestEnterpriseDocumentAccess:
             middleware.check_access(user, resource, DataAccessAction.VIEW)
 
         assert exc.value.status_code == 403
+
+    def test_factory_scoped_member_cannot_view_another_factory(self):
+        user = SimpleNamespace(id=4)
+        resource = SimpleNamespace(
+            workspace_type="enterprise",
+            company_id=5,
+            factory_id=2,
+            user_id=1,
+            access_level="factory",
+        )
+        employee = SimpleNamespace(
+            user_id=4,
+            company_id=5,
+            role="member",
+            company_role_id=None,
+            factory_id=1,
+            data_access_scope="factory",
+        )
+        db = MagicMock()
+
+        def query(model):
+            if model is Company:
+                return _query_returning(SimpleNamespace(owner_id=1))
+            if model is CompanyEmployee:
+                return _query_returning(employee)
+            return _query_returning(None)
+
+        db.query.side_effect = query
+
+        with pytest.raises(HTTPException) as exc:
+            DataAccessMiddleware(db).check_access(
+                user, resource, DataAccessAction.VIEW
+            )
+
+        assert exc.value.status_code == 403
+
+    def test_company_scoped_role_can_view_another_factory(self):
+        user = SimpleNamespace(id=4)
+        resource = SimpleNamespace(
+            workspace_type="enterprise",
+            company_id=5,
+            factory_id=2,
+            user_id=1,
+            access_level="factory",
+        )
+        employee = SimpleNamespace(
+            user_id=4,
+            company_id=5,
+            role="member",
+            company_role_id=8,
+            factory_id=1,
+            data_access_scope="factory",
+        )
+        role = SimpleNamespace(
+            id=8,
+            is_active=True,
+            data_access_scope="company",
+            permissions={"simplenamespace_management": {"view": True}},
+        )
+        db = MagicMock()
+
+        def query(model):
+            if model is Company:
+                return _query_returning(SimpleNamespace(owner_id=1))
+            if model is CompanyEmployee:
+                return _query_returning(employee)
+            if model is CompanyRole:
+                return _query_returning(role)
+            return _query_returning(None)
+
+        db.query.side_effect = query
+
+        assert (
+            DataAccessMiddleware(db).check_access(
+                user, resource, DataAccessAction.VIEW
+            )
+            is True
+        )
 
 
 class TestRequireDocumentAccess:

@@ -54,6 +54,27 @@ def test_legacy_field_id_is_deterministic_and_existing_id_is_preserved() -> None
     assert second["grade"]["field_id"] == "saved-id"
 
 
+def test_saved_schema_snapshot_is_backward_compatible_after_module_changes() -> None:
+    module = _module()
+    saved_snapshot = build_module_extraction_schema(module)
+    saved_grade_id = saved_snapshot["field_bindings"][0]["field_id"]
+
+    module.schema_version = 3
+    module.fields["material_grade"]["label"] = "新牌号字段"
+    module.fields["heat_input"] = {
+        "label": "热输入",
+        "type": "number",
+        "ai_extract_mode": "auto",
+    }
+    new_snapshot = build_module_extraction_schema(module)
+
+    assert saved_snapshot["source"]["version"] == "2"
+    assert "heat_input" not in saved_snapshot["json_schema"]["properties"]
+    assert saved_snapshot["field_bindings"][0]["field_id"] == saved_grade_id
+    assert new_snapshot["source"]["version"] == "3"
+    assert "heat_input" in new_snapshot["json_schema"]["properties"]
+
+
 def test_normalize_fields_handles_legacy_null_metadata() -> None:
     fields = normalize_module_fields(
         "module-1",

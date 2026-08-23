@@ -360,14 +360,14 @@ class AIExtractionService:
                 result = self.provider.structured_response(
                     StructuredAIRequest(
                         instructions=self._stage_instructions(stage, schema_snapshot),
-                        input_text=input_text,
+                        input_text=self._stage_input_text(
+                            stage, schema_snapshot, input_text
+                        ),
                         json_schema=runtime_schema,
                     )
                 )
                 stage_data = _prune_nulls(result.data)
-                Draft202012Validator(
-                    runtime_schema, format_checker=FormatChecker()
-                ).validate(stage_data)
+                validate_extraction_result(runtime_schema, stage_data)
                 _merge_extraction_data(cleaned, stage_data)
                 _add_usage(usage, result)
                 if result.response_id:
@@ -445,22 +445,41 @@ class AIExtractionService:
     def _stage_instructions(
         stage: dict[str, Any], schema_snapshot: dict[str, Any]
     ) -> str:
+        del schema_snapshot
         if stage["name"] == "unmapped_fields":
-            mapped = [
-                binding.get("label") or binding.get("field_key")
-                for binding in schema_snapshot.get("field_bindings") or []
-                if binding.get("extractable")
-            ]
             return (
                 f"{UNTRUSTED_DOCUMENT_INSTRUCTIONS}\n"
                 "Find important labeled facts present in the document but NOT represented "
-                "by the mapped field list below. Do not repeat mapped facts. Keep values as "
-                "source text and return an empty list when nothing remains.\n"
-                f"Mapped fields: {json.dumps(mapped, ensure_ascii=False)}"
+                "by the mapped field list supplied as untrusted user data. Do not repeat "
+                "mapped facts. Keep values as source text and return an empty list when "
+                "nothing remains."
             )
         return (
             f"{UNTRUSTED_DOCUMENT_INSTRUCTIONS}\n"
             f"Extraction phase: {stage['name']}. Extract only fields present in this phase schema."
+        )
+
+    @staticmethod
+    def _stage_input_text(
+        stage: dict[str, Any], schema_snapshot: dict[str, Any], input_text: str
+    ) -> str:
+        if stage["name"] != "unmapped_fields":
+            return input_text
+        mapped = [
+            {
+                "field_key": binding.get("field_key"),
+                "label": binding.get("label"),
+            }
+            for binding in schema_snapshot.get("field_bindings") or []
+            if binding.get("extractable")
+        ]
+        return (
+            "<untrusted_mapped_fields>\n"
+            f"{json.dumps(mapped, ensure_ascii=False)}\n"
+            "</untrusted_mapped_fields>\n"
+            "<untrusted_document>\n"
+            f"{input_text}\n"
+            "</untrusted_document>"
         )
 
     def _run_ocr(
@@ -775,6 +794,15 @@ def _prune_nulls(value: Any) -> Any:
     if isinstance(value, list):
         return [_prune_nulls(item) for item in value]
     return value
+
+
+def validate_extraction_result(
+    json_schema: dict[str, Any], result: dict[str, Any]
+) -> None:
+    """Apply the same strict JSON Schema contract to every provider result."""
+    Draft202012Validator(
+        json_schema, format_checker=FormatChecker()
+    ).validate(result)
 
 
 def build_extraction_stages(

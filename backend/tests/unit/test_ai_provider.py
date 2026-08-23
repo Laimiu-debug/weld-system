@@ -99,6 +99,29 @@ def test_provider_errors_do_not_expose_remote_response_body() -> None:
     assert "secret" not in str(exc_info.value)
 
 
+def test_provider_rejects_non_json_structured_output() -> None:
+    provider = OpenAICompatibleProvider(
+        AIProviderConfig(
+            provider="openai_responses",
+            base_url="https://api.openai.com/v1",
+            api_key="secret-key",
+            model="model",
+        ),
+        httpx.Client(
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(
+                    200, json={"output_text": "not-json"}
+                )
+            )
+        ),
+    )
+
+    with pytest.raises(AIProviderError) as exc_info:
+        provider.structured_response(StructuredAIRequest("system", "source", SCHEMA))
+
+    assert exc_info.value.code == "invalid_provider_response"
+
+
 def test_chat_compatible_provider_parses_structured_output() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)

@@ -1,4 +1,5 @@
 from io import BytesIO
+from time import perf_counter
 
 import pytest
 from docx import Document
@@ -12,6 +13,8 @@ from app.services.document_parser_service import (
     DocumentParseError,
 )
 from app.services import document_parser_service
+from app.schemas.smart_import import BatchAIExtractionRequest
+from pydantic import ValidationError
 
 
 def _text_pdf() -> BytesIO:
@@ -29,6 +32,17 @@ def _scanned_pdf() -> BytesIO:
     stream = BytesIO()
     pdf = canvas.Canvas(stream)
     pdf.drawInlineImage(Image.new("RGB", (120, 80), "white"), 72, 650)
+    pdf.save()
+    stream.seek(0)
+    return stream
+
+
+def _many_page_pdf(page_count: int) -> BytesIO:
+    stream = BytesIO()
+    pdf = canvas.Canvas(stream)
+    for index in range(page_count):
+        pdf.drawString(72, 760, f"WPS page {index + 1}: Q345R, 12 mm")
+        pdf.showPage()
     pdf.save()
     stream.seek(0)
     return stream
@@ -139,3 +153,49 @@ def test_docx_archive_expansion_limit_is_enforced(monkeypatch) -> None:
 
     with pytest.raises(DocumentParseError, match="解压后大小"):
         DefaultDocumentParser().parse(stream, "PQR.docx")
+
+
+def test_pdf_page_limit_rejects_oversized_long_document(monkeypatch) -> None:
+    monkeypatch.setattr(document_parser_service, "MAX_DOCUMENT_PAGES", 1)
+
+    with pytest.raises(DocumentParseError, match="页数不能超过 1 页"):
+        DefaultDocumentParser().parse(_text_pdf(), "long.pdf")
+
+
+def test_page_text_limit_rejects_pathological_content(monkeypatch) -> None:
+    monkeypatch.setattr(document_parser_service, "MAX_PAGE_TEXT_CHARS", 5)
+
+    with pytest.raises(DocumentParseError, match="单页文本内容异常"):
+        DefaultDocumentParser().parse(_text_pdf(), "large-text.pdf")
+
+
+def test_batch_extraction_rejects_more_than_one_hundred_documents() -> None:
+    with pytest.raises(ValidationError, match="at most 100 items"):
+        BatchAIExtractionRequest(document_ids=[f"doc-{index}" for index in range(101)])
+
+
+def test_hundred_page_text_pdf_parses_within_quality_budget() -> None:
+    started = perf_counter()
+    parsed = DefaultDocumentParser().parse(_many_page_pdf(100), "bulk-wps.pdf")
+
+    assert len(parsed.pages) == 100
+    assert perf_counter() - started < 10
+
+
+def test_twenty_page_scanned_tiff_parses_within_quality_budget() -> None:
+    stream = BytesIO()
+    frames = [Image.new("1", (100, 100), 1) for _ in range(20)]
+    frames[0].save(
+        stream,
+        format="TIFF",
+        save_all=True,
+        append_images=frames[1:],
+    )
+    stream.seek(0)
+    started = perf_counter()
+
+    parsed = DefaultDocumentParser().parse(stream, "bulk-scan.tiff")
+
+    assert len(parsed.pages) == 20
+    assert all(page.ocr_status == "pending" for page in parsed.pages)
+    assert perf_counter() - started < 10

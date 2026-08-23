@@ -95,6 +95,36 @@ def test_platform_quota_reserves_points_and_rejects_overage() -> None:
     assert exc_info.value.code == "ai_quota_exhausted"
 
 
+def test_quota_ledger_operations_are_idempotent() -> None:
+    db = Mock()
+    service = AIQuotaService(db)
+    reservation = SimpleNamespace(points=5)
+    job = ExtractionJob(id="job-1", mode="platform", provider="openai", model="m")
+
+    service._ledger = Mock(return_value=reservation)
+    assert service.reserve(job, _user(), _context(), 5) == 5
+    service.settle(job, _user(), _context(), 5)
+    service.refund(job.id, _user(), _context(), "retry")
+
+    db.add.assert_not_called()
+    db.commit.assert_not_called()
+
+
+def test_quota_reservation_locks_entitlement_and_has_database_uniqueness() -> None:
+    db = Mock()
+    query = db.query.return_value
+    filtered = query.filter.return_value
+    locked = filtered.with_for_update.return_value
+    entitlement = SimpleNamespace(is_enabled=True)
+    locked.first.return_value = entitlement
+
+    service = AIQuotaService(db)
+    assert service._get_entitlement(_user(), _context(), lock=True) is entitlement
+
+    filtered.with_for_update.assert_called_once_with()
+    assert AIUsageLedger.__table__.c.idempotency_key.unique is True
+
+
 def test_workspace_and_enterprise_user_task_limits_apply_to_byok_too() -> None:
     service = AIQuotaService(Mock())
     service._get_entitlement = Mock(
