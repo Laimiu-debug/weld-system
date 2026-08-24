@@ -18,7 +18,13 @@ BUTT_TYPES = {
     GrooveType.V_BUTT,
     GrooveType.X_BUTT,
     GrooveType.U_BUTT,
+    GrooveType.BACK_GOUGE,
+    GrooveType.TP_V,
+    GrooveType.TP_X,
 }
+
+TUBE_PLATE_TYPES = {GrooveType.TP_V, GrooveType.TP_X}
+BACK_GOUGE_TYPES = {GrooveType.BACK_GOUGE}
 
 
 def _finite_nonnegative(value: float, label: str) -> None:
@@ -43,15 +49,25 @@ def geometry_warnings(value: GrooveGeometryInput) -> tuple[str, ...]:
     elif value.fill_factor > 1.15:
         warnings.append("填充系数偏大；清根、展宽和损耗应使用独立参数")
     if value.groove_type in BUTT_TYPES:
+        thickness_label = "管壁厚度" if value.groove_type in TUBE_PLATE_TYPES else "板厚"
         if value.root_face_mm > value.thickness_mm:
-            warnings.append("钝边大于板厚")
+            warnings.append(f"钝边大于{thickness_label}")
         if value.back_gouge_depth_mm >= value.thickness_mm > 0:
-            warnings.append("清根深度不应达到或超过板厚")
-    if value.groove_type in {GrooveType.V_BUTT, GrooveType.X_BUTT, GrooveType.U_BUTT}:
+            warnings.append(f"清根深度不应达到或超过{thickness_label}")
+    if value.groove_type == GrooveType.BACK_GOUGE and value.back_gouge_depth_mm <= 0:
+        warnings.append("背面开清根形式应填写清根深度")
+    if value.groove_type in {
+        GrooveType.V_BUTT,
+        GrooveType.X_BUTT,
+        GrooveType.U_BUTT,
+        GrooveType.BACK_GOUGE,
+        GrooveType.TP_V,
+        GrooveType.TP_X,
+    }:
         if not 0 < value.included_angle_deg < 180:
             warnings.append("坡口夹角应处于0到180度之间")
     available = max(value.thickness_mm - value.root_face_mm, 0.0)
-    if value.groove_type == GrooveType.X_BUTT:
+    if value.groove_type == GrooveType.X_BUTT or value.groove_type == GrooveType.TP_X:
         upper = value.upper_bevel_height_mm
         lower = value.lower_bevel_height_mm
         if (
@@ -88,7 +104,8 @@ def _validate(value: GrooveGeometryInput) -> None:
     if not math.isfinite(value.fill_factor) or value.fill_factor <= 0:
         raise ConsumableCalculationError("填充系数必须大于0")
     if value.groove_type in BUTT_TYPES and value.thickness_mm <= 0:
-        raise ConsumableCalculationError("对接焊板厚必须大于0")
+        label = "管壁厚度" if value.groove_type in TUBE_PLATE_TYPES else "板厚"
+        raise ConsumableCalculationError(f"对接焊{label}必须大于0")
     if (
         value.groove_type in {GrooveType.FILLET, GrooveType.LAP}
         and value.leg_size_mm <= 0
@@ -134,7 +151,7 @@ def calculate_groove_area(value: GrooveGeometryInput) -> GrooveAreaResult:
         front = value.thickness_mm * value.root_gap_mm + _triangle(
             front_width, value.reinforcement_mm
         )
-    elif value.groove_type == GrooveType.V_BUTT:
+    elif value.groove_type == GrooveType.V_BUTT or value.groove_type == GrooveType.BACK_GOUGE:
         height = max(value.thickness_mm - value.root_face_mm, 0.0)
         front_width = value.root_gap_mm + 2 * height * tan_half + 2 * extra
         front = (
@@ -142,7 +159,17 @@ def calculate_groove_area(value: GrooveGeometryInput) -> GrooveAreaResult:
             + height * height * tan_half
             + _triangle(front_width, value.reinforcement_mm)
         )
-    elif value.groove_type == GrooveType.X_BUTT:
+    elif value.groove_type == GrooveType.TP_V:
+        height = max(value.thickness_mm - value.root_face_mm, 0.0)
+        front_width = value.root_gap_mm + 2 * height * tan_half + 2 * extra
+        corner_fillet = 0.5 * value.leg_size_mm**2 if value.leg_size_mm > 0 else 0.0
+        front = (
+            value.thickness_mm * value.root_gap_mm
+            + height * height * tan_half
+            + corner_fillet
+            + _triangle(front_width, value.reinforcement_mm)
+        )
+    elif value.groove_type == GrooveType.X_BUTT or value.groove_type == GrooveType.TP_X:
         available = max(value.thickness_mm - value.root_face_mm, 0.0)
         upper = value.upper_bevel_height_mm or available / 2.0
         lower = value.lower_bevel_height_mm or max(available - upper, 0.0)
@@ -177,7 +204,8 @@ def calculate_groove_area(value: GrooveGeometryInput) -> GrooveAreaResult:
         raise ConsumableCalculationError(f"不支持的坡口形式：{value.groove_type}")
 
     gouge, gouge_width = _gouge(value)
-    if gouge > 0 and value.groove_type != GrooveType.X_BUTT:
+    skip_back_reinf = value.groove_type in {GrooveType.X_BUTT, GrooveType.TP_X}
+    if gouge > 0 and not skip_back_reinf:
         back_width = gouge_width + 2 * extra
         back_reinforcement = _triangle(back_width, value.reinforcement_mm)
     geometry_total = front + gouge + back_reinforcement

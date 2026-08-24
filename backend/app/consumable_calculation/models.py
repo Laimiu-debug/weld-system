@@ -16,6 +16,9 @@ class GrooveType(str, Enum):
     U_BUTT = "U"
     FILLET = "FILLET"
     LAP = "LAP"
+    BACK_GOUGE = "BACK_GOUGE"
+    TP_V = "TP_V"
+    TP_X = "TP_X"
 
 
 class GougeStrategy(str, Enum):

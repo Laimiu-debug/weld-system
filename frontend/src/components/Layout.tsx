@@ -572,13 +572,15 @@ const Layout: React.FC<LayoutProps> = () => {
           }
           return [pathname]
         }
-        // 我的 / 报表 / 计划 / 标准 / 绩效子路由保留精确选中
+        // 我的 / 报表 / 计划 / 标准 / 绩效 / 焊材子路由保留精确选中
+        // （否则 /materials/usage 会被折叠成 /materials，台账高亮而用量不高亮）
         if (
           (base === '/reports' ||
             base === '/production' ||
             base === '/quality' ||
             base === '/employees' ||
-            base === '/profile') &&
+            base === '/profile' ||
+            base === '/materials') &&
           pathname !== base
         ) {
           return [pathname]

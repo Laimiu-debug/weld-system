@@ -410,6 +410,13 @@ def ensure_import_permission(
     ensure_module_permission(db, user, "import", action)
 
 
+def ensure_import_draft_permission(
+    db: Session, user: User, entity_type: str
+) -> None:
+    """Draft review/bind edits staging data only; align with publish (create), not update."""
+    ensure_module_permission(db, user, entity_type, "create")
+
+
 @router.get("/ai-provider-configs", response_model=list[AIProviderConfigResponse])
 def list_ai_provider_configs(
     db: Session = Depends(deps.get_db),
@@ -1555,7 +1562,7 @@ def review_extracted_field(
     ensure_import_permission(db, current_user, context, "review")
     service = SmartImportReviewService(db)
     entity = service.get_entity(entity_id, current_user, context)
-    ensure_module_permission(db, current_user, entity.entity_type, "update")
+    ensure_import_draft_permission(db, current_user, entity.entity_type)
     entity = service.review_field(entity_id, field_id, request, current_user, context)
     return build_entity_detail(db, entity)
 
@@ -1575,7 +1582,7 @@ def bulk_accept_extracted_fields(
     ensure_import_permission(db, current_user, context, "review")
     service = SmartImportReviewService(db)
     entity = service.get_entity(entity_id, current_user, context)
-    ensure_module_permission(db, current_user, entity.entity_type, "update")
+    ensure_import_draft_permission(db, current_user, entity.entity_type)
     entity = service.bulk_accept(entity_id, request, current_user, context)
     return build_entity_detail(db, entity)
 
@@ -1633,7 +1640,7 @@ def bind_unmapped_import_field(
     context = resolve_workspace(db, current_user, workspace_id)
     ensure_import_permission(db, current_user, context, "modify")
     entity = SmartImportReviewService(db).get_entity(entity_id, current_user, context)
-    ensure_module_permission(db, current_user, entity.entity_type, "update")
+    ensure_import_draft_permission(db, current_user, entity.entity_type)
     service = SmartImportWorkbenchService(db)
     entity = service.bind_unmapped(entity_id, field_id, request, current_user, context)
     return build_entity_detail(db, entity)
@@ -1654,7 +1661,7 @@ def add_manual_workbench_field(
     context = resolve_workspace(db, current_user, workspace_id)
     ensure_import_permission(db, current_user, context, "modify")
     entity = SmartImportReviewService(db).get_entity(entity_id, current_user, context)
-    ensure_module_permission(db, current_user, entity.entity_type, "update")
+    ensure_import_draft_permission(db, current_user, entity.entity_type)
     entity = SmartImportWorkbenchService(db).add_manual_field(
         entity_id, request, current_user, context
     )

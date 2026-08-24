@@ -488,3 +488,115 @@ def test_service_only_maps_relational_records_to_pure_inputs():
     assert result["deposit_mass_kg"] > 0
     assert result["flux_kg"] > 0
     assert result["pass_count_mass_multiplier"] == 1.0
+
+
+def test_back_gouge_same_as_v_with_mandatory_gouge_warning():
+    base = dict(
+        thickness_mm=12,
+        included_angle_deg=60,
+        root_gap_mm=2,
+        root_face_mm=2,
+        reinforcement_mm=2,
+        back_gouge_depth_mm=3,
+        back_gouge_opening_width_mm=5,
+    )
+    v_result = calculate_groove_area(
+        GrooveGeometryInput(groove_type=GrooveType.V_BUTT, **base)
+    )
+    bg_result = calculate_groove_area(
+        GrooveGeometryInput(groove_type=GrooveType.BACK_GOUGE, **base)
+    )
+    assert bg_result.total_area_mm2 == pytest.approx(v_result.total_area_mm2)
+
+
+def test_back_gouge_warns_when_depth_missing():
+    result = calculate_groove_area(
+        GrooveGeometryInput(
+            groove_type=GrooveType.BACK_GOUGE,
+            thickness_mm=12,
+            included_angle_deg=60,
+            root_gap_mm=2,
+            root_face_mm=2,
+            reinforcement_mm=2,
+            back_gouge_depth_mm=0,
+        )
+    )
+    assert any("清根" in w for w in result.warnings)
+
+
+def test_tube_plate_single_bevel_includes_corner_fillet():
+    without_fillet = calculate_groove_area(
+        GrooveGeometryInput(
+            groove_type=GrooveType.TP_V,
+            thickness_mm=10,
+            included_angle_deg=35,
+            root_gap_mm=2,
+            root_face_mm=1.5,
+            reinforcement_mm=2,
+            leg_size_mm=0,
+        )
+    )
+    with_fillet = calculate_groove_area(
+        GrooveGeometryInput(
+            groove_type=GrooveType.TP_V,
+            thickness_mm=10,
+            included_angle_deg=35,
+            root_gap_mm=2,
+            root_face_mm=1.5,
+            reinforcement_mm=2,
+            leg_size_mm=6,
+        )
+    )
+    assert with_fillet.total_area_mm2 > without_fillet.total_area_mm2
+    assert with_fillet.total_area_mm2 - without_fillet.total_area_mm2 == pytest.approx(
+        0.5 * 6**2
+    )
+
+
+def test_tube_plate_double_bevel_matches_x_on_wall_thickness():
+    common = dict(
+        thickness_mm=10,
+        included_angle_deg=35,
+        root_gap_mm=2,
+        root_face_mm=1,
+        reinforcement_mm=2,
+    )
+    tp_result = calculate_groove_area(
+        GrooveGeometryInput(groove_type=GrooveType.TP_X, **common)
+    )
+    x_result = calculate_groove_area(
+        GrooveGeometryInput(groove_type=GrooveType.X_BUTT, **common)
+    )
+    assert tp_result.total_area_mm2 == pytest.approx(x_result.total_area_mm2)
+
+
+def test_calculator_quote_service_matches_v_joint():
+    from app.schemas.consumable_calculator import CalculatorJointIn, CalculatorOperationIn, CalculatorQuoteRequest, CostParamsIn
+    from app.services.consumable_calculator_api_service import ConsumableCalculatorApiService
+
+    payload = CalculatorQuoteRequest(
+        joints=[
+            CalculatorJointIn(
+                name="试算",
+                groove="V",
+                thickness_mm=12,
+                included_angle_deg=60,
+                root_gap_mm=2,
+                root_face_mm=2,
+                reinforcement_mm=2,
+                length_mm=1000,
+                operations=[
+                    CalculatorOperationIn(
+                        deposition_efficiency=0.95,
+                        unit_price=12,
+                        deposition_rate_kg_h=2,
+                        arc_time_ratio=0.4,
+                    )
+                ],
+            )
+        ],
+        cost_params=CostParamsIn(),
+    )
+    result = ConsumableCalculatorApiService.quote(payload)
+    assert result["summary"]["suggested_primary_kg"] > 0
+    assert result["summary"]["quoted_price"] > result["summary"]["direct_cost"]

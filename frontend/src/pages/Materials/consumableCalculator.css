@@ -50,6 +50,7 @@
 .cc-status { margin: 12px 0 0; }
 .cc-side .ant-statistic { margin-bottom: 10px; }
 .cc-side .ant-statistic-content { font-size: 22px; }
+.cc-formula { display: block; font-size: 12px; line-height: 1.5; }
 .cc-groove-modal { display: grid; gap: 24px; grid-template-columns: 420px minmax(0, 1fr); }
 .cc-groove-modal .ant-input-number, .cc-groove-modal .ant-select { width: 100%; }
 

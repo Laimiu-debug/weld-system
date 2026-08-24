@@ -2,7 +2,7 @@
 from typing import Optional
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,8 @@ from app.core.module_permissions import ensure_module_permission
 from app.core.rate_limit import enforce_export_limit
 from app.models.user import User
 from app.schemas.consumable import ConsumableActualEventCreate
+from app.schemas.consumable_calculator import CalculatorQuoteRequest
+from app.services.consumable_calculator_api_service import ConsumableCalculatorApiService
 from app.services.consumable_export_service import ConsumableExportService
 from app.services.consumable_issue_service import ConsumableIssueService
 
@@ -43,6 +45,37 @@ def list_consumable_usage(
     _permission(db, current_user, context)
     return ConsumableIssueService(db).list_usage(
         current_user, context, event_type, skip, limit
+    )
+
+
+@router.post("/calculator/quote")
+def calculator_quote(
+    payload: CalculatorQuoteRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+):
+    context = resolve_workspace(db, current_user, workspace_id)
+    _permission(db, current_user, context, "view")
+    try:
+        return ConsumableCalculatorApiService.quote(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/issue-lists")
+def list_issue_lists(
+    status: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 50,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+):
+    context = resolve_workspace(db, current_user, workspace_id)
+    _permission(db, current_user, context)
+    return ConsumableIssueService(db).list_issue_lists(
+        current_user, context, status=status, skip=skip, limit=limit
     )
 
 

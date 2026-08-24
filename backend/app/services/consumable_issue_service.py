@@ -19,6 +19,7 @@ from app.core.data_access import (
     DataAccessAction,
     DataAccessMiddleware,
     WorkspaceContext,
+    WorkspaceType,
 )
 from app.models.consumable import (
     ConsumableActualUsageEvent,
@@ -481,3 +482,41 @@ class ConsumableIssueService:
             }
             for item in detail["items"]
         ]
+
+    def list_issue_lists(
+        self,
+        user: User,
+        context: WorkspaceContext,
+        *,
+        status: str | None = None,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        query = self.db.query(ConsumableIssueList)
+        if context.workspace_type == WorkspaceType.ENTERPRISE:
+            query = query.filter(ConsumableIssueList.company_id == context.company_id)
+        else:
+            query = query.filter(ConsumableIssueList.user_id == user.id)
+        if status:
+            query = query.filter(ConsumableIssueList.status == status)
+        total = query.count()
+        rows = (
+            query.order_by(ConsumableIssueList.generated_at.desc())
+            .offset(skip)
+            .limit(min(limit, 200))
+            .all()
+        )
+        for row in rows:
+            self.access.check_access(user, row, DataAccessAction.VIEW, context)
+        return {
+            "items": [
+                {
+                    column.name: getattr(item, column.name)
+                    for column in item.__table__.columns
+                }
+                for item in rows
+            ],
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+        }
