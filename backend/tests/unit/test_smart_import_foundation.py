@@ -306,3 +306,32 @@ def test_delete_batch_removes_private_objects_after_database_commit() -> None:
         "storage:private/original.pdf",
         "storage:private/preview.png",
     }
+
+
+def test_delete_batch_turns_foreign_key_conflict_into_409() -> None:
+    from fastapi import HTTPException
+    from sqlalchemy.exc import IntegrityError
+
+    db = Mock()
+    artifact_query = Mock()
+    artifact_query.filter.return_value.all.return_value = []
+    job_query = Mock()
+    job_query.filter.return_value.all.return_value = []
+    db.query.side_effect = [artifact_query, job_query]
+    db.commit.side_effect = IntegrityError("delete", {}, Exception("fk"))
+    service = SmartImportService(db)
+    service.get_batch = Mock(return_value=SimpleNamespace(id="batch-1"))
+    service.get_batch_documents = Mock(
+        return_value=[SimpleNamespace(id="document-1", storage_key=None)]
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        service.delete_batch(
+            "batch-1",
+            SimpleNamespace(id=7),
+            WorkspaceContext(user_id=7, workspace_type=WorkspaceType.PERSONAL),
+            Mock(),
+        )
+
+    assert exc_info.value.status_code == 409
+    db.rollback.assert_called_once()

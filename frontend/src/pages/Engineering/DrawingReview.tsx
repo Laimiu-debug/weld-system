@@ -4,6 +4,7 @@ import {
   Badge,
   Button,
   Card,
+  Checkbox,
   Descriptions,
   Drawer,
   Empty,
@@ -40,9 +41,24 @@ import {
   engineeringService,
   RevisionDetail,
 } from "@/services/engineering";
+import smartImportService from "@/services/smartImport";
 import "./engineering.css";
 
 const { Title, Text } = Typography;
+const DRAWING_OUTBOUND_NOTICE_VERSION = "drawing-outbound-v1";
+
+const drawingOutboundNotice = (host: string) =>
+  `该图纸的页面图像、识别文本及相关元数据将发送至外部模型服务 ${host}，仅用于图纸结构化识别。请确认图纸允许外发且已获得必要授权。`;
+
+const sha256Hex = async (value: string) => {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+};
 
 const DrawingReview: React.FC = () => {
   const { id = "" } = useParams();
@@ -50,6 +66,9 @@ const DrawingReview: React.FC = () => {
   const [detail, setDetail] = useState<RevisionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [parsing, setParsing] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [privacyConfirmed, setPrivacyConfirmed] = useState(false);
+  const [platformHost, setPlatformHost] = useState("");
   const [page, setPage] = useState(1);
   const [preview, setPreview] = useState("");
   const [focus, setFocus] = useState<DataRow | null>(null);
@@ -73,6 +92,9 @@ const DrawingReview: React.FC = () => {
   }, [id]);
   useEffect(() => {
     void load();
+    void smartImportService
+      .getAICapabilities()
+      .then((value) => setPlatformHost(value.platform_host || ""));
   }, [load]);
   useEffect(() => {
     let url = "";
@@ -105,12 +127,36 @@ const DrawingReview: React.FC = () => {
   const readonly =
     detail?.revision.status === "approved" ||
     detail?.revision.status === "superseded";
-  const runAI = async () => {
+  const runAI = () => {
+    setPrivacyConfirmed(false);
+    setPrivacyOpen(true);
+  };
+  const confirmRunAI = async () => {
+    if (!detail?.revision.drawing_document_id || !platformHost) {
+      message.error("无法识别图纸文档或外部模型服务域名");
+      return;
+    }
     setParsing(true);
     try {
-      await engineeringService.parse(id);
+      const notice = drawingOutboundNotice(platformHost);
+      const consent = await smartImportService.createOutboundConsent({
+        document_id: detail.revision.drawing_document_id,
+        provider_host: platformHost,
+        purpose: `识别图纸 ${detail.revision.drawing_filename || id}`,
+        privacy_notice_version: DRAWING_OUTBOUND_NOTICE_VERSION,
+        privacy_notice_hash: await sha256Hex(notice),
+        authorized: true,
+      });
+      await engineeringService.parse(id, {
+        mode: "platform",
+        run_ocr: true,
+        outbound_consent_id: consent.id,
+      });
+      setPrivacyOpen(false);
       message.success("图纸解析完成，请逐项核对");
       await load();
+    } catch (error: any) {
+      message.error(error?.response?.data?.detail?.message || error?.response?.data?.detail || "图纸识别失败");
     } finally {
       setParsing(false);
     }
@@ -186,11 +232,23 @@ const DrawingReview: React.FC = () => {
     await load();
   };
   const riskCount = detail?.validation.risks.length || 0;
+  const sourceColumn = {
+    title: "来源",
+    width: 105,
+    render: (_: unknown, row: DataRow) => {
+      const source = row.evidence?.source;
+      if (source === "manual_entry") return <Tag color="blue">人工新增</Tag>;
+      if (source === "manual_correction" || row.review_status === "corrected")
+        return <Tag color="purple">人工修正</Tag>;
+      return <Tag color="cyan">AI 图纸提取</Tag>;
+    },
+  };
   const partColumns = [
     { title: "件号", dataIndex: "part_number", width: 90 },
     { title: "零部件", dataIndex: "name" },
     { title: "材料", dataIndex: "material_spec" },
     { title: "厚度 mm", dataIndex: "thickness_mm", width: 90 },
+    sourceColumn,
     {
       title: "状态",
       dataIndex: "review_status",
@@ -241,6 +299,7 @@ const DrawingReview: React.FC = () => {
     { title: "接头", dataIndex: "joint_type", width: 90 },
     { title: "坡口", dataIndex: "groove_type", width: 90 },
     { title: "长度 mm", dataIndex: "length_mm", width: 90 },
+    sourceColumn,
     {
       title: "置信度",
       dataIndex: "confidence",
@@ -356,6 +415,7 @@ const DrawingReview: React.FC = () => {
       render: (v: boolean) => (v == null ? "-" : v ? "需要" : "不需要"),
     },
     { title: "特殊要求", dataIndex: "special_requirements" },
+    sourceColumn,
     {
       title: "操作",
       width: 120,
@@ -435,6 +495,32 @@ const DrawingReview: React.FC = () => {
             </Button>
           </Space>
         </div>
+        <Modal
+          title="确认向外部模型发送图纸"
+          open={privacyOpen}
+          onCancel={() => !parsing && setPrivacyOpen(false)}
+          onOk={() => void confirmRunAI()}
+          okText="确认并开始识别"
+          okButtonProps={{ disabled: !privacyConfirmed || !platformHost }}
+          confirmLoading={parsing}
+        >
+          <Alert
+            type="warning"
+            showIcon
+            message={`数据接收方：${platformHost || "尚未配置"}`}
+            description={platformHost
+              ? drawingOutboundNotice(platformHost)
+              : "管理员模型配置未提供可用服务域名。"}
+          />
+          <Checkbox
+            style={{ marginTop: 16 }}
+            checked={privacyConfirmed}
+            disabled={!platformHost}
+            onChange={(event) => setPrivacyConfirmed(event.target.checked)}
+          >
+            我已阅读并确认该图纸允许发送至上述外部模型服务
+          </Checkbox>
+        </Modal>
         {riskCount > 0 && (
           <Alert
             type={detail?.validation.can_approve ? "warning" : "error"}

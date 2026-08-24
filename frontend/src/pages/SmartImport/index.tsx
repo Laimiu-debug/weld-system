@@ -3,6 +3,7 @@ import {
   Alert,
   Button,
   Card,
+  Checkbox,
   Col,
   Divider,
   Descriptions,
@@ -110,6 +111,17 @@ const statusLabels: Record<string, string> = {
   ready: '可提取',
 }
 
+const OUTBOUND_NOTICE_VERSION = 'smart-import-outbound-v1'
+
+const outboundNotice = (providerHost: string) =>
+  `所选文件的原文、页面图像及相关元数据将发送至外部模型服务 ${providerHost}，仅用于结构化字段提取。请确认文件不包含禁止外发的数据，并已获得必要授权。`
+
+const sha256Hex = async (value: string) => {
+  const bytes = new TextEncoder().encode(value)
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
 const statusColors: Record<string, string> = {
   draft: 'default',
   queued: 'processing',
@@ -197,6 +209,7 @@ const SmartImportPage: React.FC = () => {
   const workspace = workspaceService.getCurrentWorkspaceFromStorage()
   const isEnterpriseWorkspace = workspace?.type === 'enterprise'
   const workspaceLabel = isEnterpriseWorkspace ? '企业' : '个人'
+  const batchExtractionPreferenceKey = `smart-import:batch-ai:${workspace?.id || 'personal'}`
   const [searchParams, setSearchParams] = useSearchParams()
   const [batches, setBatches] = useState<ImportBatch[]>([])
   const [batch, setBatch] = useState<ImportBatchDetail | null>(null)
@@ -256,9 +269,24 @@ const SmartImportPage: React.FC = () => {
   const pendingUploadCountRef = useRef(0)
   const extractionMode = Form.useWatch('mode', extractForm)
   const extractionProviderPreset = Form.useWatch('provider_preset', extractForm)
+  const extractionProviderConfigId = Form.useWatch('provider_config_id', extractForm)
+  const extractionBaseUrl = Form.useWatch('base_url', extractForm)
   const savedProviderPreset = Form.useWatch('provider_preset', providerForm)
   const bindAction = Form.useWatch('action', bindForm)
   const manualFieldTarget = Form.useWatch('target', manualFieldForm)
+  const extractionProviderHost = useMemo(() => {
+    if (extractionMode === 'saved') {
+      const config = providerConfigs.find(item => item.id === extractionProviderConfigId)
+      if (!config) return ''
+      try { return new URL(config.base_url).hostname }
+      catch { return '' }
+    }
+    if (extractionMode === 'byok') {
+      try { return new URL(extractionBaseUrl || '').hostname }
+      catch { return '' }
+    }
+    return capabilities?.platform_host || ''
+  }, [extractionMode, extractionProviderConfigId, extractionBaseUrl, providerConfigs, capabilities?.platform_host])
   const loadProviderSettings = useCallback(async () => {
     const configs = await smartImportService.listAIProviderConfigs()
     setProviderConfigs(configs)
@@ -536,6 +564,7 @@ const SmartImportPage: React.FC = () => {
         ? 'builtin:auto'
         : undefined,
       run_ocr: true,
+      outbound_privacy_consent: false,
     })
     try {
       const [templateResponse, moduleList, recommendation] = await Promise.all([
@@ -571,10 +600,30 @@ const SmartImportPage: React.FC = () => {
     }
     await prepareExtraction(batch.documents[0])
     setBatchExtractionMode(true)
-    extractForm.setFieldValue(
-      'mode',
-      capabilities?.platform_available ? 'platform' : providerConfigs.length ? 'saved' : undefined
-    )
+    let remembered: { mode?: 'platform' | 'saved'; provider_config_id?: string; run_ocr?: boolean } = {}
+    try {
+      remembered = JSON.parse(localStorage.getItem(batchExtractionPreferenceKey) || '{}')
+    } catch {
+      remembered = {}
+    }
+    const rememberedConfigExists = providerConfigs.some(item => item.id === remembered.provider_config_id)
+    const mode = remembered.mode === 'saved' && rememberedConfigExists
+      ? 'saved'
+      : remembered.mode === 'platform' && capabilities?.platform_available
+        ? 'platform'
+        : capabilities?.platform_available
+          ? 'platform'
+          : providerConfigs.length
+            ? 'saved'
+            : undefined
+    extractForm.setFieldsValue({
+      mode,
+      provider_config_id: mode === 'saved'
+        ? (rememberedConfigExists ? remembered.provider_config_id : providerConfigs[0]?.id)
+        : undefined,
+      run_ocr: remembered.run_ocr ?? true,
+      outbound_privacy_consent: false,
+    })
   }
 
   const viewDraft = async (document: SourceDocument) => {
@@ -811,6 +860,27 @@ const SmartImportPage: React.FC = () => {
     const [sourceType, sourceId] = String(values.schema_source).split(':', 2)
     setExtracting(true)
     try {
+      let outboundConsentId: string | undefined
+      let outboundConsentIds: Record<string, string> | undefined
+      if (batch.target_entity_type === 'pqr') {
+        if (!extractionProviderHost) throw new Error('无法识别外部模型服务域名，请检查模型配置')
+        const notice = outboundNotice(extractionProviderHost)
+        const privacyNoticeHash = await sha256Hex(notice)
+        const documents = batchExtractionMode ? batch.documents : [activeDocument!]
+        const consents = await Promise.all(documents.map(document => smartImportService.createOutboundConsent({
+          document_id: document.id,
+          provider_host: extractionProviderHost,
+          purpose: `提取 ${document.original_filename} 的 PQR 结构化字段`,
+          privacy_notice_version: OUTBOUND_NOTICE_VERSION,
+          privacy_notice_hash: privacyNoticeHash,
+          authorized: true,
+        })))
+        if (batchExtractionMode) {
+          outboundConsentIds = Object.fromEntries(documents.map((document, index) => [document.id, consents[index].id]))
+        } else {
+          outboundConsentId = consents[0].id
+        }
+      }
       const payload = {
         mode: (values.mode === 'platform' ? 'platform' : 'byok') as 'platform' | 'byok',
         provider: values.mode === 'byok' ? values.provider : undefined,
@@ -818,12 +888,19 @@ const SmartImportPage: React.FC = () => {
         base_url: values.mode === 'byok' ? values.base_url?.trim() || undefined : undefined,
         api_key: values.mode === 'byok' ? values.api_key : undefined,
         provider_config_id: values.mode === 'saved' ? values.provider_config_id : undefined,
+        outbound_consent_id: outboundConsentId,
+        outbound_consent_ids: outboundConsentIds,
         template_id: sourceType === 'template' ? sourceId : undefined,
         module_id: sourceType === 'module' ? sourceId : undefined,
         run_ocr: values.run_ocr,
       }
       if (batchExtractionMode) {
         const response = await smartImportService.queueBatchExtraction(batch.id, payload)
+        localStorage.setItem(batchExtractionPreferenceKey, JSON.stringify({
+          mode: values.mode,
+          provider_config_id: values.mode === 'saved' ? values.provider_config_id : undefined,
+          run_ocr: values.run_ocr,
+        }))
         message.success(`批量任务已提交：${response.succeeded} 个排队，${response.skipped} 个跳过，${response.failed} 个失败`)
       } else if (values.mode === 'byok') {
         const response = await smartImportService.extractDocument(activeDocument!.id, payload)
@@ -1391,7 +1468,18 @@ const SmartImportPage: React.FC = () => {
           description="模型只负责读取文件和填充草稿，不负责确定资格范围，也不会自动发布。"
           className="smart-import__modal-alert"
         />
-        <Form form={extractForm} layout="vertical">
+        <Form
+          form={extractForm}
+          layout="vertical"
+          onValuesChange={(_, values) => {
+            if (!batchExtractionMode || !['platform', 'saved'].includes(values.mode)) return
+            localStorage.setItem(batchExtractionPreferenceKey, JSON.stringify({
+              mode: values.mode,
+              provider_config_id: values.mode === 'saved' ? values.provider_config_id : undefined,
+              run_ocr: values.run_ocr,
+            }))
+          }}
+        >
           {templateRecommendation && (
             <Alert
               type={templateRecommendation.classification.requires_confirmation ? 'warning' : 'info'}
@@ -1476,6 +1564,32 @@ const SmartImportPage: React.FC = () => {
                 }))}
               />
             </Form.Item>
+          )}
+          {batch?.target_entity_type === 'pqr' && (
+            <>
+              <Alert
+                type="warning"
+                showIcon
+                message="向外部模型发送前需要隐私确认"
+                description={extractionProviderHost
+                  ? outboundNotice(extractionProviderHost)
+                  : '请先选择可用模型配置，以显示数据接收方。'}
+                className="smart-import__modal-alert"
+              />
+              <Form.Item
+                name="outbound_privacy_consent"
+                valuePropName="checked"
+                rules={[{
+                  validator: (_, checked) => checked
+                    ? Promise.resolve()
+                    : Promise.reject(new Error('请确认隐私说明后再开始提取')),
+                }]}
+              >
+                <Checkbox disabled={!extractionProviderHost}>
+                  我已阅读并确认可以将这些 PQR 文件发送至 {extractionProviderHost || '所选外部服务'}
+                </Checkbox>
+              </Form.Item>
+            </>
           )}
           <Form.Item name="run_ocr" label="扫描页处理">
             <Radio.Group options={[{ value: true, label: '自动 OCR' }, { value: false, label: '只使用已有文本' }]} />

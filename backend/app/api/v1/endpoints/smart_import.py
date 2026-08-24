@@ -1,8 +1,9 @@
 """Smart-import extraction, review, and controlled publication endpoints."""
+import logging
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Iterator, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import (
     APIRouter,
@@ -125,6 +126,8 @@ from app.tasks.smart_import_tasks import (
     run_smart_import_parse,
 )
 
+logger = logging.getLogger(__name__)
+
 
 router = APIRouter()
 
@@ -182,6 +185,7 @@ def get_ai_capabilities(
         "platform_available": bool(platform["key_configured"] and platform["model"]),
         "platform_provider": platform["provider"],
         "platform_model": platform["model"],
+        "platform_host": (urlsplit(platform["base_url"]).hostname or "").lower(),
         "byok_providers": ["openai_responses", "openai_compatible_chat"],
         "byok_allowed_hosts": settings.AI_BYOK_ALLOWED_HOSTS,
         "max_document_pages": settings.AI_MAX_DOCUMENT_PAGES,
@@ -656,7 +660,12 @@ def delete_batch(
         delete_related_data=delete_related_data,
     )
     for job_id in result["cancelled_job_ids"]:
-        celery_app.control.revoke(job_id, terminate=False)
+        try:
+            celery_app.control.revoke(job_id, terminate=False)
+        except Exception:
+            # The database deletion is already committed. A temporary broker
+            # outage must not turn a successful delete into an HTTP 500.
+            logger.exception("Could not revoke deleted smart-import job %s", job_id)
     return BatchDeleteResponse(**result)
 
 

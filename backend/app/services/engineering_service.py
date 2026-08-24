@@ -299,6 +299,22 @@ def clean_evidence(value: Any, page_count: int) -> dict[str, Any]:
     return {"page": page, "bbox": bbox, "text": str(raw.get("text") or "")[:1000]}
 
 
+def sourced_evidence(
+    value: Any,
+    page_count: int,
+    *,
+    source: str,
+    revision: ProductRevision,
+) -> dict[str, Any]:
+    """Keep field provenance beside its visual evidence without a schema change."""
+    return {
+        **clean_evidence(value, page_count),
+        "source": source,
+        "source_document_id": revision.drawing_document_id,
+        "source_filename": revision.drawing_filename,
+    }
+
+
 def drawing_risks(payload: dict[str, Any], page_count: int) -> list[dict[str, Any]]:
     risks: list[dict[str, Any]] = []
     product = payload.get("product") or {}
@@ -1021,8 +1037,11 @@ class EngineeringService:
                 thickness_mm=raw.get("thickness_mm"),
                 quantity=raw.get("quantity") or 1,
                 assembly_path=raw.get("assembly_path"),
-                evidence=clean_evidence(
-                    raw.get("evidence"), revision.drawing_page_count
+                evidence=sourced_evidence(
+                    raw.get("evidence"),
+                    revision.drawing_page_count,
+                    source="ai_extraction",
+                    revision=revision,
                 ),
                 confidence=raw.get("confidence"),
                 **values,
@@ -1062,8 +1081,11 @@ class EngineeringService:
                 weld_size=raw.get("weld_size"),
                 length_mm=raw.get("length_mm"),
                 weld_position=raw.get("weld_position"),
-                evidence=clean_evidence(
-                    raw.get("evidence"), revision.drawing_page_count
+                evidence=sourced_evidence(
+                    raw.get("evidence"),
+                    revision.drawing_page_count,
+                    source="ai_extraction",
+                    revision=revision,
                 ),
                 confidence=raw.get("confidence"),
                 **values,
@@ -1090,8 +1112,11 @@ class EngineeringService:
                 impact_required=raw.get("impact_required"),
                 impact_temperature=raw.get("impact_temperature"),
                 special_requirements=raw.get("special_requirements"),
-                evidence=clean_evidence(
-                    raw.get("evidence"), revision.drawing_page_count
+                evidence=sourced_evidence(
+                    raw.get("evidence"),
+                    revision.drawing_page_count,
+                    source="ai_extraction",
+                    revision=revision,
                 ),
                 confidence=raw.get("confidence"),
                 **values,
@@ -1379,13 +1404,23 @@ class EngineeringService:
             raise HTTPException(422, f"不可修改字段：{', '.join(sorted(rejected))}")
         previous = {key: getattr(entity, key) for key in values}
         if "evidence" in values:
-            values["evidence"] = clean_evidence(
-                values["evidence"], revision.drawing_page_count
+            values["evidence"] = sourced_evidence(
+                values["evidence"],
+                revision.drawing_page_count,
+                source="manual_correction",
+                revision=revision,
             )
         for key, value in values.items():
             setattr(entity, key, value)
         if "review_status" not in values:
             entity.review_status = "corrected"
+            if "evidence" not in values:
+                entity.evidence = {
+                    **(entity.evidence or {}),
+                    "source": "manual_correction",
+                    "source_document_id": revision.drawing_document_id,
+                    "source_filename": revision.drawing_filename,
+                }
         joints = (
             [entity.id]
             if model is WeldJoint
@@ -1430,7 +1465,15 @@ class EngineeringService:
         joint = WeldJoint(
             id=str(uuid4()),
             revision_id=revision.id,
-            **data.model_dump(),
+            **{
+                **data.model_dump(),
+                "evidence": sourced_evidence(
+                    data.evidence,
+                    revision.drawing_page_count,
+                    source="manual_entry",
+                    revision=revision,
+                ),
+            },
             review_status="corrected",
             **workspace_values(user, context, revision.access_level),
         )

@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Query, Session
 
 from app.core.data_access import (
@@ -200,7 +201,17 @@ class SmartImportService:
                 batch, document_ids
             )
         self.db.delete(batch)
-        self.db.commit()
+        try:
+            self.db.commit()
+        except IntegrityError as exc:
+            self.db.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "该导入任务仍被工程图纸或其他正式业务数据引用，"
+                    "请先在对应业务页面删除关联记录"
+                ),
+            ) from exc
         for storage_key in storage_keys:
             try:
                 storage.delete(storage_key)

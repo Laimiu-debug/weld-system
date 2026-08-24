@@ -377,12 +377,25 @@ class SmartImportService {
     platform_available: boolean
     platform_provider: string
     platform_model?: string
+    platform_host: string
     byok_providers: Array<'openai_responses' | 'openai_compatible_chat'>
     byok_allowed_hosts: string[]
     max_document_pages: number
     max_input_chars: number
   }> {
     const response = await api.get('/smart-import/ai-capabilities')
+    return response.data
+  }
+
+  async createOutboundConsent(data: {
+    document_id: string
+    provider_host: string
+    purpose: string
+    privacy_notice_version: string
+    privacy_notice_hash: string
+    authorized: boolean
+  }): Promise<{ id: string }> {
+    const response = await api.post('/operations/outbound-consents', data)
     return response.data
   }
 
@@ -514,6 +527,7 @@ class SmartImportService {
       base_url?: string
       api_key?: string
       provider_config_id?: string
+      outbound_consent_id?: string
       template_id?: string
       module_id?: string
       run_ocr?: boolean
@@ -535,6 +549,7 @@ class SmartImportService {
     data: {
       mode?: 'platform' | 'byok'
       provider_config_id?: string
+      outbound_consent_id?: string
       template_id?: string
       module_id?: string
       run_ocr?: boolean
@@ -573,6 +588,7 @@ class SmartImportService {
       module_id?: string
       run_ocr?: boolean
       document_ids?: string[]
+      outbound_consent_ids?: Record<string, string>
     }
   ): Promise<BatchOperationResult> {
     const response = await api.post(`/smart-import/batches/${batchId}/extract-async`, data)

@@ -38,6 +38,7 @@ from app.services.document_storage_service import (
     get_document_storage,
 )
 from app.services.engineering_service import EngineeringService
+from app.services.operations_service import OperationsService
 from app.services.system_config_service import get_max_upload_bytes
 
 router = APIRouter()
@@ -293,6 +294,22 @@ def parse_drawing(
                         ),
                     )
                     key = platform["api_key"]
+            revision = EngineeringService(db)._get(
+                ProductRevision, revision_id, current_user, context
+            )
+            if request.mode != "offline":
+                provider_url = (
+                    config.base_url if config is not None else request.base_url
+                )
+                if not provider_url:
+                    raise HTTPException(422, "外部模型服务地址不能为空")
+                OperationsService(db).require_consent(
+                    revision.drawing_document_id,
+                    provider_url,
+                    current_user,
+                    context,
+                    request.outbound_consent_id,
+                )
             provider = build_provider(request, config, key)
         run = EngineeringService(db).parse_revision(
             revision_id,
