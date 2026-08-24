@@ -104,11 +104,16 @@ def run_smart_import_parse(job_id: str) -> dict:
             "status": job.status,
             "page_count": len(pages),
         }
-    except Exception:
+    except Exception as exc:
         logger.exception("Smart-import parse task %s failed", job_id)
         job = db.query(ExtractionJob).filter(ExtractionJob.id == job_id).first()
         if job and job.status not in {"failed", "cancelled", "completed"}:
-            _mark_setup_failure(db, job, "parse_failed", "后台文档解析失败")
+            detail = getattr(exc, "detail", None)
+            if isinstance(detail, str) and detail:
+                message = detail
+            else:
+                message = "后台文档解析失败"
+            _mark_setup_failure(db, job, "parse_failed", message)
         return {"job_id": job_id, "status": "failed", "error_code": "parse_failed"}
     finally:
         try:

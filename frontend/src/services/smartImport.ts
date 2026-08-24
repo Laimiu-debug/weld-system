@@ -418,6 +418,22 @@ class SmartImportService {
     return response.data
   }
 
+  async deleteBatch(
+    id: string,
+    deleteRelatedData: boolean
+  ): Promise<{
+    batch_id: string
+    deleted_documents: number
+    deleted_related_data: boolean
+    related_records_deleted: number
+    cancelled_job_ids: string[]
+  }> {
+    const response = await api.delete(`/smart-import/batches/${id}`, {
+      params: { delete_related_data: deleteRelatedData },
+    })
+    return response.data
+  }
+
   async registerDocument(
     batchId: string,
     data: {

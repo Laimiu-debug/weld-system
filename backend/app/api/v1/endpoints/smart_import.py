@@ -44,6 +44,7 @@ from app.schemas.smart_import import (
     AIQuotaStatusResponse,
     BatchAIExtractionRequest,
     BatchDetailResponse,
+    BatchDeleteResponse,
     BatchOperationItem,
     BatchOperationResponse,
     BulkFieldAcceptRequest,
@@ -86,7 +87,11 @@ from app.services.ai_credential_service import (
     provider_config_response,
     resolve_platform_ai_config,
 )
-from app.services.ai_provider_service import AIProviderError, StructuredAIRequest
+from app.services.ai_provider_service import (
+    AIProviderError,
+    StructuredAIRequest,
+    connection_test_request,
+)
 from app.services.custom_module_service import CustomModuleService
 from app.services.document_parser_service import (
     DefaultDocumentParser,
@@ -560,17 +565,7 @@ def test_ai_provider_config(
 
 
 def _connection_test_request() -> StructuredAIRequest:
-    return StructuredAIRequest(
-        instructions='Return JSON only in the exact shape {"ok": true}.',
-        input_text="Connection test. Respond with JSON confirming ok is true.",
-        json_schema={
-            "type": "object",
-            "properties": {"ok": {"type": "boolean"}},
-            "required": ["ok"],
-            "additionalProperties": False,
-        },
-        schema_name="connection_test",
-    )
+    return connection_test_request()
 
 
 @router.get("/enterprise-ai-policy", response_model=EnterpriseAIPolicyResponse)
@@ -640,6 +635,29 @@ def get_batch(
         **ImportBatchResponse.model_validate(batch).model_dump(),
         documents=[SourceDocumentResponse.model_validate(item) for item in documents],
     )
+
+
+@router.delete("/batches/{batch_id}", response_model=BatchDeleteResponse)
+def delete_batch(
+    batch_id: str,
+    delete_related_data: bool = Query(False),
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+    storage: DocumentStorage = Depends(get_document_storage),
+) -> BatchDeleteResponse:
+    context = resolve_workspace(db, current_user, workspace_id)
+    ensure_import_permission(db, current_user, context, "delete")
+    result = SmartImportService(db).delete_batch(
+        batch_id,
+        current_user,
+        context,
+        storage,
+        delete_related_data=delete_related_data,
+    )
+    for job_id in result["cancelled_job_ids"]:
+        celery_app.control.revoke(job_id, terminate=False)
+    return BatchDeleteResponse(**result)
 
 
 @router.post(

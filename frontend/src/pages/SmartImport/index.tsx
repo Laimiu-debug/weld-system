@@ -204,6 +204,9 @@ const SmartImportPage: React.FC = () => {
   const [uploading, setUploading] = useState(false)
   const [uploadResults, setUploadResults] = useState<UploadResultItem[]>([])
   const [createOpen, setCreateOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteRelatedData, setDeleteRelatedData] = useState(false)
+  const [deletingBatch, setDeletingBatch] = useState(false)
   const [extractOpen, setExtractOpen] = useState(false)
   const [extracting, setExtracting] = useState(false)
   const [activeDocument, setActiveDocument] = useState<SourceDocument | null>(null)
@@ -490,6 +493,29 @@ const SmartImportPage: React.FC = () => {
         }
       }
     })
+  }
+
+  const deleteCurrentBatch = async () => {
+    if (!batch) return
+    setDeletingBatch(true)
+    try {
+      const result = await smartImportService.deleteBatch(batch.id, deleteRelatedData)
+      setDeleteOpen(false)
+      setDeleteRelatedData(false)
+      setBatch(null)
+      setQueuedJob(null)
+      setResult(null)
+      await loadBatches()
+      message.success(
+        deleteRelatedData
+          ? `导入任务已删除，并停用 ${result.related_records_deleted} 条关联业务数据`
+          : '导入任务已删除，已发布的业务数据已保留'
+      )
+    } catch (error) {
+      message.error(errorMessage(error, '删除导入任务失败'))
+    } finally {
+      setDeletingBatch(false)
+    }
   }
 
   const prepareExtraction = async (document: SourceDocument) => {
@@ -1266,7 +1292,9 @@ const SmartImportPage: React.FC = () => {
               <Card><Empty description="请先新建一个导入任务" /></Card>
             ) : (
               <Space direction="vertical" size={16} className="smart-import__main">
-                <Card>
+                <Card
+                  extra={<Button danger icon={<DeleteOutlined />} onClick={() => setDeleteOpen(true)}>删除任务</Button>}
+                >
                   <Descriptions title={batch.name} size="small" column={{ xs: 1, sm: 3 }}>
                     <Descriptions.Item label="目标类型">{entityLabels[batch.target_entity_type]}</Descriptions.Item>
                     <Descriptions.Item label="状态"><Tag color={statusColors[batch.status]}>{statusLabels[batch.status] || batch.status}</Tag></Descriptions.Item>
@@ -1558,6 +1586,37 @@ const SmartImportPage: React.FC = () => {
           <Form.Item name="base_url" label="接口地址" rules={[{ required: true }]}><Input maxLength={500} /></Form.Item>
           <Form.Item name="is_default" label="设为默认配置" valuePropName="checked"><Switch /></Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title="删除导入任务"
+        open={deleteOpen}
+        okText="确认删除"
+        okButtonProps={{ danger: true, loading: deletingBatch }}
+        cancelText="取消"
+        onCancel={() => {
+          if (!deletingBatch) {
+            setDeleteOpen(false)
+            setDeleteRelatedData(false)
+          }
+        }}
+        onOk={() => void deleteCurrentBatch()}
+      >
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Alert
+            type="warning"
+            showIcon
+            message={`将删除导入任务“${batch?.name || ''}”及原始文件、解析页、提取草稿和审核记录`}
+            description="此操作不可恢复。正在排队或处理中的后台任务会同时取消。"
+          />
+          <Space align="start">
+            <Switch checked={deleteRelatedData} onChange={setDeleteRelatedData} />
+            <div>
+              <Text strong>同时删除关联业务数据</Text>
+              <div><Text type="secondary">开启后会停用由本任务发布的 WPS/PQR/pPQR 或焊工资质；焊工主档不会被误删。</Text></div>
+            </div>
+          </Space>
+        </Space>
       </Modal>
 
       <Modal title={`轮换 ${rotateConfig?.name || ''} 的 API Key`} open={Boolean(rotateConfig)} onCancel={() => setRotateConfig(null)} onOk={() => void rotateProviderKey()} okText="确认轮换">

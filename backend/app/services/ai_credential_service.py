@@ -131,6 +131,10 @@ def resolve_platform_ai_config(
         selected = next((item for item in items if item.id == config_id), None)
         if selected is not None:
             return _platform_config_payload(selected, include_key=include_key)
+    # A saved platform model is only user-routable after the administrator's
+    # real provider test succeeds. This prevents a merely persisted key/model
+    # from appearing available in the user portal.
+    items = [item for item in items if item.last_test_status == "success"]
     candidates = [
         item
         for item in items

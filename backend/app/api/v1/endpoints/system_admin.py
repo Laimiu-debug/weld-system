@@ -25,7 +25,7 @@ from app.services.ai_credential_service import (
 )
 from app.services.ai_quota_service import AIQuotaService
 from app.services.ai_extraction_service import AIExtractionRunError, build_provider
-from app.services.ai_provider_service import AIProviderError, StructuredAIRequest
+from app.services.ai_provider_service import AIProviderError, connection_test_request
 
 router = APIRouter()
 
@@ -227,22 +227,15 @@ def test_platform_ai_config_admin(
             AIExtractionRequest(mode="platform"), transient, api_key
         )
         try:
+            task_types = config_data.get("task_types") or []
             provider.structured_response(
-                StructuredAIRequest(
-                    instructions='Return JSON only in the exact shape {"ok": true}.',
-                    input_text="Connection test. Respond with JSON confirming ok is true.",
-                    json_schema={
-                        "type": "object",
-                        "properties": {"ok": {"type": "boolean"}},
-                        "required": ["ok"],
-                        "additionalProperties": False,
-                    },
-                    schema_name="connection_test",
+                connection_test_request(
+                    vision=not task_types or "drawing_import" in task_types
                 )
             )
         finally:
             provider.close()
-        return {"success": True, "message": "连接成功，API Key 与模型均可用"}
+        return {"success": True, "message": "连接成功，模型任务能力验证通过"}
     except (AIProviderError, AIExtractionRunError) as exc:
         return {"success": False, "message": str(exc)}
 
@@ -322,16 +315,9 @@ def test_saved_platform_ai_model_admin(
         )
         try:
             result = provider.structured_response(
-                StructuredAIRequest(
-                    instructions="Return valid json matching the schema.",
-                    input_text="Return the requested json now.",
-                    json_schema={
-                        "type": "object",
-                        "properties": {"ok": {"type": "boolean"}},
-                        "required": ["ok"],
-                        "additionalProperties": False,
-                    },
-                    schema_name="connection_test",
+                connection_test_request(
+                    vision=not item.task_types
+                    or "drawing_import" in item.task_types
                 )
             )
         finally:
@@ -342,7 +328,7 @@ def test_saved_platform_ai_model_admin(
         db.commit()
         return {
             "success": True,
-            "message": "连接成功",
+            "message": "连接成功，模型任务能力验证通过",
             "usage": {
                 "input_tokens": result.input_tokens,
                 "output_tokens": result.output_tokens,

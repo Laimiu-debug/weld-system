@@ -144,6 +144,7 @@ def test_smart_import_router_exposes_extract_review_and_publish_flow() -> None:
     paths = {route.path for route in router.routes}
 
     assert "/batches" in paths
+    assert "/batches/{batch_id}" in paths
     assert "/ai-capabilities" in paths
     assert "/ai-quota" in paths
     assert "/batches/{batch_id}/documents" in paths
@@ -266,3 +267,42 @@ def test_register_document_flushes_parent_before_original_artifact() -> None:
 
     assert events[:3] == ["add:SourceDocument", "flush", "add:DocumentArtifact"]
     assert DocumentArtifact.__tablename__ == "document_artifacts"
+
+
+def test_delete_batch_removes_private_objects_after_database_commit() -> None:
+    events: list[str] = []
+    db = Mock()
+    artifact_query = Mock()
+    artifact_query.filter.return_value.all.return_value = [("private/preview.png",)]
+    job_query = Mock()
+    job_query.filter.return_value.all.return_value = [
+        SimpleNamespace(id="job-1", status="processing")
+    ]
+    db.query.side_effect = [artifact_query, job_query]
+    db.delete.side_effect = lambda _item: events.append("delete")
+    db.commit.side_effect = lambda: events.append("commit")
+    storage = Mock()
+    storage.delete.side_effect = lambda key: events.append(f"storage:{key}")
+    service = SmartImportService(db)
+    service.get_batch = Mock(return_value=SimpleNamespace(id="batch-1"))
+    service.get_batch_documents = Mock(
+        return_value=[
+            SimpleNamespace(
+                id="document-1", storage_key="private/original.pdf"
+            )
+        ]
+    )
+    user = SimpleNamespace(id=7)
+    context = WorkspaceContext(user_id=7, workspace_type=WorkspaceType.PERSONAL)
+
+    result = service.delete_batch(
+        "batch-1", user, context, storage, delete_related_data=False
+    )
+
+    assert result["cancelled_job_ids"] == ["job-1"]
+    assert result["deleted_documents"] == 1
+    assert events[:2] == ["delete", "commit"]
+    assert set(events[2:]) == {
+        "storage:private/original.pdf",
+        "storage:private/preview.png",
+    }

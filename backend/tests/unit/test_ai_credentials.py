@@ -18,6 +18,7 @@ from app.services.ai_credential_service import (
     resolve_platform_ai_config,
 )
 from app.services.ai_extraction_service import build_provider
+from app.services.ai_provider_service import connection_test_request
 
 
 def test_saved_credential_encrypts_and_only_returns_masked_key() -> None:
@@ -167,3 +168,43 @@ def test_platform_router_selects_task_and_complexity_specific_model() -> None:
     assert result["id"] == "advanced"
     assert result["model"] == "pro"
     assert result["point_multiplier"] == 2
+
+
+def test_platform_router_does_not_expose_untested_admin_model() -> None:
+    now = datetime.utcnow()
+    item = SimpleNamespace(
+        id="untested",
+        name="saved-but-not-tested",
+        provider="openai_responses",
+        base_url="https://api.openai.com/v1",
+        model="vision-model",
+        task_types=["drawing_import"],
+        complexity_level="advanced",
+        point_multiplier=1,
+        priority=1,
+        is_default=True,
+        is_active=True,
+        last_test_status="untested",
+        last_tested_at=None,
+        last_error=None,
+        key_last_four="1234",
+        updated_at=now,
+    )
+    db = Mock()
+    db.query.return_value.filter.return_value.all.return_value = [item]
+
+    result = resolve_platform_ai_config(
+        db, task_type="drawing_import", complexity="advanced"
+    )
+
+    assert result["source"] == "environment"
+    assert result["id"] is None
+
+
+def test_visual_connection_test_exercises_image_transport() -> None:
+    request = connection_test_request(vision=True)
+
+    assert request.schema_name == "vision_connection_test"
+    assert len(request.images) == 1
+    assert request.images[0].data_url.startswith("data:image/png;base64,")
+    assert request.json_schema["properties"]["ok"]["const"] is True

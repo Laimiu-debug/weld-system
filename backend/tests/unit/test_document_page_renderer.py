@@ -21,6 +21,25 @@ def test_pdf_page_renders_to_private_png_bytes() -> None:
         assert image.height > 500
 
 
+def test_pdf_page_supports_higher_resolution_for_dense_drawings() -> None:
+    source = BytesIO()
+    pdf = canvas.Canvas(source)
+    pdf.drawString(72, 720, "DRAWING-001")
+    pdf.save()
+    source.seek(0)
+
+    normal = DocumentPageRenderer().render_png(source, "drawing.pdf", 1)
+    source.seek(0)
+    detailed = DocumentPageRenderer().render_png(
+        source, "drawing.pdf", 1, scale=3.0
+    )
+
+    with Image.open(BytesIO(normal)) as normal_image:
+        with Image.open(BytesIO(detailed)) as detailed_image:
+            assert detailed_image.width > normal_image.width
+            assert detailed_image.height > normal_image.height
+
+
 def test_tiff_frame_selection_renders_requested_page() -> None:
     source = BytesIO()
     first = Image.new("RGB", (20, 20), "white")

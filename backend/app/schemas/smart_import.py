@@ -34,6 +34,14 @@ class ImportBatchResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class BatchDeleteResponse(BaseModel):
+    batch_id: str
+    deleted_documents: int
+    deleted_related_data: bool
+    related_records_deleted: int = 0
+    cancelled_job_ids: list[str] = Field(default_factory=list)
+
+
 class SourceDocumentRegister(BaseModel):
     original_filename: str = Field(min_length=1, max_length=255)
     sha256: str = Field(pattern=r"^[0-9a-fA-F]{64}$")

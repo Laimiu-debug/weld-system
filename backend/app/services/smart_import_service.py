@@ -1,4 +1,6 @@
 """Transactional service for staged document imports."""
+import json
+import logging
 from datetime import datetime, timezone
 from typing import Any, TypeVar
 from uuid import uuid4
@@ -22,6 +24,7 @@ from app.models.smart_import import (
     ExtractionJob,
     FieldEvidence,
     ImportBatch,
+    EntityPublishRecord,
     SourceDocument,
 )
 from app.models.user import User
@@ -36,6 +39,9 @@ from app.services.document_parser_service import (
 )
 from app.services.document_storage_service import DocumentStorage, DocumentUploadError
 from app.services.document_artifact_service import artifact_expiry
+
+
+logger = logging.getLogger(__name__)
 
 
 T = TypeVar("T")
@@ -148,6 +154,149 @@ class SmartImportService:
             .order_by(SourceDocument.created_at)
             .all()
         )
+
+    def delete_batch(
+        self,
+        batch_id: str,
+        user: User,
+        context: WorkspaceContext,
+        storage: DocumentStorage,
+        *,
+        delete_related_data: bool = False,
+    ) -> dict[str, Any]:
+        """Delete an import task and optionally deactivate records it published.
+
+        Staging rows are database-cascaded from the batch. Private objects are
+        removed only after the database transaction succeeds.
+        """
+        batch = self.get_batch(batch_id, user, context)
+        documents = self.get_batch_documents(batch, user, context)
+        document_ids = [item.id for item in documents]
+        storage_keys = {item.storage_key for item in documents if item.storage_key}
+        if document_ids:
+            storage_keys.update(
+                key
+                for (key,) in self.db.query(DocumentArtifact.storage_key)
+                .filter(
+                    DocumentArtifact.document_id.in_(document_ids),
+                    DocumentArtifact.storage_key.isnot(None),
+                )
+                .all()
+                if key
+            )
+        jobs = (
+            self.db.query(ExtractionJob)
+            .filter(ExtractionJob.document_id.in_(document_ids))
+            .all()
+            if document_ids
+            else []
+        )
+        cancelled_job_ids = [
+            item.id for item in jobs if item.status in {"queued", "processing"}
+        ]
+        related_records_deleted = 0
+        if delete_related_data and document_ids:
+            related_records_deleted = self._deactivate_published_records(
+                batch, document_ids
+            )
+        self.db.delete(batch)
+        self.db.commit()
+        for storage_key in storage_keys:
+            try:
+                storage.delete(storage_key)
+            except Exception:
+                logger.exception(
+                    "Could not delete private smart-import object %s", storage_key
+                )
+        return {
+            "batch_id": batch_id,
+            "deleted_documents": len(documents),
+            "deleted_related_data": delete_related_data,
+            "related_records_deleted": related_records_deleted,
+            "cancelled_job_ids": cancelled_job_ids,
+        }
+
+    def _deactivate_published_records(
+        self, batch: ImportBatch, document_ids: list[str]
+    ) -> int:
+        """Soft-delete business records created by this import batch."""
+        from app.models.pqr import PQR
+        from app.models.ppqr import PPQR
+        from app.models.welder import WelderCertification
+        from app.models.wps import WPS
+
+        records = (
+            self.db.query(EntityPublishRecord)
+            .join(ExtractedEntity, ExtractedEntity.id == EntityPublishRecord.entity_id)
+            .filter(ExtractedEntity.document_id.in_(document_ids))
+            .all()
+        )
+        models = {"wps": WPS, "pqr": PQR, "ppqr": PPQR}
+        changed = 0
+        changed_by_type = {"wps": 0, "pqr": 0, "ppqr": 0}
+        for record in records:
+            model = models.get(record.target_entity_type)
+            if model is not None and record.target_entity_id != "pending":
+                try:
+                    target_id = int(record.target_entity_id)
+                except (TypeError, ValueError):
+                    continue
+                target = self.db.query(model).filter(model.id == target_id).first()
+                if target is not None and self._same_workspace(target, batch):
+                    if getattr(target, "is_active", True):
+                        target.is_active = False
+                        changed += 1
+                        changed_by_type[record.target_entity_type] += 1
+                continue
+            if record.target_entity_type != "welder":
+                continue
+            # A welder import may match an existing welder. Preserve that master
+            # record and deactivate only certificates explicitly created from one
+            # of this batch's source documents.
+            snapshot = record.published_snapshot or {}
+            for result in snapshot.get("results") or []:
+                certificate_id = result.get("certification_id")
+                if not certificate_id:
+                    continue
+                try:
+                    certificate_id = int(certificate_id)
+                except (TypeError, ValueError):
+                    continue
+                certificate = (
+                    self.db.query(WelderCertification)
+                    .filter(WelderCertification.id == certificate_id)
+                    .first()
+                )
+                if certificate is None or not certificate.is_active:
+                    continue
+                try:
+                    attachments = json.loads(certificate.attachments or "{}")
+                except (TypeError, ValueError):
+                    attachments = {}
+                if attachments.get("smart_import_document_id") in document_ids:
+                    certificate.is_active = False
+                    changed += 1
+        if batch.workspace_type == WorkspaceType.PERSONAL:
+            owner = self.db.query(User).filter(User.id == batch.user_id).first()
+            if owner is not None:
+                for entity_type, count in changed_by_type.items():
+                    if not count:
+                        continue
+                    field = f"{entity_type}_quota_used"
+                    setattr(
+                        owner,
+                        field,
+                        max(0, (getattr(owner, field, 0) or 0) - count),
+                    )
+        return changed
+
+    @staticmethod
+    def _same_workspace(target: Any, batch: ImportBatch) -> bool:
+        if target.workspace_type != batch.workspace_type:
+            return False
+        if batch.workspace_type == WorkspaceType.PERSONAL:
+            return target.user_id == batch.user_id
+        return target.company_id == batch.company_id
 
     def register_document(
         self,

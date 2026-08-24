@@ -97,6 +97,10 @@ services:
       DATABASE_HOST: postgres
     env_file:
       - ./backend/.env.production
+    volumes:
+      # The API writes private originals here and async parse/OCR tasks must read
+      # the exact same files. Without this shared mount every queued parse fails.
+      - backend_uploads:/app/storage/uploads
     depends_on:
       postgres:
         condition: service_healthy

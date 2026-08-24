@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import base64
 from datetime import datetime
+from pathlib import Path
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -38,16 +40,23 @@ from app.models.smart_import import (
 )
 from app.models.user import User
 from app.schemas.engineering import JointCreate, ProductCreate, ProjectCreate
+from app.services.ai_extraction_service import AIExtractionRunError
 from app.services.ai_provider_service import (
     AIImageInput,
     AIProvider,
+    AIProviderError,
     StructuredAIRequest,
 )
 from app.services.ai_quota_service import AIQuotaError, AIQuotaService
 from app.services.document_artifact_service import artifact_expiry
-from app.services.document_page_renderer import DocumentPageRenderer
-from app.services.document_parser_service import DefaultDocumentParser
+from app.services.document_page_renderer import DocumentPageRenderer, supports_visual_render
+from app.services.document_parser_service import DefaultDocumentParser, DocumentParseError
 from app.services.document_storage_service import DocumentStorage
+from app.services.drawing_preprocessing_service import (
+    PreparedDrawingPage,
+    prepare_drawing_page,
+    restore_payload_evidence,
+)
 from app.services.smart_import_service import SmartImportService
 
 
@@ -61,12 +70,31 @@ DRAWING_SCHEMA: dict[str, Any] = {
                 "product_name": {"type": ["string", "null"]},
                 "drawing_revision": {"type": ["string", "null"]},
                 "design_code": {"type": ["string", "null"]},
+                "confidence": {"type": ["number", "null"]},
+                "evidence": {
+                    "type": "object",
+                    "properties": {
+                        "drawing_number": {"$ref": "#/$defs/evidence"},
+                        "product_name": {"$ref": "#/$defs/evidence"},
+                        "drawing_revision": {"$ref": "#/$defs/evidence"},
+                        "design_code": {"$ref": "#/$defs/evidence"},
+                    },
+                    "required": [
+                        "drawing_number",
+                        "product_name",
+                        "drawing_revision",
+                        "design_code",
+                    ],
+                    "additionalProperties": False,
+                },
             },
             "required": [
                 "drawing_number",
                 "product_name",
                 "drawing_revision",
                 "design_code",
+                "confidence",
+                "evidence",
             ],
             "additionalProperties": False,
         },
@@ -210,6 +238,34 @@ DRAWING_INSTRUCTIONS = """你是承压设备焊接图纸结构化助手。输入
 按图签、明细栏、技术要求、焊缝符号和剖视图提取产品、零部件、材料、厚度、装配关系、焊缝及 NDE/PWHT/冲击要求。
 不得猜测关键焊接变量；不确定时返回 null 并写入 unresolved_regions。每条记录必须给出页码和归一化 bbox=[x1,y1,x2,y2]（0~1）以便人工定位。"""
 
+DRAWING_TITLE_INSTRUCTIONS = """你是承压设备图纸图签抄录助手。输入图片已旋转为正常阅读方向，并裁剪到每页右下角图签区域。
+只逐字读取图号、产品名称、版本和完整设计标准；不得从常识、文件名或相似图纸猜测。看不清时返回 null。
+每个字段的 evidence.text 必须是图片中可见原文，bbox 是相对于对应裁剪图片的归一化坐标。confidence 为 0~1。"""
+
+DRAWING_PARTS_INSTRUCTIONS = """识别承压设备图纸中的零部件、材料、厚度、数量和装配关系。
+图片已旋转到正常阅读方向。只输出图中有明确标注的记录，不得把尺寸、管口编号或推测结构虚构成零部件。
+每条记录必须包含对应页码、可见原文和相对于整页图片的归一化 bbox；不确定内容写入 unresolved_regions。"""
+
+DRAWING_WELDS_INSTRUCTIONS = """识别承压设备图纸中的焊缝编号、连接零件、接头/坡口、焊接尺寸以及 NDE、PWHT、冲击要求。
+图片已旋转到正常阅读方向。技术要求中的全局要求不得臆造为某条焊缝的专属参数。
+每条记录必须包含对应页码、可见原文和相对于整页图片的归一化 bbox；没有明确证据时返回 null 并写入 unresolved_regions。"""
+
+
+def _drawing_stage_schema(*sections: str) -> dict[str, Any]:
+    properties = {name: DRAWING_SCHEMA["properties"][name] for name in sections}
+    return {
+        "type": "object",
+        "properties": properties,
+        "$defs": DRAWING_SCHEMA["$defs"],
+        "required": list(sections),
+        "additionalProperties": False,
+    }
+
+
+DRAWING_TITLE_SCHEMA = _drawing_stage_schema("product", "unresolved_regions")
+DRAWING_PARTS_SCHEMA = _drawing_stage_schema("parts", "unresolved_regions")
+DRAWING_WELDS_SCHEMA = _drawing_stage_schema("weld_joints", "unresolved_regions")
+
 
 def workspace_values(
     user: User, context: WorkspaceContext, access_level: str
@@ -245,6 +301,29 @@ def clean_evidence(value: Any, page_count: int) -> dict[str, Any]:
 
 def drawing_risks(payload: dict[str, Any], page_count: int) -> list[dict[str, Any]]:
     risks: list[dict[str, Any]] = []
+    product = payload.get("product") or {}
+    product_evidence = product.get("evidence") or {}
+    for field, label in (
+        ("drawing_number", "图号"),
+        ("product_name", "产品名称"),
+    ):
+        evidence = clean_evidence(product_evidence.get(field), page_count)
+        if not product.get(field):
+            risks.append(
+                {
+                    "code": f"missing_{field}",
+                    "severity": "critical",
+                    "message": f"未可靠识别{label}",
+                }
+            )
+        elif evidence["page"] is None or not evidence["bbox"]:
+            risks.append(
+                {
+                    "code": f"missing_{field}_evidence",
+                    "severity": "critical",
+                    "message": f"{label}缺少可定位证据",
+                }
+            )
     seen: set[str] = set()
     refs = {
         str(item.get("ref")) for item in payload.get("parts", []) if item.get("ref")
@@ -312,6 +391,45 @@ def drawing_risks(payload: dict[str, Any], page_count: int) -> list[dict[str, An
             }
         )
     return risks
+
+
+def validate_drawing_identity(
+    payload: dict[str, Any], original_filename: str, page_count: int
+) -> None:
+    """Reject hallucinated title data before it can populate engineering rows."""
+    product = payload.get("product") or {}
+    evidence = product.get("evidence") or {}
+    problems: list[str] = []
+    for field, label in (
+        ("drawing_number", "图号"),
+        ("product_name", "产品名称"),
+    ):
+        value = str(product.get(field) or "").strip()
+        located = clean_evidence(evidence.get(field), page_count)
+        evidence_text = str(located.get("text") or "").strip()
+        if not value:
+            problems.append(f"{label}为空")
+        elif located["page"] is None or not located["bbox"] or not evidence_text:
+            problems.append(f"{label}缺少图中证据")
+        elif _identity_text(value) not in _identity_text(evidence_text):
+            problems.append(f"{label}与证据原文不一致")
+    confidence = product.get("confidence")
+    if not isinstance(confidence, (int, float)) or confidence < 0.6:
+        problems.append("图签识别置信度不足")
+    filename_numbers = re.findall(r"\d{4,}", Path(original_filename).stem)
+    drawing_number = _identity_text(str(product.get("drawing_number") or ""))
+    if filename_numbers and not any(number in drawing_number for number in filename_numbers):
+        problems.append("识别图号与文件名编号不一致")
+    if problems:
+        raise AIExtractionRunError(
+            "drawing_identity_unverified",
+            "图签识别未通过质量校验：" + "；".join(problems),
+            422,
+        )
+
+
+def _identity_text(value: str) -> str:
+    return "".join(character.upper() for character in value if character.isalnum())
 
 
 class EngineeringService:
@@ -697,7 +815,7 @@ class EngineeringService:
                         "x-weld-routing": routing
                         or {"point_multiplier": point_multiplier},
                     },
-                    prompt_version="engineering-drawing-v1",
+                    prompt_version="engineering-drawing-v2-staged",
                     request_trace_id=str(uuid4()),
                     status="processing",
                     attempt_count=1,
@@ -708,42 +826,113 @@ class EngineeringService:
                 self.db.commit()
                 if mode == "platform":
                     quota.reserve(job, user, context, len(pages))
-                images = []
+                prepared_pages: list[PreparedDrawingPage] = []
                 document = (
                     self.db.query(SourceDocument)
                     .filter(SourceDocument.id == revision.drawing_document_id)
                     .one()
                 )
-                for page in pages:
-                    with storage.open_stream(document.storage_key) as stream:
-                        png = DocumentPageRenderer().render_png(
-                            stream, document.original_filename, page.page_number
+                if supports_visual_render(document.original_filename):
+                    for page in pages:
+                        with storage.open_stream(document.storage_key) as stream:
+                            png = DocumentPageRenderer().render_png(
+                                stream,
+                                document.original_filename,
+                                page.page_number,
+                                scale=3.0,
+                            )
+                        prepared_pages.append(
+                            prepare_drawing_page(png, page.page_number)
                         )
-                    images.append(
-                        AIImageInput(
-                            data_url="data:image/png;base64,"
-                            + base64.b64encode(png).decode(),
-                            page_number=page.page_number,
-                        )
-                    )
                 text = "\n\n".join(
                     f"--- 第 {p.page_number} 页 ---\n{p.text_content or ''}"
                     for p in pages
                 )
-                result = provider.structured_response(
-                    StructuredAIRequest(
-                        instructions=DRAWING_INSTRUCTIONS,
-                        input_text=text[: settings.AI_MAX_INPUT_CHARS],
-                        json_schema=DRAWING_SCHEMA,
-                        images=images,
-                        schema_name="engineering_drawing_v1",
+                if prepared_pages:
+                    full_images = [
+                        AIImageInput(
+                            data_url="data:image/png;base64,"
+                            + base64.b64encode(page.full_png).decode(),
+                            page_number=page.page_number,
+                        )
+                        for page in prepared_pages
+                    ]
+                    title_images = [
+                        AIImageInput(
+                            data_url="data:image/png;base64,"
+                            + base64.b64encode(page.title_png).decode(),
+                            page_number=page.page_number,
+                        )
+                        for page in prepared_pages
+                    ]
+                    title_result = provider.structured_response(
+                        StructuredAIRequest(
+                            instructions=DRAWING_TITLE_INSTRUCTIONS,
+                            input_text="逐页读取裁剪后的图签。",
+                            json_schema=DRAWING_TITLE_SCHEMA,
+                            images=title_images,
+                            schema_name="engineering_drawing_title_v2",
+                        )
                     )
+                    parts_result = provider.structured_response(
+                        StructuredAIRequest(
+                            instructions=DRAWING_PARTS_INSTRUCTIONS,
+                            input_text=text[: settings.AI_MAX_INPUT_CHARS],
+                            json_schema=DRAWING_PARTS_SCHEMA,
+                            images=full_images,
+                            schema_name="engineering_drawing_parts_v2",
+                        )
+                    )
+                    welds_result = provider.structured_response(
+                        StructuredAIRequest(
+                            instructions=DRAWING_WELDS_INSTRUCTIONS,
+                            input_text=text[: settings.AI_MAX_INPUT_CHARS],
+                            json_schema=DRAWING_WELDS_SCHEMA,
+                            images=full_images,
+                            schema_name="engineering_drawing_welds_v2",
+                        )
+                    )
+                    results = [title_result, parts_result, welds_result]
+                    restore_payload_evidence(
+                        title_result.data,
+                        prepared_pages,
+                        title_crop_sections=frozenset(
+                            {"product", "unresolved_regions"}
+                        ),
+                    )
+                    restore_payload_evidence(parts_result.data, prepared_pages)
+                    restore_payload_evidence(welds_result.data, prepared_pages)
+                    payload = {
+                        "product": title_result.data.get("product") or {},
+                        "parts": parts_result.data.get("parts") or [],
+                        "weld_joints": welds_result.data.get("weld_joints") or [],
+                        "unresolved_regions": [
+                            item
+                            for result in results
+                            for item in result.data.get("unresolved_regions") or []
+                        ],
+                    }
+                else:
+                    result = provider.structured_response(
+                        StructuredAIRequest(
+                            instructions=DRAWING_INSTRUCTIONS,
+                            input_text=text[: settings.AI_MAX_INPUT_CHARS],
+                            json_schema=DRAWING_SCHEMA,
+                            schema_name="engineering_drawing_v2",
+                        )
+                    )
+                    results = [result]
+                    payload = result.data
+                job.input_tokens = sum(result.input_tokens for result in results)
+                job.output_tokens = sum(result.output_tokens for result in results)
+                job.total_tokens = sum(result.total_tokens for result in results)
+                job.external_response_id = next(
+                    (result.response_id for result in results if result.response_id),
+                    None,
                 )
-                payload = result.data
-                job.input_tokens = result.input_tokens
-                job.output_tokens = result.output_tokens
-                job.total_tokens = result.total_tokens
-                job.external_response_id = result.response_id
+                validate_drawing_identity(
+                    payload, document.original_filename, len(pages)
+                )
                 job.status = "completed"
                 job.progress = 100
                 job.completed_at = datetime.utcnow()
@@ -797,6 +986,9 @@ class EngineeringService:
                     failed.completed_at = datetime.utcnow()
                 AIQuotaService(self.db).refund(job.id, user, context, str(exc))
             self.db.commit()
+            if isinstance(exc, AIProviderError):
+                status_code = 503 if exc.retryable else 422
+                raise AIExtractionRunError(exc.code, str(exc), status_code) from exc
             raise
 
     def _replace_extracted_data(

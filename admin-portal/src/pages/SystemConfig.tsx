@@ -207,6 +207,7 @@ const SystemConfig: React.FC = () => {
             base_url: values.ai_base_url,
             model: values.ai_model,
             api_key: enteredKey || undefined,
+            task_types: form.getFieldValue('ai_task_types') || [],
           });
       const result = resp?.data?.data || resp?.data || resp;
       result.success ? message.success(result.message) : message.error(result.message || '连接测试失败');
@@ -303,7 +304,7 @@ const SystemConfig: React.FC = () => {
             showIcon
             style={{ marginBottom: 16 }}
             message={`API Key：${aiKeyHint}`}
-            description="可同时配置多个模型。系统按任务类型和难度选择模型，并按积分倍率计费；Key 在后端加密保存。"
+            description="可同时配置多个模型。系统按任务类型和难度选择模型；只有测试通过的模型才会提供给用户端。适用于图纸识别（或留空适用于全部任务）的模型会额外验证图片输入。"
           />
           {!!models.length && (
             <Space direction="vertical" style={{ width: '100%', marginBottom: 16 }}>

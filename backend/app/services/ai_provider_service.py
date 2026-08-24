@@ -11,6 +11,11 @@ import httpx
 
 SUPPORTED_AI_PROVIDERS = {"openai_responses", "openai_compatible_chat"}
 
+VISION_TEST_IMAGE_DATA_URL = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAIAAAABACAIAAABdtOgoAAAElUlEQVR4nO2cTUhqTRiAz/mqG7axRRDSrk1BoKSE2lHpqAlB0SKqTUEQtEqyRbUJyk0/m/YF/S7LcBX9WJihZhFWBAYVLbJFGGRUizpJcxfDPRxST12593sX931WM+/MmXnPPMwcgyGWEMIgcPwHncC/DgoABgUAky+tsCwLlcc/hfS7izsAmPz0EP4u+nuknzG4A4BBAcCgAGBQADAoABgUAAwKAAYFAIMCgEEBwKAAYFAAMCgAGBQADAoABgUAgwKAQQHAoABgchTQ1dW1srJCyxqNpr+/n5ZdLpfH42EYpqioqO4XU1NTDMMUFxd/GoT24Xme47iFhQUxPjg4ODs7K1YdDsfp6an4eDQadTgcPM/X19fH43HpyPPz8zqdzmg06nS6xcVFGlQoFDzPi6NJ0/B6vTTD/Px8WvB4POmZf5ox41O5LSPDMAyRkB7JxvT09MDAACHk6elJq9UajUYaNxgMd3d3hBClUvnpEZnIy8uL1WpdXl6m1UAg0NLSQsvPz88VFRXSzhqNJh6PE0I8Hk9bW5vYtLGxwXFcMpkkhCSTSY7jfD4fbTWZTH6/P1san4LpHdJnlBlKngxrLt+cjbOzM57nCSFbW1vDw8Majeb19VUQBLVanS05+cjR0RHHcbScSqXKy8vf398JIV6vt6+vT9pZpVJdXl4SQgRB2NvbE5tsNls4HBYHDIVCdrudtu7s7FgslmxpkK8EpM8oM5Q86Suc4xFUVVV1fX1NCAmHw2azWafTHR8fn5yc1NTU5DagWq2+urqi5by8PIPBEIlEGIZZW1trbm6W9hwbGzObzd3d3cFg0Gw2i/Hz8/Pq6mqxqtVqY7EYLVutVoZh/H5/brllm/GPkKMAlmUrKysvLi4ODw+NRmNtbW0kEjk4OLBYLLSDIAjiSbq/v//lgKlUqqCgQKw2NTWtr68zDBOJRD69c1dXVywWM5lMLpdrdHQ024CEEOklHLfbPTIy8p1XS8/8mzPmiPwGkcHtdi8tLdGDKBaLtbe3d3R00G2RcXvKR3Z3dxsaGsRqMpnU6/XRaLSzs1PaOZFIhEIhGkkkEqWlpWKT3W4XmwghwWDQ4XBIZ6mrq9vZ2fndIyjjjNne6EsyrLl8sww+n89mszmdTkLIx8eHVqulMrIlJxN5eHjQ6/Xid5LC83xvb+/q6qq08/39fVlZ2c3NDSHk/Py8pqZGbNrc3OQ47vHxkfz6CG9vb0tnCQQCJpPpdwVknDHbG31J+gpnuJr4TQwGQyAQ6OnpYRiGZVmVSqVUKsVWupFp2Wg0jo+PC4JgMplohOO4yclJ2odl2ff396GhIbE/pbGxcWRkZGJiQhosKSmZmZlpbW1VKBR5eXlzc3Nik8PhuL295Xm+sLBQEASn02mz2aTPWiyWHz9+vL29yb9XeubZZvwjsERyE5QemgTvhv410lcY/xIGBgUAgwKAQQHAoABgUAAwKAAYFAAMCgAGBQCDAoBBAcCgAGBQADAoABgUAAwKAAYFAIMCgEEBwKAAYFAAMCgAmAwXs/B/J/6f4A4AhsV7cLDgDgAGBQCDAoD5CV+8u9hOXJ4VAAAAAElFTkSuQmCC"
+)
+
 
 class AIProviderError(RuntimeError):
     def __init__(self, code: str, message: str, retryable: bool = False):
@@ -246,6 +251,26 @@ class OpenAICompatibleProvider:
         return (
             urlsplit(self.config.base_url).hostname or ""
         ).lower() == "api.deepseek.com"
+
+
+def connection_test_request(*, vision: bool = False) -> StructuredAIRequest:
+    """Build a structured test that exercises image transport when required."""
+    return StructuredAIRequest(
+        instructions='Return JSON only in the exact shape {"ok": true}.',
+        input_text=(
+            "Inspect the supplied test image, then confirm the request succeeded."
+            if vision
+            else "Connection test. Respond with JSON confirming ok is true."
+        ),
+        json_schema={
+            "type": "object",
+            "properties": {"ok": {"type": "boolean", "const": True}},
+            "required": ["ok"],
+            "additionalProperties": False,
+        },
+        images=[AIImageInput(VISION_TEST_IMAGE_DATA_URL, 1)] if vision else [],
+        schema_name="vision_connection_test" if vision else "connection_test",
+    )
 
 
 def make_strict_provider_schema(schema: dict[str, Any]) -> dict[str, Any]:
