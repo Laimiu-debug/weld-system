@@ -125,6 +125,14 @@ def test_quota_reservation_locks_entitlement_and_has_database_uniqueness() -> No
     assert AIUsageLedger.__table__.c.idempotency_key.unique is True
 
 
+def test_enterprise_member_uses_personal_flagship_entitlement_in_personal_workspace() -> None:
+    service = AIQuotaService(Mock())
+    user = SimpleNamespace(id=7, member_tier="enterprise_pro_max")
+
+    assert service._tier_key(user, _context()) == "enterprise_pro_max"
+    assert service._entitlement_tier_key(user, _context()) == "personal_flagship"
+
+
 def test_workspace_and_enterprise_user_task_limits_apply_to_byok_too() -> None:
     service = AIQuotaService(Mock())
     service._get_entitlement = Mock(
@@ -311,6 +319,20 @@ def test_publish_maps_custom_semantic_field_to_fixed_column_and_module_data() ->
         payload["modules_data"]["basic-1"]["data"]["enterprise_pqr_no"] == "PQR-SEM-001"
     )
     assert "alternate-1" not in payload["modules_data"]
+
+
+def test_publish_uses_accepted_report_number_as_pqr_number_and_default_title() -> None:
+    service = SmartImportReviewService(Mock())
+    report_number = _field("report_number", "HGP-21-622B", "field-number")
+    report_number.module_id = "unmapped"
+    report_number.instance_id = None
+    report_number.review_status = "accepted"
+
+    payload = service._build_payload(_entity(), [report_number], None)
+
+    assert payload["pqr_number"] == "HGP-21-622B"
+    assert payload["title"] == "PQR HGP-21-622B"
+    assert payload["modules_data"]["unmapped"]["data"]["report_number"] == "HGP-21-622B"
 
 
 def test_pqr_publish_uses_existing_service_and_keeps_formal_record_draft() -> None:

@@ -30,6 +30,7 @@ def _field(field_id, key, value, canonical=None, module="basic", status="accepte
         normalized_value=value,
         confidence=0.9,
         review_status=status,
+        raw_value=None,
     )
 
 
@@ -90,6 +91,68 @@ def test_workbench_reports_required_range_semantic_and_unmapped_states() -> None
     assert result["counts"]["unconfirmed"] == 1
     assert result["field_states"]["f3"]["is_unmapped"] is True
     assert result["can_publish"] is False
+
+
+def test_accepted_unmapped_field_is_warning_and_does_not_block_publish() -> None:
+    fields = [_field("f1", "report_number", "HGP-21-622B", module="unmapped")]
+    fields[0].raw_value = {"label": "报告编号", "value": "HGP-21-622B"}
+    entity = SimpleNamespace(id="entity-1", job_id="job-1", entity_type="pqr")
+    job = SimpleNamespace(
+        schema_snapshot={
+            "field_bindings": [
+                {
+                    "field_key": "pqr_number",
+                    "instance_id": None,
+                    "required": True,
+                    "label": "PQR编号",
+                },
+                {
+                    "field_key": "title",
+                    "instance_id": None,
+                    "required": True,
+                    "label": "标题",
+                },
+            ]
+        }
+    )
+    db = Mock()
+    db.query.side_effect = lambda model: _Query(
+        fields if model is ExtractedField else [job] if model is ExtractionJob else []
+    )
+    service = SmartImportWorkbenchService(db)
+    service.review = Mock()
+    service.review.get_entity.return_value = entity
+    service.review.smart_import._scope_query.return_value = _Query([])
+
+    result = service.validate("entity-1", SimpleNamespace(id=1), SimpleNamespace())
+
+    assert result["can_publish"] is True
+    assert not any(item["code"] == "required_missing" for item in result["issues"])
+    assert result["issues"][0]["severity"] == "warning"
+    assert result["field_states"]["f1"]["label"] == "报告编号"
+    assert "report_number" not in result["issues"][0]["message"]
+
+
+def test_duplicate_issue_uses_chinese_business_label() -> None:
+    fields = [
+        _field("f1", "ndt_report_number", "20010724-1", status="pending"),
+        _field("f2", "ndt_report_number", "20010724-2", status="pending"),
+    ]
+    entity = SimpleNamespace(id="entity-1", job_id="job-1", entity_type="pqr")
+    job = SimpleNamespace(schema_snapshot={"field_bindings": []})
+    db = Mock()
+    db.query.side_effect = lambda model: _Query(
+        fields if model is ExtractedField else [job] if model is ExtractionJob else []
+    )
+    service = SmartImportWorkbenchService(db)
+    service.review = Mock()
+    service.review.get_entity.return_value = entity
+
+    result = service.validate("entity-1", SimpleNamespace(id=1), SimpleNamespace())
+
+    duplicate = next(item for item in result["issues"] if item["code"] == "duplicate_field")
+    assert duplicate["message"] == "字段“无损检测报告编号”出现多条待发布值"
+    assert "ndt_report_number" not in duplicate["message"]
 
 
 def test_schema_metadata_supports_old_snapshots_without_rich_bindings() -> None:

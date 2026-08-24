@@ -1,0 +1,83 @@
+.cc-page {
+  --cc-accent: #f97316;
+  --cc-border: #dfe5ec;
+  --cc-bg: #f4f7fb;
+  color: #263445;
+  margin: 0 auto;
+  max-width: 1780px;
+}
+
+.cc-heading { margin-bottom: 16px; }
+.cc-heading h2 { margin-bottom: 2px; }
+.cc-toolbar { border-color: var(--cc-border); margin-bottom: 16px; }
+.cc-toolbar__inner { align-items: center; display: flex; gap: 16px; justify-content: space-between; }
+.cc-save { background: var(--cc-accent); border-color: var(--cc-accent); }
+.cc-save:hover { background: #ea580c !important; border-color: #ea580c !important; }
+
+.cc-workbench {
+  align-items: start;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 250px minmax(560px, 1fr) 340px;
+}
+
+.cc-joints, .cc-side { position: sticky; top: 12px; }
+.cc-joints .ant-card-body { padding: 12px; }
+.cc-joints .ant-list { margin-top: 12px; max-height: calc(100vh - 330px); overflow: auto; }
+.cc-joint { border: 1px solid transparent !important; border-radius: 8px; cursor: pointer; margin-bottom: 6px; padding: 10px !important; transition: background-color .18s ease, border-color .18s ease; }
+.cc-joint:hover { background: #f8fafc; border-color: var(--cc-border) !important; }
+.cc-joint--active { background: #eef2ff !important; border-color: #818cf8 !important; }
+.cc-joint .ant-list-item-meta-description { font-size: 12px; }
+
+.cc-editor { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.cc-editor .ant-card { border-color: var(--cc-border); }
+.cc-editor .ant-card-head-title b { color: #4f46e5; margin-right: 4px; }
+.cc-editor .ant-form-item { margin-bottom: 8px; }
+.cc-accent { color: var(--cc-accent); font-size: 17px; }
+.cc-op-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.cc-op-layout { display: grid; gap: 14px; grid-template-columns: 210px minmax(0, 1fr); }
+.cc-op-list { background: #f8fafc; border: 1px solid var(--cc-border); border-radius: 8px; padding: 6px; }
+.cc-op { align-items: flex-start !important; border: 1px solid transparent !important; border-radius: 6px; cursor: pointer; display: flex !important; flex-direction: column; margin-bottom: 4px; padding: 9px !important; }
+.cc-op--active { background: #eef2ff; border-color: #818cf8 !important; }
+.cc-op-form { border-left: 1px solid var(--cc-border); padding-left: 14px; }
+.cc-op-form .ant-input-number { width: 100%; }
+
+.cc-side { display: flex; flex-direction: column; gap: 14px; }
+.cc-side .ant-card { border-color: var(--cc-border); }
+.cc-preview { background: var(--cc-bg); border-radius: 8px; min-height: 220px; padding: 12px; }
+.cc-preview__title { color: #1f2937; font-weight: 700; text-align: center; }
+.cc-preview svg { display: block; height: auto; margin-top: 8px; width: 100%; }
+.cc-status { margin: 12px 0 0; }
+.cc-side .ant-statistic { margin-bottom: 10px; }
+.cc-side .ant-statistic-content { font-size: 22px; }
+.cc-groove-modal { display: grid; gap: 24px; grid-template-columns: 420px minmax(0, 1fr); }
+.cc-groove-modal .ant-input-number, .cc-groove-modal .ant-select { width: 100%; }
+
+@media print {
+  .ant-layout-sider, .ant-layout-header, .cc-toolbar button, .cc-joints button, .cc-op-actions, .cc-editor button { display: none !important; }
+  .cc-workbench { grid-template-columns: 210px 1fr 300px; }
+  .cc-joints, .cc-side { position: static; }
+}
+
+@media (max-width: 1280px) {
+  .cc-workbench { grid-template-columns: 220px minmax(520px, 1fr); }
+  .cc-side { display: grid; grid-column: 1 / -1; grid-template-columns: 1fr 1fr; position: static; }
+}
+
+@media (max-width: 900px) {
+  .cc-toolbar__inner { align-items: stretch; flex-direction: column; }
+  .cc-workbench { grid-template-columns: 1fr; }
+  .cc-joints, .cc-side { position: static; }
+  .cc-joints .ant-list { max-height: 280px; }
+  .cc-op-layout, .cc-groove-modal { grid-template-columns: 1fr; }
+  .cc-op-form { border-left: 0; border-top: 1px solid var(--cc-border); padding-left: 0; padding-top: 14px; }
+}
+
+@media (max-width: 600px) {
+  .cc-side { grid-template-columns: 1fr; }
+  .cc-toolbar .ant-select { width: 100% !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-joint { transition: none; }
+}

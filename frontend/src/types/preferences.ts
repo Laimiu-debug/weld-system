@@ -42,6 +42,8 @@ export interface UserSystemPreferences {
   welderCertifications: boolean
   productionDeadlines: boolean
   emailDigestFrequency: EmailDigestFrequency
+  aiDataOutboundAuthorized: boolean
+  aiDataOutboundNoticeVersion: string
 }
 
 export const DEFAULT_SYSTEM_PREFERENCES: UserSystemPreferences = {
@@ -85,4 +87,6 @@ export const DEFAULT_SYSTEM_PREFERENCES: UserSystemPreferences = {
   welderCertifications: true,
   productionDeadlines: true,
   emailDigestFrequency: 'immediate',
+  aiDataOutboundAuthorized: false,
+  aiDataOutboundNoticeVersion: '',
 }

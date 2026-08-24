@@ -57,14 +57,14 @@ class CapabilityLibraryService:
         )
         certifications = self._certifications([item.id for item in welders])
         today = date.today()
-        welder_rows = [
+        all_welder_rows = [
             _welder_row(item, certifications.get(item.id, []), today)
             for item in welders
         ]
         material_rows = [_material_row(item, today) for item in materials]
         equipment_rows = [_equipment_row(item, today) for item in equipment]
         for entry in valid_entries:
-            _attach_resources(entry, welder_rows, material_rows, equipment_rows)
+            _attach_resources(entry, all_welder_rows, material_rows, equipment_rows)
         issues = self._issues(
             wps_records,
             pqr_records,
@@ -72,7 +72,7 @@ class CapabilityLibraryService:
             links,
             valid_entries,
             link_state,
-            welder_rows,
+            all_welder_rows,
         )
 
         filtered_entries = [
@@ -103,6 +103,12 @@ class CapabilityLibraryService:
             if _record_filter(item, filters, search)
             and (not _has_dimension_filter(filters) or item.id in filtered_pqr_ids)
         ]
+        # The capability library represents usable capability.  Inactive or
+        # expired welders remain in risk/issues, but must not inflate the
+        # library tab count or appear as available resources.
+        welder_rows = [
+            item for item in all_welder_rows if item["is_currently_valid"]
+        ]
         if search:
             welder_rows = [
                 item
@@ -110,7 +116,7 @@ class CapabilityLibraryService:
                 if search in f"{item['welder_code']} {item['full_name']}".casefold()
             ]
 
-        health = _health(issues, wps_records, valid_entries, welder_rows)
+        health = _health(issues, wps_records, valid_entries, all_welder_rows)
         dimensions = _dimensions(filtered_entries)
         return {
             "generated_at": datetime.utcnow().isoformat(),
@@ -123,9 +129,7 @@ class CapabilityLibraryService:
             "summary": {
                 "valid_wps": len({item["wps_id"] for item in valid_entries}),
                 "qualified_pqr": len({item["pqr_id"] for item in valid_entries}),
-                "active_welders": sum(
-                    item["is_currently_valid"] for item in welder_rows
-                ),
+                "active_welders": len(welder_rows),
                 "available_materials": sum(
                     item["is_available"] for item in material_rows
                 ),

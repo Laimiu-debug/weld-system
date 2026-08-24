@@ -27,6 +27,7 @@ import {
   ClockCircleOutlined,
   BulbOutlined,
   BankOutlined,
+  SafetyCertificateOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import {
@@ -35,6 +36,10 @@ import {
 } from '@/types/preferences'
 import { usePreferencesStore } from '@/store/preferencesStore'
 import { loadBranding, updateBranding } from '@/hooks/useBranding'
+import {
+  AI_DATA_OUTBOUND_NOTICE_VERSION,
+  aiDataOutboundNotice,
+} from '@/utils/aiPrivacy'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -96,6 +101,10 @@ const SystemSettingsPage: React.FC = () => {
             ? values.workEndTime.format('HH:mm')
             : preferences.workEndTime,
       }
+
+      next.aiDataOutboundNoticeVersion = next.aiDataOutboundAuthorized
+        ? AI_DATA_OUTBOUND_NOTICE_VERSION
+        : ''
 
       if (next.desktopNotifications && typeof Notification !== 'undefined') {
         if (Notification.permission === 'default') {
@@ -411,6 +420,33 @@ const SystemSettingsPage: React.FC = () => {
                     </Form.Item>
                   </Col>
                 </Row>
+              </Card>
+            </Col>
+
+            <Col xs={24}>
+              <Card
+                title={
+                  <Space>
+                    <SafetyCertificateOutlined />
+                    <span>AI 与数据外发</span>
+                  </Space>
+                }
+              >
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ marginBottom: 16 }}
+                  message="这是账号级授权，保存后不再在每次 AI 提取时重复勾选"
+                  description={aiDataOutboundNotice()}
+                />
+                <Form.Item
+                  name="aiDataOutboundAuthorized"
+                  label="允许向外部模型发送 AI 处理所需数据"
+                  valuePropName="checked"
+                  extra="关闭后，PQR 提取和图纸识别会在执行前要求单次确认。隐私声明升级时，本授权会自动失效并要求重新保存。"
+                >
+                  <Switch checkedChildren="已授权" unCheckedChildren="未授权" />
+                </Form.Item>
               </Card>
             </Col>
 

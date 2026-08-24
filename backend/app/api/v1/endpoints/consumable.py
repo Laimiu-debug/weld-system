@@ -30,6 +30,22 @@ def row(item):
     }
 
 
+@router.get("/usage")
+def list_consumable_usage(
+    event_type: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+):
+    context = resolve_workspace(db, current_user, workspace_id)
+    _permission(db, current_user, context)
+    return ConsumableIssueService(db).list_usage(
+        current_user, context, event_type, skip, limit
+    )
+
+
 @router.post("/quota-runs/{run_id}/issue-list", status_code=201)
 def generate_issue_list(
     run_id: str,

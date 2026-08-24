@@ -3,6 +3,7 @@ from io import BytesIO
 from PIL import Image, ImageDraw
 
 from app.services.drawing_preprocessing_service import (
+    MAX_AI_DRAWING_EDGE,
     prepare_drawing_page,
     restore_payload_evidence,
 )
@@ -57,3 +58,13 @@ def test_title_crop_evidence_is_restored_to_source_coordinates() -> None:
     assert all(0 <= value <= 1 for value in bbox)
     assert bbox[0] < bbox[2]
     assert bbox[1] < bbox[3]
+
+
+def test_large_drawing_is_bounded_before_it_is_sent_to_ai() -> None:
+    drawing = Image.new("RGB", (MAX_AI_DRAWING_EDGE + 1000, 1000), "white")
+
+    prepared = prepare_drawing_page(_png(drawing), 1)
+
+    assert max(prepared.oriented_size) == MAX_AI_DRAWING_EDGE
+    with Image.open(BytesIO(prepared.full_png)) as full:
+        assert max(full.size) == MAX_AI_DRAWING_EDGE

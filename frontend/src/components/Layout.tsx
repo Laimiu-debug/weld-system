@@ -335,10 +335,14 @@ const Layout: React.FC<LayoutProps> = () => {
       hidden: isGuestMode ? true : !checkPermission('ppqr.read'),
     },
     {
-      key: '/materials',
+      key: 'materials-group',
       icon: <ProductIcon kind="materials" />,
       label: '焊材管理',
       hidden: isGuestMode ? true : !checkPermission('materials.read'),
+      children: [
+        { key: '/materials', label: '焊材台账' },
+        { key: '/materials/usage', label: '焊材用量' },
+      ],
     },
     {
       key: '/welders',

@@ -13,6 +13,28 @@ from app.models.subscription import SubscriptionPlan
 
 logger = logging.getLogger(__name__)
 
+
+AI_ENTITLEMENT_DESCRIPTIONS = {
+    "free": "平台 AI：10 点/月、5 点/日，单次最多 10 页",
+    "personal_free": "平台 AI：10 点/月、5 点/日，单次最多 10 页",
+    "personal_pro": "平台 AI：100 点/月、50 点/日，单次最多 30 页",
+    "personal_advanced": "平台 AI：300 点/月、50 点/日，单次最多 30 页",
+    "personal_flagship": "平台 AI：1000 点/月、50 点/日，单次最多 30 页",
+    "enterprise": "企业工作区共享平台 AI：2000 点/月、500 点/日，单次最多 30 页",
+    "enterprise_pro": "企业工作区共享平台 AI：6000 点/月、500 点/日，单次最多 30 页",
+    "enterprise_pro_max": "企业工作区共享平台 AI：20000 点/月、500 点/日，单次最多 30 页",
+}
+
+
+def ai_entitlement_features(tier_key: str) -> List[str]:
+    description = AI_ENTITLEMENT_DESCRIPTIONS.get(tier_key)
+    if not description:
+        return []
+    return [
+        description,
+        "自有 API Key 不扣平台 AI 点数，但仍受单次页数和任务并发限制",
+    ]
+
 DEFAULT_SUBSCRIPTION_PLANS: List[dict] = [
     {
         "id": "free",

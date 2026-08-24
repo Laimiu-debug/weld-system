@@ -273,7 +273,7 @@ class AIQuotaService:
         self, user: User, context: WorkspaceContext, lock: bool
     ) -> AIPlanEntitlement | None:
         query = self.db.query(AIPlanEntitlement).filter(
-            AIPlanEntitlement.tier_key == self._tier_key(user, context),
+            AIPlanEntitlement.tier_key == self._entitlement_tier_key(user, context),
             AIPlanEntitlement.workspace_type == str(context.workspace_type),
         )
         if lock:
@@ -287,6 +287,22 @@ class AIQuotaService:
             )
             return (company.membership_tier if company else None) or "enterprise"
         return user.member_tier or "free"
+
+    def _entitlement_tier_key(self, user: User, context: WorkspaceContext) -> str:
+        """Resolve the plan row used by the current workspace.
+
+        Enterprise memberships can still use a personal workspace.  Entitlement
+        rows are scoped by workspace type, so those accounts use the highest
+        personal entitlement instead of looking up a non-existent
+        ``enterprise_* + personal`` combination.
+        """
+        tier_key = self._tier_key(user, context)
+        if (
+            context.workspace_type == WorkspaceType.PERSONAL
+            and tier_key in {"enterprise", "enterprise_pro", "enterprise_pro_max"}
+        ):
+            return "personal_flagship"
+        return tier_key
 
     def _used_points(
         self, user: User, context: WorkspaceContext, period_start: date

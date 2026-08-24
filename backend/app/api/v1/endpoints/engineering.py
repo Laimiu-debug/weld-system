@@ -38,6 +38,7 @@ from app.services.document_storage_service import (
     get_document_storage,
 )
 from app.services.engineering_service import EngineeringService
+from app.services.ai_quota_service import AIQuotaError
 from app.services.operations_service import OperationsService
 from app.services.system_config_service import get_max_upload_bytes
 
@@ -53,6 +54,21 @@ def row(item):
     return {
         column.name: getattr(item, column.name) for column in item.__table__.columns
     }
+
+
+def extracted_row(item):
+    """Serialize legacy and current extracted rows with an explicit provenance."""
+    value = row(item)
+    evidence = dict(value.get("evidence") or {})
+    if not evidence.get("source"):
+        evidence["source"] = (
+            "manual_correction"
+            if value.get("review_status") == "corrected"
+            else "ai_extraction"
+        )
+    evidence.setdefault("source_document_id", None)
+    value["evidence"] = evidence
+    return value
 
 
 @router.get("/projects")
@@ -192,9 +208,9 @@ def revision_detail(
     )
     return {
         "revision": row(rev),
-        "parts": [row(x) for x in parts],
-        "weld_joints": [row(x) for x in joints],
-        "requirements": [row(x) for x in reqs],
+        "parts": [extracted_row(x) for x in parts],
+        "weld_joints": [extracted_row(x) for x in joints],
+        "requirements": [extracted_row(x) for x in reqs],
         "validation": validation,
         "preview_url": f"/engineering/revisions/{rev.id}/pages/1/preview",
     }
@@ -335,6 +351,10 @@ def parse_drawing(
         raise HTTPException(
             exc.status_code, {"code": exc.code, "message": str(exc)}
         ) from exc
+    except AIQuotaError as exc:
+        raise HTTPException(
+            exc.status_code, {"code": exc.code, "message": str(exc)}
+        ) from exc
     finally:
         if provider is not None:
             provider.close()
@@ -354,6 +374,22 @@ def patch_part(
         Part, entity_id, data.values, data.reason, current_user, context
     )
     return {"entity": row(entity), "revision": row(rev)}
+
+
+@router.patch("/revisions/{revision_id}/product-identity")
+def patch_product_identity(
+    revision_id: str,
+    data: EntityPatch,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+):
+    context = resolve_workspace(db, current_user, workspace_id)
+    permitted(db, current_user, context, "edit")
+    revision = EngineeringService(db).patch_product_identity(
+        revision_id, data.values, data.reason, current_user, context
+    )
+    return row(revision)
 
 
 @router.patch("/weld-joints/{entity_id}")

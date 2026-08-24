@@ -56,6 +56,14 @@
   word-break: break-word;
 }
 
+.smart-import__value {
+  display: -webkit-box;
+  max-height: 4.5em;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
 .smart-import__evidence {
   background: #fffbe6;
   border-left: 3px solid #faad14;
@@ -64,7 +72,10 @@
   line-height: 1.5;
   padding: 4px 8px;
   text-align: left;
-  white-space: normal;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .smart-import__field-link {
@@ -72,6 +83,11 @@
   height: auto;
   padding: 0;
   text-align: left;
+}
+
+.smart-import__technical-field {
+  cursor: help;
+  font-size: 12px;
 }
 
 .smart-import__review-workbench {
@@ -145,6 +161,12 @@
 
 .smart-import__module-card {
   border-color: #e2e8f0;
+}
+
+.smart-import__module-card .ant-table-cell {
+  padding-bottom: 10px !important;
+  padding-top: 10px !important;
+  vertical-align: middle;
 }
 
 .smart-import__modal-alert,

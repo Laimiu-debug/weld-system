@@ -12,6 +12,7 @@ from app.models.smart_import import ImportBatch, SourceDocument
 from app.services.engineering_service import (
     DRAWING_SCHEMA,
     clean_evidence,
+    drawing_identity_problems,
     drawing_risks,
     EngineeringService,
     validate_drawing_identity,
@@ -172,6 +173,20 @@ def test_drawing_identity_accepts_located_title_values() -> None:
     }
 
     validate_drawing_identity(payload, "26047-100立方米XAI液化缓冲罐.pdf", 1)
+
+
+def test_drawing_identity_problems_can_be_recorded_without_rejecting_partial_data() -> None:
+    payload = {
+        "product": {"drawing_number": None, "product_name": None, "confidence": 0.2},
+        "parts": [{"ref": "A2", "name": "筒体"}],
+        "weld_joints": [{"weld_number": "A2", "joint_type": "butt"}],
+    }
+
+    problems = drawing_identity_problems(payload, "drawing.pdf", 1)
+
+    assert "图号为空" in problems
+    assert "产品名称为空" in problems
+    assert payload["parts"][0]["name"] == "筒体"
 
 
 def test_drawing_provider_rejection_becomes_user_facing_run_error() -> None:

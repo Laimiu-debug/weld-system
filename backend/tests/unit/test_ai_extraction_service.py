@@ -15,6 +15,7 @@ from app.models.smart_import import (
 )
 from app.services.ai_extraction_service import (
     AIExtractionService,
+    _evidence_matches_page,
     build_extraction_stages,
     relax_business_required_fields,
     validate_extraction_result,
@@ -101,8 +102,10 @@ class FakeProvider:
     provider_name = "openai_responses"
     model_name = "vision-model"
 
-    def __init__(self):
+    def __init__(self, fail_schema_once: bool = False):
         self.calls = 0
+        self.fail_schema_once = fail_schema_once
+        self.schema_failure_returned = False
 
     def structured_response(self, request):
         self.calls += 1
@@ -116,6 +119,15 @@ class FakeProvider:
                 15,
             )
         if "pqr_number" in properties:
+            if self.fail_schema_once and not self.schema_failure_returned:
+                self.schema_failure_returned = True
+                return AIProviderResult(
+                    {},
+                    "empty-core-response",
+                    2,
+                    1,
+                    3,
+                )
             return AIProviderResult(
                 {
                     "pqr_number": {
@@ -160,6 +172,14 @@ class FakeProvider:
             3,
             10,
         )
+
+
+def test_evidence_matching_tolerates_pdf_layout_separators_without_hallucination() -> None:
+    page = "PQR No.\nPQR－001   母材：Q345R"
+
+    assert _evidence_matches_page("PQR No. PQR-001", page)
+    assert _evidence_matches_page("母材: Q345R", page)
+    assert not _evidence_matches_page("PQR-999", page)
 
 
 def test_runtime_schema_allows_missing_business_field_but_keeps_payload_contract() -> (
@@ -303,7 +323,7 @@ def test_scanned_page_ocr_and_extraction_create_review_only_evidence() -> None:
     storage.open_stream.return_value = BytesIO(b"pdf")
     renderer = Mock()
     renderer.render_png.return_value = b"\x89PNG\r\n\x1a\nimage"
-    provider = FakeProvider()
+    provider = FakeProvider(fail_schema_once=True)
     quota = Mock()
     service = AIExtractionService(db, storage, provider, renderer, quota)
     service.smart_import = smart_import
@@ -323,7 +343,7 @@ def test_scanned_page_ocr_and_extraction_create_review_only_evidence() -> None:
     assert page.text_content == "PQR No. PQR-001"
     assert job.status == "completed"
     assert job.external_response_id == "custom-response"
-    assert (job.input_tokens, job.output_tokens, job.total_tokens) == (37, 16, 53)
+    assert (job.input_tokens, job.output_tokens, job.total_tokens) == (39, 17, 56)
     assert entity.status == "draft"
     assert entity.draft_data == {"pqr_number": "PQR-001", "notes": "PQR-001"}
     assert batch.status == "review"
@@ -337,5 +357,5 @@ def test_scanned_page_ocr_and_extraction_create_review_only_evidence() -> None:
     evidence = next(item for item in added if isinstance(item, FieldEvidence))
     assert evidence.page_id == "page-1"
     assert evidence.evidence_type == "ocr"
-    assert provider.calls == 4
+    assert provider.calls == 5
     quota.settle.assert_called_once_with(job, SimpleNamespace(id=7), context, 1)

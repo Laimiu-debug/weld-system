@@ -8,6 +8,9 @@ from typing import Any
 from PIL import Image
 
 
+MAX_AI_DRAWING_EDGE = 4096
+
+
 @dataclass(frozen=True)
 class PreparedDrawingPage:
     page_number: int
@@ -24,6 +27,10 @@ def prepare_drawing_page(png: bytes, page_number: int) -> PreparedDrawingPage:
     with Image.open(BytesIO(png)) as source:
         original = source.convert("RGB")
     rotation, oriented = _best_orientation(original)
+    if max(oriented.size) > MAX_AI_DRAWING_EDGE:
+        oriented.thumbnail(
+            (MAX_AI_DRAWING_EDGE, MAX_AI_DRAWING_EDGE), Image.Resampling.LANCZOS
+        )
     width, height = oriented.size
     title_box = (
         int(width * 0.56),

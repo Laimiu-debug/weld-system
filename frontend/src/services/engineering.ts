@@ -66,6 +66,13 @@ export const engineeringService = {
   async patchPart(id: string, values: DataRow): Promise<DataRow> {
     return (await api.patch(`/engineering/parts/${id}`, { values })).data;
   },
+  async patchProductIdentity(revisionId: string, values: DataRow): Promise<DataRow> {
+    return (
+      await api.patch(`/engineering/revisions/${revisionId}/product-identity`, {
+        values,
+      })
+    ).data;
+  },
   async patchJoint(id: string, values: DataRow): Promise<DataRow> {
     return (await api.patch(`/engineering/weld-joints/${id}`, { values })).data;
   },

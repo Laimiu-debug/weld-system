@@ -150,6 +150,9 @@ class UserPreferences(BaseModel):
     welderCertifications: bool = True
     productionDeadlines: bool = True
     emailDigestFrequency: str = "immediate"
+    # AI 数据外发授权：由用户在“我的设置”中明确保存，声明版本变化时失效。
+    aiDataOutboundAuthorized: bool = False
+    aiDataOutboundNoticeVersion: str = ""
 
 
 class SecuritySettingsUpdate(BaseModel):

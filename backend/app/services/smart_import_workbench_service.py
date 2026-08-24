@@ -29,6 +29,51 @@ from app.services.custom_module_service import CustomModuleService
 from app.services.smart_import_review_service import SmartImportReviewService
 
 
+FIELD_LABELS_ZH = {
+    "report_number": "报告编号",
+    "pwps_number": "预焊接工艺规程编号",
+    "preliminary_wps_number": "预焊接工艺规程编号",
+    "preliminary_wps_date": "预焊接工艺规程日期",
+    "company_name": "单位名称",
+    "base_material_standard": "母材标准号",
+    "weld_metal_thickness": "焊缝金属厚度",
+    "filler_material_standard": "焊材标准",
+    "filler_material_id": "焊材编号",
+    "steel_identification": "钢材编号",
+    "joint_position": "焊接位置",
+    "welder_name": "焊工姓名",
+    "welder_code": "焊工代号",
+    "welding_date": "施焊日期",
+    "qualification_standard": "评定标准",
+    "max_heat_input": "最大线能量",
+    "cleaning_method": "焊前及层间清理方法",
+    "back_gouging_method": "背面清根方法",
+    "single_or_multi_pass": "单道焊或多道焊",
+    "single_or_multi_wire": "单丝焊或多丝焊",
+    "environmental_conditions": "环境条件",
+    "contact_tip_distance": "导电嘴至工件距离",
+    "impact_test_report_number": "冲击试验报告编号",
+    "groove_preparation": "坡口加工方法",
+    "bend_test_report_number": "弯曲试验报告编号",
+    "rt_report_number": "射线检测报告编号",
+    "ndt_report_number": "无损检测报告编号",
+    "charpy_energy_avg": "冲击吸收能量平均值",
+    "charpy_energy_min": "冲击吸收能量最小值",
+    "hardness_test_performed": "是否进行硬度试验",
+}
+
+
+def _display_field_label(field: ExtractedField, binding: dict[str, Any]) -> str:
+    raw_value = field.raw_value if isinstance(field.raw_value, dict) else {}
+    provider_label = str(raw_value.get("label") or "").strip()
+    return (
+        binding.get("label")
+        or provider_label
+        or FIELD_LABELS_ZH.get(str(field.field_key).casefold())
+        or "其他识别字段"
+    )
+
+
 class SmartImportWorkbenchService:
     def __init__(self, db: Session):
         self.db = db
@@ -63,6 +108,7 @@ class SmartImportWorkbenchService:
 
         for field in fields:
             confidence = field.confidence if field.confidence is not None else 0
+            binding = by_identity.get((field.instance_id, field.field_key)) or {}
             states[field.id] = {
                 "confidence_level": "high"
                 if confidence >= 0.85
@@ -71,10 +117,7 @@ class SmartImportWorkbenchService:
                 else "low",
                 "conflicts": [],
                 "is_unmapped": field.module_id == "unmapped",
-                "label": (
-                    by_identity.get((field.instance_id, field.field_key)) or {}
-                ).get("label")
-                or field.field_key,
+                "label": _display_field_label(field, binding),
             }
 
         grouped: dict[tuple[str | None, str], list[ExtractedField]] = defaultdict(list)
@@ -88,13 +131,15 @@ class SmartImportWorkbenchService:
 
         for key, duplicates in grouped.items():
             if len(duplicates) > 1:
+                binding = by_identity.get(key) or {}
+                label = _display_field_label(duplicates[0], binding)
                 self._issue(
                     issues,
                     states,
                     "duplicate_field",
                     "error",
                     [item.id for item in duplicates],
-                    f"字段 {key[1]} 出现多条待发布值",
+                    f"字段“{label}”出现多条待发布值",
                 )
         for key, values in canonical.items():
             distinct = {
@@ -107,13 +152,14 @@ class SmartImportWorkbenchService:
                 for item in values
             }
             if len(distinct) > 1:
+                label = _display_field_label(values[0], {})
                 self._issue(
                     issues,
                     states,
                     "semantic_conflict",
                     "error",
                     [item.id for item in values],
-                    f"关联字段 {key} 的值不一致",
+                    f"关联字段“{label}”的值不一致",
                 )
 
         present = {
@@ -121,11 +167,54 @@ class SmartImportWorkbenchService:
             for field in active
             if field.normalized_value not in (None, "", [])
         }
+        confirmed = [
+            field
+            for field in active
+            if field.review_status in {"accepted", "corrected"}
+            and field.normalized_value not in (None, "", [])
+        ]
+        confirmed_by_key = {field.field_key: field for field in confirmed}
+        effective_number_field = None
+        if entity.entity_type == "pqr":
+            effective_number_field = next(
+                (
+                    confirmed_by_key.get(key)
+                    for key in (
+                        "pqr_number",
+                        "report_number",
+                        "procedure_qualification_record_number",
+                        "qualification_record_number",
+                    )
+                    if confirmed_by_key.get(key)
+                ),
+                None,
+            )
+        elif entity.entity_type == "wps":
+            effective_number_field = confirmed_by_key.get("wps_number")
+
+        # Keep workbench validation consistent with the payload builder. A
+        # confirmed legacy PQR report number becomes the formal PQR number,
+        # and a draft title can be generated from that confirmed number.
+        effective_required_keys = set(confirmed_by_key)
+        if effective_number_field:
+            effective_required_keys.add(
+                "pqr_number" if entity.entity_type == "pqr" else "wps_number"
+            )
+        if (
+            confirmed_by_key.get("title")
+            or any(
+                confirmed_by_key.get(key)
+                for key in ("document_title", "report_title", "product_name")
+            )
+            or effective_number_field
+        ):
+            effective_required_keys.add("title")
         for binding in bindings:
             if (
                 binding.get("required")
                 and (binding.get("instance_id"), binding.get("field_key"))
                 not in present
+                and binding.get("field_key") not in effective_required_keys
             ):
                 issues.append(
                     {
@@ -144,14 +233,7 @@ class SmartImportWorkbenchService:
             else None
         )
         if number_key:
-            number_field = next(
-                (
-                    field
-                    for field in active
-                    if field.field_key == number_key and field.normalized_value
-                ),
-                None,
-            )
+            number_field = effective_number_field
             if number_field:
                 model = PQR if entity.entity_type == "pqr" else WPS
                 column = PQR.pqr_number if model is PQR else WPS.wps_number
@@ -177,13 +259,18 @@ class SmartImportWorkbenchService:
             states[field.id]["conflicts"].append("unconfirmed")
         unmapped = [field for field in active if field.module_id == "unmapped"]
         for field in unmapped:
+            label = states[field.id]["label"]
             self._issue(
                 issues,
                 states,
                 "unmapped",
-                "error",
+                "warning" if field.review_status in {"accepted", "corrected"} else "error",
                 [field.id],
-                f"未映射字段尚未处理：{field.field_key}",
+                (
+                    f"已确认的扩展字段将保存到导入模块：{label}"
+                    if field.review_status in {"accepted", "corrected"}
+                    else f"待归类字段尚未处理：{label}"
+                ),
             )
 
         counts = {

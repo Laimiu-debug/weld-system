@@ -69,6 +69,12 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import customModuleService, { CustomModuleSummary } from '@/services/customModules'
 import wpsTemplateService, { WPSTemplateSummary } from '@/services/wpsTemplates'
 import { workspaceService } from '@/services/workspace'
+import { usePreferencesStore } from '@/store/preferencesStore'
+import {
+  AI_DATA_OUTBOUND_NOTICE_VERSION,
+  aiDataOutboundNotice,
+  hasPersistentAIDataAuthorization,
+} from '@/utils/aiPrivacy'
 import './smartImport.css'
 
 const { Title, Text, Paragraph } = Typography
@@ -110,11 +116,6 @@ const statusLabels: Record<string, string> = {
   parsing: '解析中',
   ready: '可提取',
 }
-
-const OUTBOUND_NOTICE_VERSION = 'smart-import-outbound-v1'
-
-const outboundNotice = (providerHost: string) =>
-  `所选文件的原文、页面图像及相关元数据将发送至外部模型服务 ${providerHost}，仅用于结构化字段提取。请确认文件不包含禁止外发的数据，并已获得必要授权。`
 
 const sha256Hex = async (value: string) => {
   const bytes = new TextEncoder().encode(value)
@@ -210,6 +211,9 @@ const SmartImportPage: React.FC = () => {
   const isEnterpriseWorkspace = workspace?.type === 'enterprise'
   const workspaceLabel = isEnterpriseWorkspace ? '企业' : '个人'
   const batchExtractionPreferenceKey = `smart-import:batch-ai:${workspace?.id || 'personal'}`
+  const pageStateKey = `smart-import:page-state:${workspace?.id || 'personal'}`
+  const preferences = usePreferencesStore(state => state.preferences)
+  const persistentOutboundAuthorization = hasPersistentAIDataAuthorization(preferences)
   const [searchParams, setSearchParams] = useSearchParams()
   const [batches, setBatches] = useState<ImportBatch[]>([])
   const [batch, setBatch] = useState<ImportBatchDetail | null>(null)
@@ -238,7 +242,14 @@ const SmartImportPage: React.FC = () => {
   const [workbenchValidation, setWorkbenchValidation] = useState<WorkbenchValidation | null>(null)
   const [reviewHistory, setReviewHistory] = useState<ImportReviewHistory[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [activePageNumber, setActivePageNumber] = useState(1)
+  const [activePageNumber, setActivePageNumber] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(pageStateKey) || '{}')
+      return Number(saved.pageNumber) > 0 ? Number(saved.pageNumber) : 1
+    } catch {
+      return 1
+    }
+  })
   const [activeEvidence, setActiveEvidence] = useState<ExtractedField['evidence'][number] | null>(null)
   const [pagePreviewUrl, setPagePreviewUrl] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -311,15 +322,34 @@ const SmartImportPage: React.FC = () => {
     try {
       const list = await smartImportService.listBatches()
       setBatches(list)
-      const nextId = preferredId || batch?.id || list[0]?.id
+      let persisted: { batchId?: string; documentId?: string } = {}
+      try { persisted = JSON.parse(localStorage.getItem(pageStateKey) || '{}') }
+      catch { persisted = {} }
+      const persistedBatchExists = list.some(item => item.id === persisted.batchId)
+      const nextId = preferredId || batch?.id || (persistedBatchExists ? persisted.batchId : undefined) || list[0]?.id
       if (nextId) {
         const detail = await smartImportService.getBatch(nextId)
         setBatch(detail)
+        localStorage.setItem(pageStateKey, JSON.stringify({
+          ...persisted,
+          batchId: detail.id,
+          documentId: detail.documents.some(item => item.id === persisted.documentId)
+            ? persisted.documentId
+            : undefined,
+        }))
+        setActiveDocument(
+          detail.documents.find(item => item.id === persisted.documentId) || null
+        )
         const jobsByDocument = await Promise.all(
           detail.documents.map(item => smartImportService.listDocumentExtractionJobs(item.id))
         )
         setDocumentJobs(Object.fromEntries(
-          detail.documents.flatMap((item, index) => jobsByDocument[index][0] ? [[item.id, jobsByDocument[index][0]]] : [])
+          detail.documents.flatMap((item, index) => {
+            const latestExtraction = jobsByDocument[index].find(
+              job => job.progress_detail?.job_kind !== 'parse'
+            )
+            return latestExtraction ? [[item.id, latestExtraction]] : []
+          })
         ))
         const jobs = jobsByDocument.flat()
         const active = jobs.find(item => ['queued', 'processing'].includes(item.status))
@@ -330,7 +360,22 @@ const SmartImportPage: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }, [batch?.id])
+  }, [batch?.id, pageStateKey])
+
+  useEffect(() => {
+    if (!batch) return
+    try {
+      const current = JSON.parse(localStorage.getItem(pageStateKey) || '{}')
+      localStorage.setItem(pageStateKey, JSON.stringify({
+        ...current,
+        batchId: batch?.id,
+        documentId: activeDocument?.id,
+        pageNumber: activePageNumber,
+      }))
+    } catch {
+      // Ignore malformed legacy state; the next interaction will replace it.
+    }
+  }, [pageStateKey, batch, activeDocument?.id, activePageNumber])
 
   useEffect(() => {
     void loadBatches()
@@ -448,11 +493,18 @@ const SmartImportPage: React.FC = () => {
     try {
       const detail = await smartImportService.getBatch(id)
       setBatch(detail)
+      setActiveDocument(null)
+      localStorage.setItem(pageStateKey, JSON.stringify({ batchId: id, pageNumber: 1 }))
       const jobsByDocument = await Promise.all(
         detail.documents.map(item => smartImportService.listDocumentExtractionJobs(item.id))
       )
       setDocumentJobs(Object.fromEntries(
-        detail.documents.flatMap((item, index) => jobsByDocument[index][0] ? [[item.id, jobsByDocument[index][0]]] : [])
+        detail.documents.flatMap((item, index) => {
+          const latestExtraction = jobsByDocument[index].find(
+            job => job.progress_detail?.job_kind !== 'parse'
+          )
+          return latestExtraction ? [[item.id, latestExtraction]] : []
+        })
       ))
       const jobs = jobsByDocument.flat()
       const active = jobs.find(item => ['queued', 'processing'].includes(item.status))
@@ -657,7 +709,24 @@ const SmartImportPage: React.FC = () => {
   const applyFieldReview = async () => {
     if (!result || !reviewField) return
     const values = await reviewForm.validateFields()
+    const previousResult = result
+    const nextStatus: ExtractedField['review_status'] = values.action === 'accept'
+      ? 'accepted'
+      : values.action === 'correct'
+        ? 'corrected'
+        : 'rejected'
     setReviewing(true)
+    // Reflect the confirmed action immediately. The subsequent GET is the
+    // authoritative reconciliation and also avoids stale nested table rows.
+    setResult(current => current?.entity.id === result.entity.id ? {
+      ...current,
+      entity: {
+        ...current.entity,
+        fields: current.entity.fields.map(field => field.id === reviewField.id
+          ? { ...field, review_status: nextStatus }
+          : field),
+      },
+    } : current)
     try {
       const data = values.action === 'correct'
         ? { ...values, value: parseEditedValue(reviewField.normalized_value, values.value) }
@@ -667,12 +736,14 @@ const SmartImportPage: React.FC = () => {
         reviewField.id,
         data
       )
-      setResult({ ...result, entity })
+      const refreshedEntity = await smartImportService.getExtractedEntity(entity.id)
+      setResult(current => current ? { ...current, entity: refreshedEntity } : current)
       await refreshWorkbench(entity.id)
       setReviewField(null)
       reviewForm.resetFields()
       message.success(values.action === 'correct' ? '字段已修正' : '字段审核状态已更新')
     } catch (error) {
+      setResult(previousResult)
       message.error(errorMessage(error, '字段审核失败'))
     } finally {
       setReviewing(false)
@@ -864,14 +935,14 @@ const SmartImportPage: React.FC = () => {
       let outboundConsentIds: Record<string, string> | undefined
       if (batch.target_entity_type === 'pqr') {
         if (!extractionProviderHost) throw new Error('无法识别外部模型服务域名，请检查模型配置')
-        const notice = outboundNotice(extractionProviderHost)
+        const notice = aiDataOutboundNotice(extractionProviderHost)
         const privacyNoticeHash = await sha256Hex(notice)
         const documents = batchExtractionMode ? batch.documents : [activeDocument!]
         const consents = await Promise.all(documents.map(document => smartImportService.createOutboundConsent({
           document_id: document.id,
           provider_host: extractionProviderHost,
           purpose: `提取 ${document.original_filename} 的 PQR 结构化字段`,
-          privacy_notice_version: OUTBOUND_NOTICE_VERSION,
+          privacy_notice_version: AI_DATA_OUTBOUND_NOTICE_VERSION,
           privacy_notice_hash: privacyNoticeHash,
           authorized: true,
         })))
@@ -1068,7 +1139,13 @@ const SmartImportPage: React.FC = () => {
           >
             AI 提取
           </Button>
-          <Button size="small" icon={<EyeOutlined />} onClick={() => void viewDraft(row)}>
+          <Button
+            size="small"
+            icon={<EyeOutlined />}
+            disabled={documentJobs[row.id]?.status !== 'completed'}
+            title={documentJobs[row.id]?.status === 'completed' ? '查看当前提取草稿' : '完成 AI 提取后可查看草稿'}
+            onClick={() => void viewDraft(row)}
+          >
             查看草稿
           </Button>
         </Space>
@@ -1078,7 +1155,7 @@ const SmartImportPage: React.FC = () => {
 
   const fieldColumns: ColumnsType<ExtractedField> = [
     {
-      title: '字段',
+      title: '业务字段',
       dataIndex: 'field_key',
       width: 180,
       render: (value, row) => (
@@ -1095,16 +1172,22 @@ const SmartImportPage: React.FC = () => {
             ) : (
               <Text strong>{workbenchValidation?.field_states[row.id]?.label || value}</Text>
             )}
-            {workbenchValidation?.field_states[row.id]?.is_unmapped && <Tag color="orange">未映射</Tag>}
+            {workbenchValidation?.field_states[row.id]?.is_unmapped && (
+              <Tooltip title={['accepted', 'corrected'].includes(row.review_status) ? '已作为扩展字段保留，不影响发布' : '平台尚未找到对应的标准字段，请确认或归类'}>
+                <Tag color="orange">{['accepted', 'corrected'].includes(row.review_status) ? '扩展字段' : '待归类'}</Tag>
+              </Tooltip>
+            )}
           </Space>
-          {row.canonical_field_key && <Text type="secondary">{row.canonical_field_key}</Text>}
+          <Tooltip title={`技术字段：${row.field_key}${row.canonical_field_key ? `；平台语义：${row.canonical_field_key}` : ''}`}>
+            <Text type="secondary" className="smart-import__technical-field">查看技术字段</Text>
+          </Tooltip>
         </Space>
       ),
     },
     {
       title: '识别值',
       dataIndex: 'normalized_value',
-      render: value => <pre className="smart-import__value">{displayValue(value)}</pre>,
+      render: value => <Tooltip title={displayValue(value)}><pre className="smart-import__value">{displayValue(value)}</pre></Tooltip>,
     },
     {
       title: '置信度',
@@ -1154,9 +1237,11 @@ const SmartImportPage: React.FC = () => {
       render: evidence => evidence?.length ? (
         <Space direction="vertical" size={4}>
           {evidence.map((item: any) => (
-            <Button key={item.id} type="link" className="smart-import__evidence" onClick={() => focusEvidence(item)}>
-              第 {item.page_number} 页：{item.text_excerpt}
-            </Button>
+            <Tooltip key={item.id} title={item.text_excerpt} placement="topLeft">
+              <Button type="link" className="smart-import__evidence" onClick={() => focusEvidence(item)}>
+                第 {item.page_number} 页：{item.text_excerpt}
+              </Button>
+            </Tooltip>
           ))}
         </Space>
       ) : <Text type="secondary">无证据片段</Text>,
@@ -1181,16 +1266,18 @@ const SmartImportPage: React.FC = () => {
               />
             </Tooltip>
           )}
-          <Button
-            type="text"
-            size="small"
-            icon={<CheckOutlined />}
-            title="接受"
-            onClick={() => {
-              setReviewField(field)
-              reviewForm.setFieldsValue({ action: 'accept', value: field.normalized_value })
-            }}
-          />
+          {field.review_status !== 'accepted' && field.review_status !== 'rejected' && (
+            <Button
+              type="text"
+              size="small"
+              icon={<CheckOutlined />}
+              title="接受"
+              onClick={() => {
+                setReviewField(field)
+                reviewForm.setFieldsValue({ action: 'accept', value: field.normalized_value })
+              }}
+            />
+          )}
           <Button
             type="text"
             size="small"
@@ -1201,23 +1288,26 @@ const SmartImportPage: React.FC = () => {
               reviewForm.setFieldsValue({ action: 'correct', value: displayValue(field.normalized_value), reason: '' })
             }}
           />
-          <Button
-            type="text"
-            danger
-            size="small"
-            icon={<CloseOutlined />}
-            title="拒绝"
-            onClick={() => {
-              setReviewField(field)
-              reviewForm.setFieldsValue({ action: 'reject', reason: '' })
-            }}
-          />
+          {field.review_status !== 'rejected' && (
+            <Button
+              type="text"
+              danger
+              size="small"
+              icon={<CloseOutlined />}
+              title="拒绝"
+              onClick={() => {
+                setReviewField(field)
+                reviewForm.setFieldsValue({ action: 'reject', reason: '' })
+              }}
+            />
+          )}
         </Space>
       ),
     },
   ]
 
   const pendingFieldCount = result?.entity.fields.filter(field => field.review_status === 'pending').length || 0
+  const confirmedFieldCount = result?.entity.fields.filter(field => ['accepted', 'corrected'].includes(field.review_status)).length || 0
   const existingFieldKeys = new Set(
     (result?.entity.fields || [])
       .filter(field => field.review_status !== 'rejected')
@@ -1568,27 +1658,31 @@ const SmartImportPage: React.FC = () => {
           {batch?.target_entity_type === 'pqr' && (
             <>
               <Alert
-                type="warning"
+                type={persistentOutboundAuthorization ? 'success' : 'warning'}
                 showIcon
-                message="向外部模型发送前需要隐私确认"
+                message={persistentOutboundAuthorization
+                  ? '已按“我的设置”完成数据外发授权'
+                  : '向外部模型发送前需要隐私确认'}
                 description={extractionProviderHost
-                  ? outboundNotice(extractionProviderHost)
+                  ? aiDataOutboundNotice(extractionProviderHost)
                   : '请先选择可用模型配置，以显示数据接收方。'}
                 className="smart-import__modal-alert"
               />
-              <Form.Item
-                name="outbound_privacy_consent"
-                valuePropName="checked"
-                rules={[{
-                  validator: (_, checked) => checked
-                    ? Promise.resolve()
-                    : Promise.reject(new Error('请确认隐私说明后再开始提取')),
-                }]}
-              >
-                <Checkbox disabled={!extractionProviderHost}>
-                  我已阅读并确认可以将这些 PQR 文件发送至 {extractionProviderHost || '所选外部服务'}
-                </Checkbox>
-              </Form.Item>
+              {!persistentOutboundAuthorization && (
+                <Form.Item
+                  name="outbound_privacy_consent"
+                  valuePropName="checked"
+                  rules={[{
+                    validator: (_, checked) => checked
+                      ? Promise.resolve()
+                      : Promise.reject(new Error('请确认隐私说明后再开始提取，或前往“我的设置”保存长期授权')),
+                  }]}
+                >
+                  <Checkbox disabled={!extractionProviderHost}>
+                    本次允许将这些 PQR 文件发送至 {extractionProviderHost || '所选外部服务'}
+                  </Checkbox>
+                </Form.Item>
+              )}
             </>
           )}
           <Form.Item name="run_ocr" label="扫描页处理">
@@ -1750,6 +1844,7 @@ const SmartImportPage: React.FC = () => {
             <Tag color={result.entity.status === 'published' ? 'success' : 'warning'}>
               {result.entity.status === 'published' ? '已发布' : `待审核 ${pendingFieldCount} 项`}
             </Tag>
+            {result.entity.status !== 'published' && <Tag color="success">已确认 {confirmedFieldCount} 项</Tag>}
             {result.entity.status !== 'published' && (
               <>
                 <Button onClick={() => void bulkAccept()}>接受高置信度字段</Button>
@@ -1763,15 +1858,19 @@ const SmartImportPage: React.FC = () => {
                   </Button>
                 )}
                 {result.entity.entity_type === 'pqr' && (
-                  <Button
-                    type="primary"
-                    icon={<SendOutlined />}
-                    loading={publishing}
-                    disabled={!workbenchValidation?.can_publish}
-                    onClick={() => void publishEntity()}
-                  >
-                    按已审核字段发布
-                  </Button>
+                  <Tooltip title={!workbenchValidation?.can_publish ? (workbenchValidation?.issues.find(item => item.severity === 'error')?.message || '发布前检查尚未完成') : '仅使用已接受和已修正字段创建正式 PQR 草稿'}>
+                    <span>
+                      <Button
+                        type="primary"
+                        icon={<SendOutlined />}
+                        loading={publishing}
+                        disabled={!workbenchValidation?.can_publish}
+                        onClick={() => void publishEntity()}
+                      >
+                        按已审核字段发布
+                      </Button>
+                    </span>
+                  </Tooltip>
                 )}
                 {result.entity.entity_type === 'welder' && (
                   <Button
@@ -2011,7 +2110,7 @@ const SmartImportPage: React.FC = () => {
             </Form.Item>
           ) : (
             <>
-              <Form.Item name="field_label" label="字段名称" initialValue={bindField?.field_key} rules={[{ required: true }]}>
+              <Form.Item name="field_label" label="字段名称" initialValue={bindField ? (workbenchValidation?.field_states[bindField.id]?.label || '其他识别字段') : undefined} rules={[{ required: true }]}>
                 <Input maxLength={200} />
               </Form.Item>
               <Form.Item name="field_key" label="字段键名" extra="可留空，由系统根据字段名称生成">

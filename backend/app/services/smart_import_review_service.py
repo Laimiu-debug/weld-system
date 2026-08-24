@@ -416,8 +416,11 @@ class SmartImportReviewService:
         )
         payload: dict[str, Any] = {"status": "draft"}
         modules: dict[str, Any] = {}
+        accepted_by_key: dict[str, Any] = {}
         for field in fields:
             value = field.normalized_value
+            if value not in (None, "", []):
+                accepted_by_key.setdefault(field.field_key, value)
             if field.field_key in model_fields:
                 if field.field_key in payload and payload[field.field_key] != value:
                     raise HTTPException(
@@ -485,6 +488,36 @@ class SmartImportReviewService:
         payload["modules_data"] = modules
         if job and job.template_id:
             payload["template_id"] = job.template_id
+        # Providers and legacy templates often use a document-level
+        # `report_number` instead of the formal PQR field name. Once the user
+        # has explicitly accepted that field it is safe to use as a published
+        # draft identifier. Keep the original field in modules_data for trace.
+        if entity.entity_type == "pqr" and not payload.get("pqr_number"):
+            payload["pqr_number"] = next(
+                (
+                    accepted_by_key.get(key)
+                    for key in (
+                        "report_number",
+                        "procedure_qualification_record_number",
+                        "qualification_record_number",
+                    )
+                    if accepted_by_key.get(key)
+                ),
+                None,
+            )
+        if not payload.get("title"):
+            explicit_title = next(
+                (
+                    accepted_by_key.get(key)
+                    for key in ("document_title", "report_title", "product_name")
+                    if accepted_by_key.get(key)
+                ),
+                None,
+            )
+            number = payload.get("pqr_number") or payload.get("wps_number")
+            payload["title"] = explicit_title or (
+                f"{entity.entity_type.upper()} {number}" if number else None
+            )
         required = "wps_number" if entity.entity_type == "wps" else "pqr_number"
         missing = [key for key in (required, "title") if not payload.get(key)]
         if missing:

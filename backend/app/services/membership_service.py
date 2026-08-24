@@ -13,6 +13,7 @@ from app.models.user import User
 from app.models.subscription import Subscription, SubscriptionPlan, SubscriptionTransaction
 from app.core.database import get_db
 from app.services.payment_service import PaymentService
+from app.services.subscription_plan_seed import ai_entitlement_features
 
 
 class MembershipService:
@@ -173,6 +174,8 @@ class MembershipService:
             elif tier == "enterprise_pro_max":
                 features.append("企业员工管理模块（50人）")
                 features.append("多工厂数量：5个")
+
+        features.extend(ai_entitlement_features(tier))
 
         return features
 

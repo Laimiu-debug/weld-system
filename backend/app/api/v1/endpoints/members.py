@@ -23,7 +23,7 @@ from app.core.database import get_db
 from app.core.rate_limit import client_ip, enforce_rate_limit
 from app.services.payment_service import PaymentService
 from app.services.membership_tier_service import MembershipTierService
-from app.services.subscription_plan_seed import parse_plan_features
+from app.services.subscription_plan_seed import ai_entitlement_features, parse_plan_features
 
 router = APIRouter()
 
@@ -54,7 +54,10 @@ def get_subscription_plans(
             "max_equipment": plan.max_equipment,
             "max_factories": plan.max_factories,
             "max_employees": plan.max_employees,
-            "features": parse_plan_features(plan.features),
+            "features": [
+                *parse_plan_features(plan.features),
+                *ai_entitlement_features(plan.id),
+            ],
             "sort_order": plan.sort_order,
             "is_active": plan.is_active,
             "is_recommended": plan.is_recommended,

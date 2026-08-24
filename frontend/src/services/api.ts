@@ -2,6 +2,15 @@ import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios'
 import { message } from 'antd'
 import { ApiResponse, PaginatedResponse } from '@/types'
 
+export function apiErrorMessage(detail: unknown, fallback: string): string {
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (detail && typeof detail === 'object') {
+    const value = (detail as { message?: unknown }).message
+    if (typeof value === 'string' && value.trim()) return value
+  }
+  return fallback
+}
+
 class ApiService {
   private api: AxiosInstance
 
@@ -103,7 +112,7 @@ class ApiService {
               }
               break
             case 503:
-              message.error(response.data?.detail || '系统维护中，请稍后再试')
+              message.error(apiErrorMessage(response.data?.detail, '系统维护中，请稍后再试'))
               break
             case 404:
               // 不显示404错误消息,让组件自己处理
@@ -125,7 +134,7 @@ class ApiService {
               } else if (typeof validationErrors === 'string') {
                 message.error(validationErrors)
               } else {
-                message.error(response.data?.detail || '请求参数错误')
+                message.error(apiErrorMessage(response.data?.detail, '请求参数错误'))
               }
               break
             case 429:
@@ -141,7 +150,7 @@ class ApiService {
               }
               break
             default:
-              message.error(response.data?.detail || '请求失败')
+              message.error(apiErrorMessage(response.data?.detail, '请求失败'))
           }
         } else if (error.code === 'ECONNABORTED') {
           message.error('请求超时，请检查网络连接')
@@ -246,7 +255,7 @@ class ApiService {
       fields?: string[]
       filters?: Record<string, any>
       include_attachments?: boolean
-    }
+    },
   ): Promise<Blob> {
     const response = await this.api.post(`/${resourceType}/export`, options, {
       responseType: 'blob',

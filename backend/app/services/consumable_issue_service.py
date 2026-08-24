@@ -204,6 +204,69 @@ class ConsumableIssueService:
         )
         return {"issue_list": issue_list, "items": items, "events": events}
 
+    def list_usage(
+        self,
+        user: User,
+        context: WorkspaceContext,
+        event_type: str | None = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> dict:
+        """List actual consumable usage independently from the AI drawing flow."""
+        if event_type and event_type not in {"issue", "return", "consume"}:
+            raise HTTPException(422, "焊材用量类型必须为领用、退料或消耗")
+        query = self.access.apply_workspace_filter(
+            self.db.query(ConsumableActualUsageEvent),
+            ConsumableActualUsageEvent,
+            user,
+            context,
+        )
+        if event_type:
+            query = query.filter(ConsumableActualUsageEvent.event_type == event_type)
+        total = query.count()
+        events = (
+            query.order_by(ConsumableActualUsageEvent.recorded_at.desc())
+            .offset(max(0, skip))
+            .limit(min(200, max(1, limit)))
+            .all()
+        )
+        material_ids = {item.material_id for item in events}
+        issue_list_ids = {item.issue_list_id for item in events}
+        materials = {
+            item.id: item
+            for item in self.db.query(WeldingMaterial)
+            .filter(WeldingMaterial.id.in_(material_ids))
+            .all()
+        } if material_ids else {}
+        issue_lists = {
+            item.id: item
+            for item in self.db.query(ConsumableIssueList)
+            .filter(ConsumableIssueList.id.in_(issue_list_ids))
+            .all()
+        } if issue_list_ids else {}
+        items = []
+        for event in events:
+            material = materials.get(event.material_id)
+            issue_list = issue_lists.get(event.issue_list_id)
+            items.append({
+                "id": event.id,
+                "event_type": event.event_type,
+                "quantity": event.quantity,
+                "unit": event.unit,
+                "batch_number": event.batch_number,
+                "notes": event.notes,
+                "source": event.source,
+                "recorded_by": event.recorded_by,
+                "recorded_at": event.recorded_at,
+                "material_id": event.material_id,
+                "material_code": material.material_code if material else None,
+                "material_name": material.material_name if material else None,
+                "specification": material.specification if material else None,
+                "issue_list_id": event.issue_list_id,
+                "document_number": issue_list.document_number if issue_list else None,
+            })
+        return {"items": items, "total": total, "skip": skip, "limit": limit}
+
     def approve(
         self, issue_list_id: str, user: User, context: WorkspaceContext
     ) -> ConsumableIssueList:

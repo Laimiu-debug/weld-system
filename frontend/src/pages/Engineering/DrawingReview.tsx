@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Badge,
@@ -42,13 +42,15 @@ import {
   RevisionDetail,
 } from "@/services/engineering";
 import smartImportService from "@/services/smartImport";
+import { usePreferencesStore } from "@/store/preferencesStore";
+import {
+  AI_DATA_OUTBOUND_NOTICE_VERSION,
+  aiDataOutboundNotice,
+  hasPersistentAIDataAuthorization,
+} from "@/utils/aiPrivacy";
 import "./engineering.css";
 
 const { Title, Text } = Typography;
-const DRAWING_OUTBOUND_NOTICE_VERSION = "drawing-outbound-v1";
-
-const drawingOutboundNotice = (host: string) =>
-  `该图纸的页面图像、识别文本及相关元数据将发送至外部模型服务 ${host}，仅用于图纸结构化识别。请确认图纸允许外发且已获得必要授权。`;
 
 const sha256Hex = async (value: string) => {
   const digest = await crypto.subtle.digest(
@@ -63,11 +65,15 @@ const sha256Hex = async (value: string) => {
 const DrawingReview: React.FC = () => {
   const { id = "" } = useParams();
   const navigate = useNavigate();
+  const preferences = usePreferencesStore((state) => state.preferences);
+  const persistentOutboundAuthorization =
+    hasPersistentAIDataAuthorization(preferences);
   const [detail, setDetail] = useState<RevisionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [parsing, setParsing] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [privacyConfirmed, setPrivacyConfirmed] = useState(false);
+  const [productOpen, setProductOpen] = useState(false);
   const [platformHost, setPlatformHost] = useState("");
   const [page, setPage] = useState(1);
   const [preview, setPreview] = useState("");
@@ -77,10 +83,13 @@ const DrawingReview: React.FC = () => {
     row: DataRow;
   } | null>(null);
   const [editForm] = Form.useForm();
+  const [productForm] = Form.useForm();
   const [jointForm] = Form.useForm();
   const [jointOpen, setJointOpen] = useState(false);
   const [selected, setSelected] = useState<React.Key[]>([]);
   const [history, setHistory] = useState<DataRow[]>([]);
+  const drawingPaneRef = useRef<HTMLElement | null>(null);
+  const [acceptingId, setAcceptingId] = useState("");
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -128,6 +137,10 @@ const DrawingReview: React.FC = () => {
     detail?.revision.status === "approved" ||
     detail?.revision.status === "superseded";
   const runAI = () => {
+    if (persistentOutboundAuthorization) {
+      void confirmRunAI();
+      return;
+    }
     setPrivacyConfirmed(false);
     setPrivacyOpen(true);
   };
@@ -138,12 +151,12 @@ const DrawingReview: React.FC = () => {
     }
     setParsing(true);
     try {
-      const notice = drawingOutboundNotice(platformHost);
+      const notice = aiDataOutboundNotice(platformHost);
       const consent = await smartImportService.createOutboundConsent({
         document_id: detail.revision.drawing_document_id,
         provider_host: platformHost,
         purpose: `识别图纸 ${detail.revision.drawing_filename || id}`,
-        privacy_notice_version: DRAWING_OUTBOUND_NOTICE_VERSION,
+        privacy_notice_version: AI_DATA_OUTBOUND_NOTICE_VERSION,
         privacy_notice_hash: await sha256Hex(notice),
         authorized: true,
       });
@@ -155,8 +168,8 @@ const DrawingReview: React.FC = () => {
       setPrivacyOpen(false);
       message.success("图纸解析完成，请逐项核对");
       await load();
-    } catch (error: any) {
-      message.error(error?.response?.data?.detail?.message || error?.response?.data?.detail || "图纸识别失败");
+    } catch {
+      // The shared API layer displays one normalized error message.
     } finally {
       setParsing(false);
     }
@@ -178,6 +191,21 @@ const DrawingReview: React.FC = () => {
     setEdit(null);
     await load();
   };
+  const openProductIdentity = () => {
+    const product = detail?.revision.drawing_metadata?.extracted_product || {};
+    productForm.setFieldsValue({
+      drawing_number: product.drawing_number,
+      product_name: product.product_name,
+    });
+    setProductOpen(true);
+  };
+  const saveProductIdentity = async () => {
+    const values = await productForm.validateFields();
+    await engineeringService.patchProductIdentity(id, values);
+    message.success("图签信息已人工补录");
+    setProductOpen(false);
+    await load();
+  };
   const accept = async (
     type: "part" | "joint" | "requirement",
     row: DataRow,
@@ -188,8 +216,27 @@ const DrawingReview: React.FC = () => {
         : type === "joint"
           ? engineeringService.patchJoint
           : engineeringService.patchRequirement;
-    await fn(row.id, { review_status: "accepted" });
-    await load();
+    setAcceptingId(row.id);
+    try {
+      await fn(row.id, { review_status: "accepted" });
+      message.success(`已接受${type === "joint" ? "焊缝" : type === "part" ? "零部件" : "焊接要求"}识别结果`);
+      await load();
+    } catch {
+      // API interceptor presents the server reason once; avoid a duplicate toast.
+    } finally {
+      setAcceptingId("");
+    }
+  };
+  const locateEvidence = (row: DataRow) => {
+    const itemEvidence = row.evidence || {};
+    setFocus(row);
+    if (itemEvidence.page) setPage(itemEvidence.page);
+    drawingPaneRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!itemEvidence.page) {
+      message.info("该字段没有可用的证据页码；已显示证据原文，可使用“修正”人工确认");
+    } else if (!itemEvidence.bbox?.length) {
+      message.info(`已切换到第 ${itemEvidence.page} 页；模型未返回框选坐标`);
+    }
   };
   const addJoint = async () => {
     const values = await jointForm.validateFields();
@@ -267,10 +314,7 @@ const DrawingReview: React.FC = () => {
           <Button
             type="link"
             size="small"
-            onClick={() => {
-              setFocus(r);
-              if (r.evidence?.page) setPage(r.evidence.page);
-            }}
+            onClick={() => locateEvidence(r)}
           >
             定位
           </Button>
@@ -280,6 +324,8 @@ const DrawingReview: React.FC = () => {
                 type="link"
                 size="small"
                 icon={<CheckOutlined />}
+                loading={acceptingId === r.id}
+                title="接受识别结果"
                 onClick={() => void accept("part", r)}
               />
               <Button
@@ -329,10 +375,7 @@ const DrawingReview: React.FC = () => {
           <Button
             type="link"
             size="small"
-            onClick={() => {
-              setFocus(r);
-              if (r.evidence?.page) setPage(r.evidence.page);
-            }}
+            onClick={() => locateEvidence(r)}
           >
             定位
           </Button>
@@ -342,6 +385,8 @@ const DrawingReview: React.FC = () => {
                 type="link"
                 size="small"
                 icon={<CheckOutlined />}
+                loading={acceptingId === r.id}
+                title="接受识别结果"
                 onClick={() => void accept("joint", r)}
               />
               <Button
@@ -421,7 +466,7 @@ const DrawingReview: React.FC = () => {
       width: 120,
       render: (_: unknown, r: DataRow) => (
         <Space>
-          <Button type="link" size="small" onClick={() => setFocus(r)}>
+          <Button type="link" size="small" onClick={() => locateEvidence(r)}>
             定位
           </Button>
           {!readonly && (
@@ -508,9 +553,9 @@ const DrawingReview: React.FC = () => {
             type="warning"
             showIcon
             message={`数据接收方：${platformHost || "尚未配置"}`}
-            description={platformHost
-              ? drawingOutboundNotice(platformHost)
-              : "管理员模型配置未提供可用服务域名。"}
+              description={platformHost
+                ? aiDataOutboundNotice(platformHost)
+                : "管理员模型配置未提供可用服务域名。"}
           />
           <Checkbox
             style={{ marginTop: 16 }}
@@ -531,7 +576,7 @@ const DrawingReview: React.FC = () => {
           />
         )}
         <div className="review-workbench">
-          <section className="drawing-pane">
+          <section className="drawing-pane" ref={drawingPaneRef}>
             <Card
               size="small"
               title={
@@ -594,6 +639,26 @@ const DrawingReview: React.FC = () => {
                 </Descriptions.Item>
                 <Descriptions.Item label="焊缝">
                   {detail?.weld_joints.length || 0}
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
+            <Card
+              size="small"
+              title="图签信息"
+              extra={!readonly && <Button icon={<EditOutlined />} onClick={openProductIdentity}>人工补录</Button>}
+            >
+              <Descriptions size="small" column={2}>
+                <Descriptions.Item label="图号">
+                  {detail?.revision.drawing_metadata?.extracted_product?.drawing_number || <Text type="danger">待补录</Text>}
+                  <Tag style={{ marginLeft: 8 }} color={detail?.revision.drawing_metadata?.extracted_product?.field_sources?.drawing_number === "manual_correction" ? "purple" : "cyan"}>
+                    {detail?.revision.drawing_metadata?.extracted_product?.field_sources?.drawing_number === "manual_correction" ? "人工修正" : "AI 图纸提取"}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="产品名称">
+                  {detail?.revision.drawing_metadata?.extracted_product?.product_name || <Text type="danger">待补录</Text>}
+                  <Tag style={{ marginLeft: 8 }} color={detail?.revision.drawing_metadata?.extracted_product?.field_sources?.product_name === "manual_correction" ? "purple" : "cyan"}>
+                    {detail?.revision.drawing_metadata?.extracted_product?.field_sources?.product_name === "manual_correction" ? "人工修正" : "AI 图纸提取"}
+                  </Tag>
                 </Descriptions.Item>
               </Descriptions>
             </Card>
@@ -762,6 +827,26 @@ const DrawingReview: React.FC = () => {
                 <Form.Item name="joint_type" label="接头形式">
                   <Input />
                 </Form.Item>
+                <Form.Item name="part_a_id" label="连接零部件 A" rules={[{ required: true, message: "请选择零部件 A" }]}>
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    options={(detail?.parts || []).map((part) => ({
+                      value: part.id,
+                      label: `${part.part_number || "无件号"} · ${part.name}`,
+                    }))}
+                  />
+                </Form.Item>
+                <Form.Item name="part_b_id" label="连接零部件 B" rules={[{ required: true, message: "请选择零部件 B" }]}>
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    options={(detail?.parts || []).map((part) => ({
+                      value: part.id,
+                      label: `${part.part_number || "无件号"} · ${part.name}`,
+                    }))}
+                  />
+                </Form.Item>
                 <Form.Item name="groove_type" label="坡口形式">
                   <Input />
                 </Form.Item>
@@ -833,6 +918,29 @@ const DrawingReview: React.FC = () => {
             )}
           </Form>
         </Drawer>
+        <Modal
+          title="人工补录图签信息"
+          open={productOpen}
+          onCancel={() => setProductOpen(false)}
+          onOk={() => void saveProductIdentity()}
+          okText="保存补录"
+        >
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="AI 已识别的零部件、焊缝和技术要求会继续保留"
+            description="这里只补充图号和产品名称，不会重新调用模型或覆盖其他识别结果。"
+          />
+          <Form form={productForm} layout="vertical">
+            <Form.Item name="drawing_number" label="图号" rules={[{ required: true, message: "请输入图号" }]}>
+              <Input maxLength={120} />
+            </Form.Item>
+            <Form.Item name="product_name" label="产品名称" rules={[{ required: true, message: "请输入产品名称" }]}>
+              <Input maxLength={200} />
+            </Form.Item>
+          </Form>
+        </Modal>
         <Modal
           title="人工新增焊缝"
           open={jointOpen}

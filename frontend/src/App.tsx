@@ -53,6 +53,7 @@ const MaterialsList = React.lazy(() => import('@/pages/Materials/MaterialsList')
 const MaterialsCreate = React.lazy(() => import('@/pages/Materials/MaterialsCreate'))
 const MaterialsEdit = React.lazy(() => import('@/pages/Materials/MaterialsEdit'))
 const MaterialsDetail = React.lazy(() => import('@/pages/Materials/MaterialsDetail'))
+const ConsumableUsage = React.lazy(() => import('@/pages/Materials/ConsumableUsage'))
 
 const WeldersList = React.lazy(() => import('@/pages/Welders/WeldersList'))
 const WeldersCreate = React.lazy(() => import('@/pages/Welders/WeldersCreate'))
@@ -433,6 +434,14 @@ const App: React.FC = () => {
             element={
               <ProtectedRoute requiredPermission="materials.create">
                 <MaterialsCreate />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="materials/usage"
+            element={
+              <ProtectedRoute requiredPermission="materials.read">
+                <ConsumableUsage />
               </ProtectedRoute>
             }
           />

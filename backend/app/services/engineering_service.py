@@ -409,10 +409,10 @@ def drawing_risks(payload: dict[str, Any], page_count: int) -> list[dict[str, An
     return risks
 
 
-def validate_drawing_identity(
+def drawing_identity_problems(
     payload: dict[str, Any], original_filename: str, page_count: int
-) -> None:
-    """Reject hallucinated title data before it can populate engineering rows."""
+) -> list[str]:
+    """Return title-block quality problems without discarding partial extraction."""
     product = payload.get("product") or {}
     evidence = product.get("evidence") or {}
     problems: list[str] = []
@@ -436,6 +436,14 @@ def validate_drawing_identity(
     drawing_number = _identity_text(str(product.get("drawing_number") or ""))
     if filename_numbers and not any(number in drawing_number for number in filename_numbers):
         problems.append("识别图号与文件名编号不一致")
+    return problems
+
+
+def validate_drawing_identity(
+    payload: dict[str, Any], original_filename: str, page_count: int
+) -> None:
+    """Strict validator retained for callers that explicitly require rejection."""
+    problems = drawing_identity_problems(payload, original_filename, page_count)
     if problems:
         raise AIExtractionRunError(
             "drawing_identity_unverified",
@@ -796,6 +804,7 @@ class EngineeringService:
         workspace = workspace_values(user, context, revision.access_level)
         no_created = {k: v for k, v in workspace.items() if k != "created_by"}
         job = None
+        identity_problems: list[str] = []
         run = DrawingParseRun(
             id=str(uuid4()),
             revision_id=revision.id,
@@ -946,7 +955,7 @@ class EngineeringService:
                     (result.response_id for result in results if result.response_id),
                     None,
                 )
-                validate_drawing_identity(
+                identity_problems = drawing_identity_problems(
                     payload, document.original_filename, len(pages)
                 )
                 job.status = "completed"
@@ -956,10 +965,25 @@ class EngineeringService:
                 quota.settle(job, user, context, len(pages))
             assert payload is not None
             risks = drawing_risks(payload, len(pages))
+            risks.extend(
+                {
+                    "code": "drawing_identity_unverified",
+                    "severity": "critical",
+                    "message": problem,
+                }
+                for problem in identity_problems
+            )
             self._replace_extracted_data(revision, payload, user, context)
+            product = dict(payload.get("product") or {})
+            product["field_sources"] = {
+                **(product.get("field_sources") or {}),
+                "drawing_number": "ai_extraction",
+                "product_name": "ai_extraction",
+            }
             revision.drawing_metadata = {
                 **(revision.drawing_metadata or {}),
-                "extracted_product": payload.get("product") or {},
+                "extracted_product": product,
+                "identity_problems": identity_problems,
             }
             run.extraction_job_id = job.id if job else None
             run.output_snapshot = payload
@@ -1024,14 +1048,17 @@ class EngineeringService:
         raw_parts = (
             payload.get("parts") if isinstance(payload.get("parts"), list) else []
         )
-        for raw in raw_parts:
-            if not isinstance(raw, dict) or not str(raw.get("name") or "").strip():
+        for index, raw in enumerate(raw_parts, 1):
+            if not isinstance(raw, dict) or not any(
+                value not in (None, "", [], {}) for value in raw.values()
+            ):
                 continue
+            part_name = str(raw.get("name") or "").strip() or f"待确认零部件-{index}"
             part = Part(
                 id=str(uuid4()),
                 revision_id=revision.id,
                 part_number=raw.get("part_number"),
-                name=str(raw["name"])[:200],
+                name=part_name[:200],
                 material_spec=raw.get("material_spec"),
                 material_group=raw.get("material_group"),
                 thickness_mm=raw.get("thickness_mm"),
@@ -1057,16 +1084,16 @@ class EngineeringService:
                 and str(raw["parent_ref"]) in refs
             ):
                 refs[str(raw["ref"])].parent_part_id = refs[str(raw["parent_ref"])].id
-        for raw in payload.get("weld_joints", []):
-            if (
-                not isinstance(raw, dict)
-                or not str(raw.get("weld_number") or "").strip()
+        for index, raw in enumerate(payload.get("weld_joints", []), 1):
+            if not isinstance(raw, dict) or not any(
+                value not in (None, "", [], {}) for value in raw.values()
             ):
                 continue
+            weld_number = str(raw.get("weld_number") or "").strip() or f"待确认-{index}"
             joint = WeldJoint(
                 id=str(uuid4()),
                 revision_id=revision.id,
-                weld_number=str(raw["weld_number"])[:100],
+                weld_number=weld_number[:100],
                 part_a_id=refs.get(str(raw.get("part_a_ref"))).id
                 if refs.get(str(raw.get("part_a_ref")))
                 else None,
@@ -1458,6 +1485,56 @@ class EngineeringService:
         self.db.refresh(entity)
         return entity, revision
 
+    def patch_product_identity(
+        self,
+        revision_id: str,
+        values: dict[str, Any],
+        reason: str | None,
+        user,
+        context,
+    ) -> ProductRevision:
+        revision = self._get(ProductRevision, revision_id, user, context, True)
+        if revision.status in {"approved", "superseded"}:
+            raise HTTPException(409, "已批准或已替代版本不可直接修改图签")
+        allowed = {"drawing_number", "product_name"}
+        rejected = set(values) - allowed
+        if rejected:
+            raise HTTPException(422, f"不可修改字段：{', '.join(sorted(rejected))}")
+        metadata = dict(revision.drawing_metadata or {})
+        product = dict(metadata.get("extracted_product") or {})
+        previous = {key: product.get(key) for key in values}
+        for key, value in values.items():
+            product[key] = str(value).strip() if value is not None else None
+        product["field_sources"] = {
+            **(product.get("field_sources") or {}),
+            **{key: "manual_correction" for key in values},
+        }
+        product["evidence"] = {
+            **(product.get("evidence") or {}),
+            "source": "manual_correction",
+            "source_document_id": revision.drawing_document_id,
+            "source_filename": revision.drawing_filename,
+        }
+        metadata["extracted_product"] = product
+        metadata["identity_problems"] = []
+        revision.drawing_metadata = metadata
+        revision.data_version += 1
+        self._invalidate(revision, [], "图签字段人工修正", all_scope=True)
+        self._audit(
+            revision,
+            "product_identity",
+            revision.id,
+            "correct",
+            previous,
+            values,
+            [],
+            user,
+            reason,
+        )
+        self.db.commit()
+        self.db.refresh(revision)
+        return revision
+
     def add_joint(self, revision_id: str, data: JointCreate, user, context):
         revision = self._get(ProductRevision, revision_id, user, context, True)
         if revision.status in {"approved", "superseded"}:
@@ -1659,6 +1736,25 @@ class EngineeringService:
             .all()
         )
         risks = []
+        product = (revision.drawing_metadata or {}).get("extracted_product") or {}
+        for field, label in (("drawing_number", "图号"), ("product_name", "产品名称")):
+            if not str(product.get(field) or "").strip():
+                risks.append(
+                    {
+                        "code": f"missing_{field}",
+                        "severity": "critical",
+                        "message": f"{label}为空，请在图签信息中人工补录",
+                    }
+                )
+        for problem in (revision.drawing_metadata or {}).get("identity_problems") or []:
+            if problem not in {risk["message"] for risk in risks}:
+                risks.append(
+                    {
+                        "code": "drawing_identity_unverified",
+                        "severity": "warning",
+                        "message": f"图签待人工确认：{problem}",
+                    }
+                )
         seen = set()
         if not joints:
             risks.append(
@@ -1669,6 +1765,15 @@ class EngineeringService:
                 }
             )
         for j in joints:
+            if not j.weld_number or j.weld_number.startswith("待确认-"):
+                risks.append(
+                    {
+                        "code": "missing_weld_number",
+                        "severity": "critical",
+                        "joint_id": j.id,
+                        "message": "存在未识别焊缝编号，请人工补录",
+                    }
+                )
             if j.weld_number in seen:
                 risks.append(
                     {
