@@ -13,7 +13,7 @@
 ## 仓库结构
 
 ```
-backend/         FastAPI API（依赖真源 pyproject.toml，镜像用 requirements.txt）
+backend/         FastAPI API（依赖真源 pyproject.toml，生产镜像用 requirements.prod.txt）
 frontend/        用户门户（Vite + React 18 + Ant Design 5）
 admin-portal/    管理门户
 nginx/           反向代理
@@ -75,7 +75,7 @@ GitHub Actions（`.github/workflows/ci.yml`）：后端 compileall + pytest；�
 
 ## 生产部署
 
-使用根目录 `docker-compose.yml`。密钥从 `.env` 注入，不要把 PostgreSQL / Redis / API 端口暴露到公网。步骤、迁移、备份与密钥轮换见 [`docs/OPERATIONS.md`](docs/OPERATIONS.md)。
+使用根目录 `docker-compose.yml`。密钥从 `.env` 注入，不要把 PostgreSQL / Redis / API 端口暴露到公网。日常服务器更新见 [`docs/SERVER_UPDATE_GUIDE.md`](docs/SERVER_UPDATE_GUIDE.md)，完整运维说明见 [`docs/OPERATIONS.md`](docs/OPERATIONS.md)。
 
 生产健康检查：
 
@@ -85,6 +85,7 @@ GitHub Actions（`.github/workflows/ci.yml`）：后端 compileall + pytest；�
 ## 文档
 
 - [运维手册](docs/OPERATIONS.md)（本地开发、测试、迁移、备份、密钥轮换、故障排查）
+- [生产服务器更新手册](docs/SERVER_UPDATE_GUIDE.md)（安全增量部署、备份、验证与回滚）
 - [主链路冒烟清单](docs/SMOKE_CHECKLIST.md)
 - [用户端](frontend/README.md) / [管理端](admin-portal/README.md)
 - 支付、审批等专项说明在 `docs/`；历史实现纪要在 `md/`、`modules/`，不作为部署依据

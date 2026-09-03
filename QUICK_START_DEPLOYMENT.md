@@ -1,4 +1,6 @@
-# 🚀 快速部署指南
+# 🚀 快速部署指南（历史文档）
+
+> **重要：本文档中的 `deploy_from_local.py` 会停止服务、删除 Docker 卷并重建项目目录，禁止用于生产环境日常更新。当前服务器请使用 [`docs/SERVER_UPDATE_GUIDE.md`](docs/SERVER_UPDATE_GUIDE.md) 中已验证的安全增量部署流程。**
 
 ## 📋 优化内容概述
 

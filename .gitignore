@@ -65,6 +65,8 @@ backup*
 # One-off local debug pages
 check_workspace.html
 check_*.html
+.playwright-cli/
+backend/tmp_*.py
 
 # Docker
 .docker/

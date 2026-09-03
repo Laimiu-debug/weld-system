@@ -12,7 +12,7 @@
 6. 用户端 Node 20：`cd frontend && npm ci && npm run dev`（默认 3000）。
 7. 管理端：`cd admin-portal && npm ci && npm run dev`（默认 3001）。
 
-不要使用仓库中不存在的 `deploy.sh` / `DEPLOYMENT_GUIDE.md`。生产用 Compose。
+不要使用仓库中不存在的 `deploy.sh` / `DEPLOYMENT_GUIDE.md`。生产用 Compose；当前服务器的安全增量更新、备份、验证和回滚步骤见 [`SERVER_UPDATE_GUIDE.md`](SERVER_UPDATE_GUIDE.md)。
 
 ## 测试
 
