@@ -44,6 +44,14 @@ export interface UserSystemPreferences {
   emailDigestFrequency: EmailDigestFrequency
   aiDataOutboundAuthorized: boolean
   aiDataOutboundNoticeVersion: string
+  welderRenewalRules: Record<string, WelderRenewalRule>
+}
+
+export interface WelderRenewalRule {
+  reviewPeriodMonths: number
+  basis: 'original_expiry' | 'review_date'
+  warningDays: number[]
+  overdueGraceDays: number
 }
 
 export const DEFAULT_SYSTEM_PREFERENCES: UserSystemPreferences = {
@@ -89,4 +97,5 @@ export const DEFAULT_SYSTEM_PREFERENCES: UserSystemPreferences = {
   emailDigestFrequency: 'immediate',
   aiDataOutboundAuthorized: false,
   aiDataOutboundNoticeVersion: '',
+  welderRenewalRules: {},
 }

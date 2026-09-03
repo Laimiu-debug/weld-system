@@ -63,6 +63,9 @@ const EquipmentCreate: React.FC = () => {
         installation_date: values.installation_date ? values.installation_date.format('YYYY-MM-DD') : undefined,
         commissioning_date: values.commissioning_date ? values.commissioning_date.format('YYYY-MM-DD') : undefined,
         maintenance_interval_days: values.maintenance_interval_days,
+        maintenance_base_date: values.maintenance_base_date ? values.maintenance_base_date.format('YYYY-MM-DD') : undefined,
+        maintenance_warning_days: values.maintenance_warning_days ?? 30,
+        maintenance_plan_type: values.maintenance_plan_type || 'routine',
         inspection_interval_days: values.inspection_interval_days,
         responsible_person_id: values.responsible_person_id,
         description: values.description,
@@ -483,6 +486,21 @@ const EquipmentCreate: React.FC = () => {
                   min={1}
                   placeholder="365"
                 />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="maintenance_base_date" label="维护基准日" dependencies={['maintenance_interval_days']} rules={[({ getFieldValue }) => ({ validator(_, value) { return getFieldValue('maintenance_interval_days') && !value ? Promise.reject(new Error('填写维护周期时必须选择基准日')) : Promise.resolve() } })]}>
+                <DatePicker style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="maintenance_warning_days" label="提前预警（天）" initialValue={30}>
+                <InputNumber min={0} max={365} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="maintenance_plan_type" label="维护类型" initialValue="routine">
+                <Select options={[{ value: 'routine', label: '保养' }, { value: 'inspection', label: '点检' }, { value: 'calibration', label: '校准' }, { value: 'verification', label: '检定' }]} />
               </Form.Item>
             </Col>
             <Col span={8}>

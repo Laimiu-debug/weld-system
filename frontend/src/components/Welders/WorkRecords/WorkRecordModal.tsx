@@ -1,10 +1,10 @@
 /**
  * 焊工焊接操作记录添加/编辑模态框
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal, Form, Input, DatePicker, InputNumber, Select, Row, Col, message } from 'antd';
 import dayjs from 'dayjs';
-import { workRecordService } from '../../../services/welderRecords';
+import { workRecordService, type WelderWorkRecord } from '../../../services/welderRecords';
 import { workspaceService } from '../../../services/workspace';
 
 const { TextArea } = Input;
@@ -13,6 +13,7 @@ const { Option } = Select;
 interface WorkRecordModalProps {
   visible: boolean;
   welderId: number;
+  editing?: WelderWorkRecord | null;
   onSuccess: () => void;
   onCancel: () => void;
 }
@@ -20,11 +21,22 @@ interface WorkRecordModalProps {
 const WorkRecordModal: React.FC<WorkRecordModalProps> = ({
   visible,
   welderId,
+  editing,
   onSuccess,
   onCancel,
 }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    if (editing) {
+      form.setFieldsValue({ ...editing, work_date: editing.work_date ? dayjs(editing.work_date) : undefined });
+    } else {
+      form.resetFields();
+      form.setFieldsValue({ defect_count: 0, rework_count: 0 });
+    }
+  }, [visible, editing, form]);
 
   const handleOk = async () => {
     const currentWorkspace = workspaceService.getCurrentWorkspaceFromStorage();
@@ -49,15 +61,19 @@ const WorkRecordModal: React.FC<WorkRecordModalProps> = ({
         factory_id: currentWorkspace.factory_id,
       };
 
-      await workRecordService.create(welderId, formattedValues, params);
-      message.success('添加成功');
+      if (editing) {
+        await workRecordService.update(welderId, editing.id, formattedValues, params);
+      } else {
+        await workRecordService.create(welderId, formattedValues, params);
+      }
+      message.success(editing ? '操作记录已更新' : '添加成功');
       form.resetFields();
       onSuccess();
     } catch (error: any) {
       if (error.errorFields) {
         message.error('请填写必填字段');
       } else {
-        message.error(error.response?.data?.detail || '添加失败');
+        message.error(error.response?.data?.detail || '保存失败');
       }
     } finally {
       setLoading(false);
@@ -71,7 +87,7 @@ const WorkRecordModal: React.FC<WorkRecordModalProps> = ({
 
   return (
     <Modal
-      title="添加焊接操作记录"
+      title={editing ? '编辑焊接操作记录' : '添加焊接操作记录'}
       open={visible}
       onOk={handleOk}
       onCancel={handleCancel}

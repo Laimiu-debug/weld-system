@@ -1,10 +1,10 @@
 /**
  * 焊工考核记录添加/编辑模态框
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal, Form, Input, DatePicker, InputNumber, Select, Row, Col, message, Switch } from 'antd';
 import dayjs from 'dayjs';
-import { assessmentRecordService } from '../../../services/welderRecords';
+import { assessmentRecordService, type WelderAssessmentRecord } from '../../../services/welderRecords';
 import { workspaceService } from '../../../services/workspace';
 
 const { TextArea } = Input;
@@ -13,6 +13,7 @@ const { Option } = Select;
 interface AssessmentRecordModalProps {
   visible: boolean;
   welderId: number;
+  editing?: WelderAssessmentRecord | null;
   onSuccess: () => void;
   onCancel: () => void;
 }
@@ -20,11 +21,25 @@ interface AssessmentRecordModalProps {
 const AssessmentRecordModal: React.FC<AssessmentRecordModalProps> = ({
   visible,
   welderId,
+  editing,
   onSuccess,
   onCancel,
 }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    if (editing) {
+      form.setFieldsValue({
+        ...editing,
+        assessment_date: editing.assessment_date ? dayjs(editing.assessment_date) : undefined,
+      });
+    } else {
+      form.resetFields();
+      form.setFieldsValue({ certificate_issued: false, pass_status: false });
+    }
+  }, [visible, editing, form]);
 
   const handleOk = async () => {
     const currentWorkspace = workspaceService.getCurrentWorkspaceFromStorage();
@@ -49,15 +64,19 @@ const AssessmentRecordModal: React.FC<AssessmentRecordModalProps> = ({
         factory_id: currentWorkspace.factory_id,
       };
 
-      await assessmentRecordService.create(welderId, formattedValues, params);
-      message.success('添加成功');
+      if (editing) {
+        await assessmentRecordService.update(welderId, editing.id, formattedValues, params);
+      } else {
+        await assessmentRecordService.create(welderId, formattedValues, params);
+      }
+      message.success(editing ? '考核记录已更新' : '添加成功');
       form.resetFields();
       onSuccess();
     } catch (error: any) {
       if (error.errorFields) {
         message.error('请填写必填字段');
       } else {
-        message.error(error.response?.data?.detail || '添加失败');
+        message.error(error.response?.data?.detail || '保存失败');
       }
     } finally {
       setLoading(false);
@@ -71,7 +90,7 @@ const AssessmentRecordModal: React.FC<AssessmentRecordModalProps> = ({
 
   return (
     <Modal
-      title="添加考核记录"
+      title={editing ? '编辑考核记录' : '添加考核记录'}
       open={visible}
       onOk={handleOk}
       onCancel={handleCancel}

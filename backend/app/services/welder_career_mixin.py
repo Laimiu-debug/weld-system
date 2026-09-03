@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -12,6 +13,45 @@ from app.core.data_access import WorkspaceContext
 
 
 class WelderCareerMixin:
+    @staticmethod
+    def _career_record_dict(record: Any) -> dict:
+        """Serialize a career row, including update audit fields."""
+        result: dict[str, Any] = {}
+        for column in record.__table__.columns:
+            value = getattr(record, column.name)
+            result[column.name] = value.isoformat() if hasattr(value, "isoformat") else value
+        return result
+
+    def _update_career_record(
+        self,
+        model: Any,
+        label: str,
+        welder_id: int,
+        record_id: int,
+        record_data: dict,
+        current_user: Any,
+        workspace_context: WorkspaceContext,
+    ) -> dict:
+        welder = self.get_welder_by_id(welder_id, current_user, workspace_context)
+        record = self.db.query(model).filter(
+            model.id == record_id,
+            model.welder_id == welder_id,
+        ).first()
+        if not record:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{label}不存在")
+        self.data_access.check_access(current_user, welder, "EDIT", workspace_context)
+        protected = {"id", "welder_id", "workspace_type", "user_id", "company_id", "factory_id", "created_by", "created_at"}
+        for key, value in record_data.items():
+            if key not in protected and hasattr(record, key):
+                setattr(record, key, value)
+        if hasattr(record, "updated_by"):
+            record.updated_by = current_user.id
+        if hasattr(record, "updated_at"):
+            record.updated_at = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(record)
+        return self._career_record_dict(record)
+
     # ==================== 工作经历管理 ====================
 
     def get_work_records(
@@ -69,6 +109,8 @@ class WelderCareerMixin:
                     "notes": record.notes,
                     "created_by": record.created_by,
                     "created_at": record.created_at.isoformat() if record.created_at else None,
+                    "updated_by": record.updated_by,
+                    "updated_at": record.updated_at.isoformat() if record.updated_at else None,
                 }
                 for record in records
             ]
@@ -151,6 +193,16 @@ class WelderCareerMixin:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"添加工作记录失败: {str(e)}"
             )
+
+    def update_work_record(self, welder_id: int, record_id: int, record_data: dict, current_user: Any, workspace_context: WorkspaceContext) -> dict:
+        from app.models.welder import WelderWorkRecord
+        try:
+            return self._update_career_record(WelderWorkRecord, "工作记录", welder_id, record_id, record_data, current_user, workspace_context)
+        except HTTPException:
+            raise
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(status_code=500, detail=f"更新工作记录失败: {e}")
 
     def delete_work_record(
         self,
@@ -262,6 +314,7 @@ class WelderCareerMixin:
                     "attachments": record.attachments,
                     "created_by": record.created_by,
                     "created_at": record.created_at.isoformat() if record.created_at else None,
+                    "updated_by": record.updated_by,
                     "updated_at": record.updated_at.isoformat() if record.updated_at else None,
                 }
                 for record in records
@@ -353,6 +406,16 @@ class WelderCareerMixin:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"添加培训记录失败: {str(e)}"
             )
+
+    def update_training_record(self, welder_id: int, record_id: int, record_data: dict, current_user: Any, workspace_context: WorkspaceContext) -> dict:
+        from app.models.welder import WelderTraining
+        try:
+            return self._update_career_record(WelderTraining, "培训记录", welder_id, record_id, record_data, current_user, workspace_context)
+        except HTTPException:
+            raise
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(status_code=500, detail=f"更新培训记录失败: {e}")
 
     def delete_training_record(
         self,
@@ -467,6 +530,7 @@ class WelderCareerMixin:
                     "attachments": record.attachments,
                     "created_by": record.created_by,
                     "created_at": record.created_at.isoformat() if record.created_at else None,
+                    "updated_by": record.updated_by,
                     "updated_at": record.updated_at.isoformat() if record.updated_at else None,
                 }
                 for record in records
@@ -560,6 +624,16 @@ class WelderCareerMixin:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"添加考核记录失败: {str(e)}"
             )
+
+    def update_assessment_record(self, welder_id: int, record_id: int, record_data: dict, current_user: Any, workspace_context: WorkspaceContext) -> dict:
+        from app.models.welder import WelderAssessment
+        try:
+            return self._update_career_record(WelderAssessment, "考核记录", welder_id, record_id, record_data, current_user, workspace_context)
+        except HTTPException:
+            raise
+        except Exception as e:
+            self.db.rollback()
+            raise HTTPException(status_code=500, detail=f"更新考核记录失败: {e}")
 
     def delete_assessment_record(
         self,
@@ -771,6 +845,8 @@ class WelderCareerMixin:
                 if value is not None and hasattr(history, key):
                     setattr(history, key, value)
             history.updated_at = datetime.utcnow()
+            if hasattr(history, "updated_by"):
+                history.updated_by = current_user.id
             self.db.commit()
             self.db.refresh(history)
 
@@ -786,9 +862,10 @@ class WelderCareerMixin:
                 "job_description": history.job_description,
                 "achievements": history.achievements,
                 "leaving_reason": history.leaving_reason,
-                "created_by": history.created_by,
-                "created_at": history.created_at.isoformat() if history.created_at else None,
-                "updated_at": history.updated_at.isoformat() if history.updated_at else None,
+                    "created_by": history.created_by,
+                    "created_at": history.created_at.isoformat() if history.created_at else None,
+                    "updated_by": history.updated_by,
+                    "updated_at": history.updated_at.isoformat() if history.updated_at else None,
             }
         except HTTPException:
             raise
@@ -845,5 +922,4 @@ class WelderCareerMixin:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"删除工作履历失败: {str(e)}"
             )
-
 

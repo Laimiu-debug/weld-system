@@ -42,6 +42,8 @@ export interface WelderWorkRecord {
   notes?: string;
   created_by: number;
   created_at: string;
+  updated_by?: number;
+  updated_at?: string;
 }
 
 export interface WelderTrainingRecord {
@@ -161,6 +163,11 @@ export const workRecordService = {
     return response.data.data || response.data;
   },
 
+  async update(welderId: number, recordId: number, data: Partial<WelderWorkRecord>, params?: any) {
+    const response = await api.put(`/welders/${welderId}/work-records/${recordId}`, data, { params });
+    return response.data.data || response.data;
+  },
+
   /**
    * 删除工作记录
    */
@@ -189,6 +196,11 @@ export const trainingRecordService = {
     return response.data.data || response.data;
   },
 
+  async update(welderId: number, recordId: number, data: Partial<WelderTrainingRecord>, params?: any) {
+    const response = await api.put(`/welders/${welderId}/training-records/${recordId}`, data, { params });
+    return response.data.data || response.data;
+  },
+
   /**
    * 删除培训记录
    */
@@ -214,6 +226,11 @@ export const assessmentRecordService = {
    */
   async create(welderId: number, data: Partial<WelderAssessmentRecord>, params?: any) {
     const response = await api.post(`/welders/${welderId}/assessment-records`, data, { params });
+    return response.data.data || response.data;
+  },
+
+  async update(welderId: number, recordId: number, data: Partial<WelderAssessmentRecord>, params?: any) {
+    const response = await api.put(`/welders/${welderId}/assessment-records/${recordId}`, data, { params });
     return response.data.data || response.data;
   },
 

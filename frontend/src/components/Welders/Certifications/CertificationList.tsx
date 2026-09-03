@@ -13,8 +13,13 @@ import {
   Collapse,
   Tag,
   Badge,
+  Modal,
+  Form,
+  InputNumber,
+  Radio,
+  Alert,
 } from 'antd'
-import { PlusOutlined, SearchOutlined } from '@ant-design/icons'
+import { PlusOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import CertificationCard from './CertificationCard'
 import CertificationModal from './CertificationModal'
@@ -26,6 +31,9 @@ import certificationService, {
   type CreateCertifiedProjectRequest,
 } from '../../../services/certifications'
 import { workspaceService } from '../../../services/workspace'
+import { preferencesService } from '@/services/preferences'
+import type { UserSystemPreferences, WelderRenewalRule } from '@/types/preferences'
+import { useAuthStore } from '@/store/authStore'
 
 const { Option } = Select
 
@@ -34,10 +42,11 @@ interface CertificationListProps {
   onChanged?: () => void
 }
 
-const SYSTEM_ORDER = ['ASME', '国标', '欧标', 'AWS', 'API', 'DNV', '其他']
+const SYSTEM_ORDER = ['ASME', 'ISO', 'GB/T', 'TSG', '国标', '欧标', 'AWS', 'API', 'DNV', '其他']
 
 const CertificationList: React.FC<CertificationListProps> = ({ welderId, onChanged }) => {
   const currentWorkspace = workspaceService.getCurrentWorkspaceFromStorage()
+  const currentUser = useAuthStore((state) => state.user)
   const [certifications, setCertifications] = useState<WelderCertification[]>([])
   const [loading, setLoading] = useState(false)
   const [modalVisible, setModalVisible] = useState(false)
@@ -51,6 +60,9 @@ const CertificationList: React.FC<CertificationListProps> = ({ welderId, onChang
   const [projectParent, setProjectParent] = useState<WelderCertification | null>(null)
   const [editingProject, setEditingProject] = useState<CertifiedProject | null>(null)
   const [projectSubmitting, setProjectSubmitting] = useState(false)
+  const [settingsVisible, setSettingsVisible] = useState(false)
+  const [settingsForm] = Form.useForm()
+  const [renewalRules, setRenewalRules] = useState<Record<string, WelderRenewalRule>>({})
 
   const loadCertifications = async () => {
     if (!currentWorkspace) return
@@ -72,7 +84,39 @@ const CertificationList: React.FC<CertificationListProps> = ({ welderId, onChang
 
   useEffect(() => {
     loadCertifications()
+    void preferencesService.getPreferences().then((prefs) => setRenewalRules(prefs.welderRenewalRules || {}))
   }, [welderId])
+
+  const openSettings = (preferredSystem?: string) => {
+    const system = preferredSystem || certifications.find((item) => item.certification_system)?.certification_system || 'ASME'
+    const rule = renewalRules[system] || { reviewPeriodMonths: 12, basis: 'review_date', warningDays: [60, 30, 7], overdueGraceDays: 0 }
+    settingsForm.setFieldsValue({ system, ...rule, warningDays: rule.warningDays.join(',') })
+    setSettingsVisible(true)
+  }
+
+  const handleSystemRuleChange = (system: string) => {
+    const rule = renewalRules[system] || { reviewPeriodMonths: 12, basis: 'review_date', warningDays: [60, 30, 7], overdueGraceDays: 0 }
+    settingsForm.setFieldsValue({ ...rule, warningDays: rule.warningDays.join(',') })
+  }
+
+  const saveRenewalSettings = async () => {
+    const values = await settingsForm.validateFields()
+    const warningDays = String(values.warningDays || '').split(',').map((value) => Number(value.trim())).filter((value) => Number.isFinite(value) && value >= 0)
+    const nextRules = {
+      ...renewalRules,
+      [values.system]: {
+        reviewPeriodMonths: values.reviewPeriodMonths,
+        basis: values.basis,
+        warningDays,
+        overdueGraceDays: values.overdueGraceDays,
+      },
+    }
+    const preferences = await preferencesService.getPreferences()
+    await preferencesService.updatePreferences({ ...preferences, welderRenewalRules: nextRules } as UserSystemPreferences)
+    setRenewalRules(nextRules)
+    setSettingsVisible(false)
+    message.success(`${values.system} 记审规则已保存`)
+  }
 
   const notifyChanged = () => {
     loadCertifications()
@@ -224,20 +268,45 @@ const CertificationList: React.FC<CertificationListProps> = ({ welderId, onChang
 
   const handleRenewProject = async (cert: WelderCertification, project: CertifiedProject) => {
     if (!currentWorkspace) return
-    try {
-      const today = dayjs()
-      const nextExpiry = project.expiry_date
-        ? dayjs(project.expiry_date).add(1, 'year')
-        : today.add(1, 'year')
-      await certificationService.updateProject(
+    const system = cert.certification_system || ''
+    const rule = renewalRules[system]
+    if (!rule) {
+      message.warning(`请先在「常规设置」中配置 ${system || '该体系'} 的记审周期`)
+      openSettings(system)
+      return
+    }
+    const reviewDate = dayjs()
+    const oldExpiry = project.expiry_date ? dayjs(project.expiry_date) : null
+    const overdueDays = oldExpiry ? reviewDate.diff(oldExpiry, 'day') : 0
+    const useOldExpiry = rule.basis === 'original_expiry' && !!oldExpiry && overdueDays <= rule.overdueGraceDays
+    const baseDate = useOldExpiry && oldExpiry ? oldExpiry : reviewDate
+    const nextExpiry = baseDate.add(rule.reviewPeriodMonths, 'month')
+    Modal.confirm({
+      title: '确认记录审证通过？',
+      content: (
+        <Space direction="vertical" size={4}>
+          <span>体系：{system || '未标注'}</span>
+          <span>持证项目：{project.project_name}</span>
+          <span>当前到期日：{project.expiry_date || '未设置'}</span>
+          <span>本次审核日：{reviewDate.format('YYYY-MM-DD')}</span>
+          <strong>新到期日：{nextExpiry.format('YYYY-MM-DD')}</strong>
+          {oldExpiry && overdueDays > rule.overdueGraceDays && <span style={{ color: '#d46b08' }}>已超过补审宽限期，按实际审核日起算</span>}
+        </Space>
+      ),
+      onOk: async () => {
+        try {
+          const operator = currentUser?.full_name || currentUser?.username || `用户 ${currentUser?.id || '-'}`
+          const auditLine = `[${reviewDate.format('YYYY-MM-DD')}] ${system || '未标注体系'} / ${project.project_name}：${operator} 审证通过；周期 ${rule.reviewPeriodMonths} 个月；基准 ${baseDate.format('YYYY-MM-DD')}；到期 ${nextExpiry.format('YYYY-MM-DD')}`
+          await certificationService.updateProject(
         welderId,
         cert.id,
         project.id,
         {
-          renewal_date: today.format('YYYY-MM-DD'),
+          renewal_date: reviewDate.format('YYYY-MM-DD'),
           renewal_count: (project.renewal_count || 0) + 1,
-          next_renewal_date: today.add(1, 'year').format('YYYY-MM-DD'),
+          next_renewal_date: nextExpiry.format('YYYY-MM-DD'),
           renewal_result: '通过',
+          renewal_notes: [project.renewal_notes, auditLine].filter(Boolean).join('\n'),
           expiry_date: nextExpiry.format('YYYY-MM-DD'),
           status: 'valid',
         },
@@ -245,11 +314,14 @@ const CertificationList: React.FC<CertificationListProps> = ({ welderId, onChang
         currentWorkspace.company_id,
         currentWorkspace.factory_id
       )
-      message.success('已记录审证，有效期已延长')
-      notifyChanged()
-    } catch (error: any) {
-      message.error(error.message || '审证记录失败')
-    }
+          message.success('已记录审证并保留计算依据')
+          notifyChanged()
+        } catch (error: any) {
+          message.error(error.message || '审证记录失败')
+          throw error
+        }
+      },
+    })
   }
 
   const filtered = certifications.filter((cert) => {
@@ -336,6 +408,9 @@ const CertificationList: React.FC<CertificationListProps> = ({ welderId, onChang
           </Select>
         </div>
         <div className="toolbar-actions">
+          <Button icon={<SettingOutlined />} size="large" onClick={() => openSettings()}>
+            常规设置
+          </Button>
           <Button type="primary" icon={<PlusOutlined />} size="large" onClick={handleAdd}>
             添加体系证书
           </Button>
@@ -418,6 +493,27 @@ const CertificationList: React.FC<CertificationListProps> = ({ welderId, onChang
         onCancel={() => setProjectModalVisible(false)}
         onSubmit={handleProjectSubmit}
       />
+
+      <Modal title="焊工记审常规设置" open={settingsVisible} onCancel={() => setSettingsVisible(false)} onOk={() => void saveRenewalSettings()}>
+        <Alert type="info" showIcon message="规则按认证体系分别保存；请依据企业采用的正式标准填写。" style={{ marginBottom: 16 }} />
+        <Form form={settingsForm} layout="vertical">
+          <Form.Item name="system" label="体系 / 标准" rules={[{ required: true }]}>
+            <Select showSearch onChange={handleSystemRuleChange} options={Array.from(new Set([...SYSTEM_ORDER, ...certifications.map((item) => item.certification_system).filter(Boolean) as string[]])).map((value) => ({ value, label: value }))} />
+          </Form.Item>
+          <Form.Item name="reviewPeriodMonths" label="复审周期（月）" rules={[{ required: true }]}>
+            <InputNumber min={1} max={120} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="basis" label="记审基准日" rules={[{ required: true }]}>
+            <Radio.Group options={[{ value: 'review_date', label: '按实际审核日起算' }, { value: 'original_expiry', label: '按原到期日顺延' }]} />
+          </Form.Item>
+          <Form.Item name="overdueGraceDays" label="逾期补审宽限（天）" rules={[{ required: true }]}>
+            <InputNumber min={0} max={365} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="warningDays" label="到期预警天数（逗号分隔）" rules={[{ required: true }]}>
+            <Input placeholder="60,30,7" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   )
 }

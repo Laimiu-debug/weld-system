@@ -37,7 +37,6 @@ import {
   HistoryOutlined,
   NotificationOutlined,
   SecurityScanOutlined,
-  GlobalOutlined,
   QuestionCircleOutlined,
   FullscreenOutlined,
   StarOutlined,
@@ -833,13 +832,7 @@ const Layout: React.FC<LayoutProps> = () => {
                 icon={<QuestionCircleOutlined />}
                 className="header-btn"
                 title="帮助中心"
-                style={{ width: '32px', height: '32px' }}
-              />
-              <Button
-                type="text"
-                icon={<GlobalOutlined />}
-                className="header-btn"
-                title="切换语言"
+                onClick={() => navigate('/help')}
                 style={{ width: '32px', height: '32px' }}
               />
               <Button

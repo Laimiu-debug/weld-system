@@ -30,7 +30,12 @@ const ConsumableQuotePanel: React.FC<Props> = ({ joints, projectLabel }) => {
   useEffect(() => {
     const ws = workspaceService.getCurrentWorkspaceFromStorage()
     if (!ws) return
-    void materialsService.getMaterials({ limit: 200 }).then(res => setMaterials(res.items))
+    void materialsService.getMaterialsList({
+      workspace_type: ws.type,
+      company_id: ws.company_id,
+      factory_id: ws.factory_id,
+      limit: 200,
+    }).then((res) => setMaterials(res.data.items))
   }, [])
 
   const localSummary = useMemo(() => summarizeProjectCosts(joints, cost), [joints, cost])

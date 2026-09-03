@@ -1,7 +1,7 @@
 """
 User schemas for the welding system backend.
 """
-from typing import Optional, List
+from typing import Any, Dict, Optional, List
 from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, ConfigDict, field_serializer, Field, field_validator
@@ -153,6 +153,8 @@ class UserPreferences(BaseModel):
     # AI 数据外发授权：由用户在“我的设置”中明确保存，声明版本变化时失效。
     aiDataOutboundAuthorized: bool = False
     aiDataOutboundNoticeVersion: str = ""
+    # 焊工证书记审规则按体系保存到用户记录，未配置时禁止快捷记审。
+    welderRenewalRules: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
 
 
 class SecuritySettingsUpdate(BaseModel):

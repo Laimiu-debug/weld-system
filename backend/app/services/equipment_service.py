@@ -142,6 +142,9 @@ class EquipmentService:
 
                 # 维护信息
                 maintenance_interval_days=equipment_data.get("maintenance_interval_days"),
+                maintenance_base_date=self._parse_date(equipment_data.get("maintenance_base_date")),
+                maintenance_warning_days=equipment_data.get("maintenance_warning_days", 30),
+                maintenance_plan_type=equipment_data.get("maintenance_plan_type", "routine"),
                 inspection_interval_days=equipment_data.get("inspection_interval_days"),
 
                 # 责任人信息
@@ -159,6 +162,16 @@ class EquipmentService:
                 created_by=current_user.id,
                 created_at=datetime.utcnow()
             )
+
+            if equipment.status != "retired" and equipment.is_active and equipment.maintenance_interval_days:
+                if equipment.maintenance_interval_days <= 0:
+                    raise ValueError("维护周期必须大于 0")
+                if not equipment.maintenance_base_date:
+                    raise ValueError("配置维护周期时必须填写维护基准日")
+                from app.domain.period_rules import calculate_next_due
+                equipment.next_maintenance_date = calculate_next_due(
+                    equipment.maintenance_base_date, equipment.maintenance_interval_days
+                )
 
             self.db.add(equipment)
             self.db.commit()
@@ -351,18 +364,32 @@ class EquipmentService:
                 "model", "specifications", "rated_power", "rated_voltage", "rated_current",
                 "max_capacity", "working_range", "purchase_price", "supplier", "location",
                 "workshop", "area", "status", "is_active", "is_critical", "description",
-                "notes", "manual_url", "images", "documents", "tags", "access_level"
+                "notes", "manual_url", "images", "documents", "tags", "access_level",
+                "maintenance_interval_days", "maintenance_base_date", "maintenance_warning_days",
+                "maintenance_plan_type", "inspection_interval_days"
             ]
 
             for field in updatable_fields:
                 if field in update_data:
                     if field in ["purchase_date", "warranty_expiry_date", "installation_date",
-                               "commissioning_date", "last_maintenance_date", "next_maintenance_date"]:
+                               "commissioning_date", "last_maintenance_date", "next_maintenance_date",
+                               "maintenance_base_date"]:
                         setattr(equipment, field, self._parse_date(update_data[field]))
                     elif field in ["images", "documents", "specifications"]:
                         setattr(equipment, field, self._to_json(update_data[field]))
                     else:
                         setattr(equipment, field, update_data[field])
+
+            if equipment.status != "retired" and equipment.is_active and equipment.maintenance_interval_days:
+                if equipment.maintenance_interval_days <= 0:
+                    raise ValueError("维护周期必须大于 0")
+                base_date = equipment.last_maintenance_date or equipment.maintenance_base_date
+                if not base_date:
+                    raise ValueError("配置维护周期时必须填写维护基准日")
+                from app.domain.period_rules import calculate_next_due
+                equipment.next_maintenance_date = calculate_next_due(base_date, equipment.maintenance_interval_days)
+            else:
+                equipment.next_maintenance_date = None
 
             equipment.updated_by = current_user.id
             equipment.updated_at = datetime.utcnow()
@@ -751,7 +778,10 @@ class EquipmentService:
         if duration_hours:
             equipment.total_maintenance_hours = (equipment.total_maintenance_hours or 0) + float(duration_hours)
         if equipment.maintenance_interval_days:
-            equipment.next_maintenance_date = start_date.date() + timedelta(days=equipment.maintenance_interval_days)
+            from app.domain.period_rules import calculate_next_due
+            equipment.next_maintenance_date = calculate_next_due(
+                start_date.date(), equipment.maintenance_interval_days
+            )
         equipment.updated_by = current_user.id
         equipment.updated_at = datetime.utcnow()
 

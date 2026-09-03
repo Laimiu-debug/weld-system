@@ -42,6 +42,9 @@ export interface Equipment {
   last_maintenance_date?: string
   next_maintenance_date?: string
   maintenance_interval_days?: number
+  maintenance_base_date?: string
+  maintenance_warning_days?: number
+  maintenance_plan_type?: string
   maintenance_count?: number
   last_inspection_date?: string
   next_inspection_date?: string
@@ -119,6 +122,9 @@ export interface CreateEquipmentData {
   installation_date?: string
   commissioning_date?: string
   maintenance_interval_days?: number
+  maintenance_base_date?: string
+  maintenance_warning_days?: number
+  maintenance_plan_type?: string
   inspection_interval_days?: number
   responsible_person_id?: number
   description?: string
@@ -152,6 +158,11 @@ export interface UpdateEquipmentData {
   status?: EquipmentStatus
   is_active?: boolean
   is_critical?: boolean
+  maintenance_interval_days?: number
+  maintenance_base_date?: string
+  maintenance_warning_days?: number
+  maintenance_plan_type?: string
+  inspection_interval_days?: number
   description?: string
   notes?: string
   manual_url?: string

@@ -98,6 +98,7 @@ const PersonalCenter = React.lazy(() => import('@/pages/Profile/PersonalCenter')
 const SystemSettings = React.lazy(() => import('@/pages/Profile/SystemSettings'))
 const SecuritySettings = React.lazy(() => import('@/pages/Profile/SecuritySettings'))
 const NotificationSettings = React.lazy(() => import('@/pages/Profile/NotificationSettings'))
+const HelpCenter = React.lazy(() => import('@/pages/Help/HelpCenter'))
 const FeedbackBoard = React.lazy(() => import('@/pages/Feedback/FeedbackBoard'))
 
 // 错误页面
@@ -770,6 +771,14 @@ const App: React.FC = () => {
             element={
               <ProtectedRoute>
                 <FeedbackBoard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="help/*"
+            element={
+              <ProtectedRoute>
+                <HelpCenter />
               </ProtectedRoute>
             }
           />

@@ -122,6 +122,9 @@ class Equipment(Base):
     last_maintenance_date = Column(Date, comment="最后维护日期")
     next_maintenance_date = Column(Date, comment="下次维护日期")
     maintenance_interval_days = Column(Integer, comment="维护间隔(天)")
+    maintenance_base_date = Column(Date, comment="维护计划基准日")
+    maintenance_warning_days = Column(Integer, default=30, comment="维护预警提前天数")
+    maintenance_plan_type = Column(String(50), default="routine", comment="维护计划类型")
     maintenance_count = Column(Integer, default=0, comment="维护次数")
     
     # ==================== 检验信息 ====================

@@ -3,7 +3,7 @@
  */
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Table, message, Popconfirm, Empty, Space, Tag } from 'antd';
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { trainingRecordService, type WelderTrainingRecord } from '../../../services/welderRecords';
 import TrainingRecordModal from './TrainingRecordModal';
@@ -18,6 +18,7 @@ const TrainingRecordList: React.FC<TrainingRecordListProps> = ({ welderId }) => 
   const [loading, setLoading] = useState(false);
   const [records, setRecords] = useState<WelderTrainingRecord[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
+  const [editing, setEditing] = useState<WelderTrainingRecord | null>(null);
 
   // 加载培训记录
   const loadRecords = async () => {
@@ -67,6 +68,7 @@ const TrainingRecordList: React.FC<TrainingRecordListProps> = ({ welderId }) => 
   // 添加记录成功
   const handleAddSuccess = () => {
     setModalVisible(false);
+    setEditing(null);
     loadRecords();
   };
 
@@ -117,6 +119,9 @@ const TrainingRecordList: React.FC<TrainingRecordListProps> = ({ welderId }) => 
       key: 'action',
       render: (_: any, record: WelderTrainingRecord) => (
         <Space>
+          <Button type="link" icon={<EditOutlined />} size="small" onClick={() => { setEditing(record); setModalVisible(true); }}>
+            编辑
+          </Button>
           <Popconfirm
             title="确定要删除这条培训记录吗？"
             onConfirm={() => handleDelete(record.id)}
@@ -139,7 +144,7 @@ const TrainingRecordList: React.FC<TrainingRecordListProps> = ({ welderId }) => 
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          onClick={() => setModalVisible(true)}
+          onClick={() => { setEditing(null); setModalVisible(true); }}
         >
           添加培训记录
         </Button>
@@ -170,8 +175,9 @@ const TrainingRecordList: React.FC<TrainingRecordListProps> = ({ welderId }) => 
       <TrainingRecordModal
         visible={modalVisible}
         welderId={welderId}
+        editing={editing}
         onSuccess={handleAddSuccess}
-        onCancel={() => setModalVisible(false)}
+        onCancel={() => { setModalVisible(false); setEditing(null); }}
       />
     </Card>
   );

@@ -3,7 +3,7 @@
  */
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Empty, Table, Space, Tag, Popconfirm, message } from 'antd';
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import { assessmentRecordService, type WelderAssessmentRecord } from '../../../services/welderRecords';
 import AssessmentRecordModal from './AssessmentRecordModal';
 import { workspaceService } from '../../../services/workspace';
@@ -18,6 +18,7 @@ const AssessmentRecordList: React.FC<AssessmentRecordListProps> = ({ welderId })
   const [loading, setLoading] = useState(false);
   const [records, setRecords] = useState<WelderAssessmentRecord[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
+  const [editing, setEditing] = useState<WelderAssessmentRecord | null>(null);
 
   // 加载考核记录
   const loadRecords = async () => {
@@ -49,6 +50,7 @@ const AssessmentRecordList: React.FC<AssessmentRecordListProps> = ({ welderId })
   // 添加记录成功
   const handleAddSuccess = () => {
     setModalVisible(false);
+    setEditing(null);
     loadRecords();
   };
 
@@ -124,6 +126,9 @@ const AssessmentRecordList: React.FC<AssessmentRecordListProps> = ({ welderId })
       key: 'actions',
       render: (_: any, record: WelderAssessmentRecord) => (
         <Space>
+          <Button type="link" icon={<EditOutlined />} size="small" onClick={() => { setEditing(record); setModalVisible(true); }}>
+            编辑
+          </Button>
           <Popconfirm
             title="确定要删除这条考核记录吗？"
             onConfirm={() => handleDelete(record.id)}
@@ -146,7 +151,7 @@ const AssessmentRecordList: React.FC<AssessmentRecordListProps> = ({ welderId })
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          onClick={() => setModalVisible(true)}
+          onClick={() => { setEditing(null); setModalVisible(true); }}
         >
           添加考核记录
         </Button>
@@ -174,8 +179,9 @@ const AssessmentRecordList: React.FC<AssessmentRecordListProps> = ({ welderId })
       <AssessmentRecordModal
         visible={modalVisible}
         welderId={welderId}
+        editing={editing}
         onSuccess={handleAddSuccess}
-        onCancel={() => setModalVisible(false)}
+        onCancel={() => { setModalVisible(false); setEditing(null); }}
       />
     </Card>
   );

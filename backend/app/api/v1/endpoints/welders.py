@@ -15,9 +15,9 @@ from app.schemas.welder import (
     WelderCreate, WelderUpdate, WelderResponse, WelderListResponse,
     WelderCertificationCreate, WelderCertificationUpdate, WelderCertificationResponse,
     WelderCertifiedProjectCreate, WelderCertifiedProjectUpdate,
-    WelderWorkRecordCreate, WelderWorkRecordResponse,
-    WelderTrainingCreate, WelderTrainingResponse,
-    WelderAssessmentCreate, WelderAssessmentResponse,
+    WelderWorkRecordCreate, WelderWorkRecordUpdate, WelderWorkRecordResponse,
+    WelderTrainingCreate, WelderTrainingUpdate, WelderTrainingResponse,
+    WelderAssessmentCreate, WelderAssessmentUpdate, WelderAssessmentResponse,
     WelderWorkHistoryCreate, WelderWorkHistoryUpdate, WelderWorkHistoryResponse
 )
 from app.services.welder_service import WelderService
@@ -732,6 +732,7 @@ def download_welder_resume_pdf(
 ):
     """导出正式焊工履历表 PDF（人员 + 按体系持证项目 + 履历）."""
     from io import BytesIO
+    from urllib.parse import quote
 
     from fastapi.responses import StreamingResponse
 
@@ -745,7 +746,12 @@ def download_welder_resume_pdf(
         return StreamingResponse(
             BytesIO(pdf_bytes),
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers={
+                "Content-Disposition": (
+                    'attachment; filename="welder-resume.pdf"; '
+                    f"filename*=UTF-8''{quote(filename)}"
+                )
+            },
         )
     except HTTPException:
         raise
@@ -932,6 +938,22 @@ def delete_welder_work_record(
         )
 
 
+@router.put("/{welder_id}/work-records/{record_id}", response_model=dict)
+def update_welder_work_record(
+    welder_id: int,
+    record_id: int,
+    record_data: WelderWorkRecordUpdate,
+    workspace_type: str = Query(...),
+    company_id: Optional[int] = Query(None),
+    factory_id: Optional[int] = Query(None),
+    db: Session = Depends(deps.get_db),
+    current_user: Any = Depends(deps.get_current_active_user),
+) -> Any:
+    context = WorkspaceContext(workspace_type=workspace_type, user_id=current_user.id, company_id=company_id, factory_id=factory_id)
+    item = WelderService(db).update_work_record(welder_id, record_id, record_data.model_dump(exclude_unset=True), current_user, context)
+    return {"success": True, "data": item, "message": "工作记录更新成功"}
+
+
 # ==================== 培训记录管理 ====================
 
 @router.get("/{welder_id}/training-records", response_model=dict)
@@ -1060,6 +1082,22 @@ def delete_welder_training_record(
         )
 
 
+@router.put("/{welder_id}/training-records/{record_id}", response_model=dict)
+def update_welder_training_record(
+    welder_id: int,
+    record_id: int,
+    record_data: WelderTrainingUpdate,
+    workspace_type: str = Query(...),
+    company_id: Optional[int] = Query(None),
+    factory_id: Optional[int] = Query(None),
+    db: Session = Depends(deps.get_db),
+    current_user: Any = Depends(deps.get_current_active_user),
+) -> Any:
+    context = WorkspaceContext(workspace_type=workspace_type, user_id=current_user.id, company_id=company_id, factory_id=factory_id)
+    item = WelderService(db).update_training_record(welder_id, record_id, record_data.model_dump(exclude_unset=True), current_user, context)
+    return {"success": True, "data": item, "message": "培训记录更新成功"}
+
+
 # ==================== 考核记录管理 ====================
 
 @router.get("/{welder_id}/assessment-records", response_model=dict)
@@ -1186,6 +1224,22 @@ def delete_welder_assessment_record(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+
+
+@router.put("/{welder_id}/assessment-records/{record_id}", response_model=dict)
+def update_welder_assessment_record(
+    welder_id: int,
+    record_id: int,
+    record_data: WelderAssessmentUpdate,
+    workspace_type: str = Query(...),
+    company_id: Optional[int] = Query(None),
+    factory_id: Optional[int] = Query(None),
+    db: Session = Depends(deps.get_db),
+    current_user: Any = Depends(deps.get_current_active_user),
+) -> Any:
+    context = WorkspaceContext(workspace_type=workspace_type, user_id=current_user.id, company_id=company_id, factory_id=factory_id)
+    item = WelderService(db).update_assessment_record(welder_id, record_id, record_data.model_dump(exclude_unset=True), current_user, context)
+    return {"success": True, "data": item, "message": "考核记录更新成功"}
 
 
 # ==================== 工作履历管理 ====================

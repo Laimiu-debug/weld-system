@@ -5,7 +5,8 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Tuple
-from urllib.parse import quote
+from io import BytesIO
+from pathlib import Path
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -16,8 +17,121 @@ from app.services.welder_service import WelderService
 
 try:
     from weasyprint import HTML
-except ImportError:  # pragma: no cover
+except Exception:  # WeasyPrint may be installed while native Pango libraries are not.
     HTML = None
+
+
+def _reportlab_font_name() -> str:
+    """Register a CJK font available in the container or on Windows."""
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    candidates = (
+        Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+        Path("/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf"),
+        Path("C:/Windows/Fonts/msyh.ttc"),
+        Path("C:/Windows/Fonts/simhei.ttf"),
+        Path("C:/Windows/Fonts/simsun.ttc"),
+    )
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            pdfmetrics.registerFont(TTFont("WeldCJK", str(path), subfontIndex=0))
+            return "WeldCJK"
+        except Exception:
+            continue
+    # Built-in CID font keeps Chinese readable without an OS font dependency.
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+
+    pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+    return "STSong-Light"
+
+
+def _build_reportlab_pdf(welder: Any, certs: list[dict], histories: list[dict]) -> bytes:
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    font = _reportlab_font_name()
+    output = BytesIO()
+    doc = SimpleDocTemplate(
+        output,
+        pagesize=A4,
+        leftMargin=16 * mm,
+        rightMargin=16 * mm,
+        topMargin=16 * mm,
+        bottomMargin=16 * mm,
+    )
+    styles = getSampleStyleSheet()
+    title = ParagraphStyle("ResumeTitle", parent=styles["Title"], fontName=font, fontSize=18, alignment=TA_CENTER)
+    heading = ParagraphStyle("ResumeHeading", parent=styles["Heading2"], fontName=font, fontSize=12, spaceBefore=10, spaceAfter=5)
+    body = ParagraphStyle("ResumeBody", parent=styles["BodyText"], fontName=font, fontSize=9, leading=12)
+
+    def cell(value: Any) -> Paragraph:
+        return Paragraph(_esc(value), body)
+
+    def table(rows: list[list[Any]], widths: list[float]) -> Table:
+        rendered = [[cell(value) for value in row] for row in rows]
+        result = Table(rendered, colWidths=widths, repeatRows=1)
+        result.setStyle(TableStyle([
+            ("FONTNAME", (0, 0), (-1, -1), font),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f3f3")),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#aaaaaa")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        return result
+
+    name = getattr(welder, "full_name", None) or "-"
+    code = getattr(welder, "welder_code", None) or "-"
+    story: list[Any] = [
+        Paragraph("焊工履历表", title),
+        Paragraph(f"{_esc(name)}（{_esc(code)}） · 导出时间 {datetime.now():%Y-%m-%d %H:%M}", body),
+        Spacer(1, 5 * mm),
+        Paragraph("一、人员信息", heading),
+        table([
+            ["姓名", name, "编号", code],
+            ["部门", getattr(welder, "department", None), "岗位", getattr(welder, "position", None)],
+            ["电话", getattr(welder, "phone", None), "状态", getattr(welder, "status", None)],
+        ], [24 * mm, 55 * mm, 24 * mm, 55 * mm]),
+        Paragraph("二、持证项目（按体系）", heading),
+    ]
+    cert_rows: list[list[Any]] = [["体系", "持证项目", "证书编号", "发证日", "到期日", "下次审证"]]
+    for cert in certs:
+        projects = cert.get("projects") or [None]
+        for project in projects:
+            project = project or {}
+            cert_rows.append([
+                cert.get("certification_system"),
+                project.get("project_name") or project.get("project_code") or cert.get("project_name") or cert.get("certification_type"),
+                cert.get("certification_number"),
+                project.get("issue_date") or cert.get("issue_date"),
+                project.get("expiry_date") or cert.get("expiry_date"),
+                project.get("next_renewal_date") or cert.get("next_renewal_date"),
+            ])
+    if len(cert_rows) == 1:
+        cert_rows.append(["暂无持证", "", "", "", "", ""])
+    story.append(table(cert_rows, [20 * mm, 40 * mm, 32 * mm, 23 * mm, 23 * mm, 27 * mm]))
+    story.append(Paragraph("三、工作履历", heading))
+    history_rows: list[list[Any]] = [["单位", "职位", "开始", "结束", "工作内容"]]
+    for item in histories or []:
+        history_rows.append([
+            item.get("company_name"), item.get("position"), item.get("start_date"),
+            item.get("end_date") or "至今", item.get("job_description"),
+        ])
+    if len(history_rows) == 1:
+        history_rows.append(["暂无履历", "", "", "", ""])
+    story.append(table(history_rows, [40 * mm, 25 * mm, 24 * mm, 24 * mm, 52 * mm]))
+    doc.build(story)
+    return output.getvalue()
 
 
 def _esc(value: Any) -> str:
@@ -38,9 +152,6 @@ def build_welder_resume_pdf(
     current_user: User,
     workspace: WorkspaceContext,
 ) -> Tuple[bytes, str]:
-    if HTML is None:
-        raise ImportError("weasyprint 未安装")
-
     service = WelderService(db)
     welder = service.get_welder_by_id(welder_id, current_user, workspace)
     certs, _ = service.get_certifications(welder_id, current_user, workspace)
@@ -121,6 +232,5 @@ def build_welder_resume_pdf(
   </table>
 </body></html>"""
 
-    pdf_bytes = HTML(string=html).write_pdf()
-    safe_name = quote(f"焊工履历表-{full_name or welder_id}.pdf")
-    return pdf_bytes, safe_name
+    pdf_bytes = HTML(string=html).write_pdf() if HTML is not None else _build_reportlab_pdf(welder, certs, histories)
+    return pdf_bytes, f"焊工履历表-{full_name or welder_id}.pdf"

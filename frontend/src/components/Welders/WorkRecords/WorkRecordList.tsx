@@ -3,7 +3,7 @@
  */
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Table, message, Popconfirm, Empty, Space, Tag } from 'antd';
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { workRecordService, type WelderWorkRecord } from '../../../services/welderRecords';
 import WorkRecordModal from './WorkRecordModal';
@@ -18,6 +18,7 @@ const WorkRecordList: React.FC<WorkRecordListProps> = ({ welderId }) => {
   const [loading, setLoading] = useState(false);
   const [records, setRecords] = useState<WelderWorkRecord[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
+  const [editing, setEditing] = useState<WelderWorkRecord | null>(null);
 
   // 加载焊接操作记录
   const loadRecords = async () => {
@@ -67,6 +68,7 @@ const WorkRecordList: React.FC<WorkRecordListProps> = ({ welderId }) => {
   // 添加记录成功
   const handleAddSuccess = () => {
     setModalVisible(false);
+    setEditing(null);
     loadRecords();
   };
 
@@ -120,6 +122,9 @@ const WorkRecordList: React.FC<WorkRecordListProps> = ({ welderId }) => {
       key: 'action',
       render: (_: any, record: WelderWorkRecord) => (
         <Space>
+          <Button type="link" icon={<EditOutlined />} size="small" onClick={() => { setEditing(record); setModalVisible(true); }}>
+            编辑
+          </Button>
           <Popconfirm
             title="确定要删除这条工作记录吗？"
             onConfirm={() => handleDelete(record.id)}
@@ -142,7 +147,7 @@ const WorkRecordList: React.FC<WorkRecordListProps> = ({ welderId }) => {
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          onClick={() => setModalVisible(true)}
+          onClick={() => { setEditing(null); setModalVisible(true); }}
         >
           添加操作记录
         </Button>
@@ -173,8 +178,9 @@ const WorkRecordList: React.FC<WorkRecordListProps> = ({ welderId }) => {
       <WorkRecordModal
         visible={modalVisible}
         welderId={welderId}
+        editing={editing}
         onSuccess={handleAddSuccess}
-        onCancel={() => setModalVisible(false)}
+        onCancel={() => { setModalVisible(false); setEditing(null); }}
       />
     </Card>
   );

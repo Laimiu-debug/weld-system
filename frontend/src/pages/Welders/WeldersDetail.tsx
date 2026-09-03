@@ -38,6 +38,7 @@ import certificationService, { type WelderCertification } from '@/services/certi
 import { workHistoryService, type WelderWorkHistory } from '@/services/welderRecords'
 import { workspaceService } from '@/services/workspace'
 import ListPageHeader from '@/components/ListPageHeader'
+import { apiErrorMessage } from '@/services/api'
 
 const WeldersDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>()
@@ -352,7 +353,7 @@ const WeldersDetail: React.FC = () => {
       )
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}))
-        throw new Error(err.detail || '下载 PDF 失败')
+        throw new Error(apiErrorMessage(err.detail, `下载 PDF 失败（HTTP ${resp.status}）`))
       }
       const blob = await resp.blob()
       const url = URL.createObjectURL(blob)

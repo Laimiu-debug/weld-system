@@ -330,6 +330,7 @@ class WelderTraining(Base):
     
     # ==================== 审计字段 ====================
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False, comment="创建人ID")
+    updated_by = Column(Integer, ForeignKey("users.id"), nullable=True, comment="最后修改人ID")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间")
     
@@ -387,6 +388,8 @@ class WelderWorkRecord(Base):
     # ==================== 审计字段 ====================
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False, comment="创建人ID")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
+    updated_by = Column(Integer, ForeignKey("users.id"), nullable=True, comment="最后修改人ID")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间")
     
     # ==================== 关系 ====================
     # welder = relationship("Welder", back_populates="work_records")
@@ -454,6 +457,7 @@ class WelderAssessment(Base):
 
     # ==================== 审计字段 ====================
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False, comment="创建人ID")
+    updated_by = Column(Integer, ForeignKey("users.id"), nullable=True, comment="最后修改人ID")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间")
 
@@ -491,6 +495,7 @@ class WelderWorkHistory(Base):
 
     # ==================== 审计字段 ====================
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False, comment="创建人ID")
+    updated_by = Column(Integer, ForeignKey("users.id"), nullable=True, comment="最后修改人ID")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间")
 

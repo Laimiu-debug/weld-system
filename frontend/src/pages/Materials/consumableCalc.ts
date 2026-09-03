@@ -485,7 +485,7 @@ export const sumResults = (
     cost: number
   }>,
 ): Totals =>
-  items.reduce(
+  items.reduce<Totals>(
     (sum, item) => ({
       deposit: sum.deposit + item.deposit,
       primary: sum.primary + item.primary,

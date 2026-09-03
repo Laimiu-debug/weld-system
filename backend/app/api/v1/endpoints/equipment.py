@@ -52,6 +52,9 @@ class EquipmentCreate(BaseModel):
     installation_date: Optional[str] = None
     commissioning_date: Optional[str] = None
     maintenance_interval_days: Optional[int] = None
+    maintenance_base_date: Optional[str] = None
+    maintenance_warning_days: int = 30
+    maintenance_plan_type: str = "routine"
     inspection_interval_days: Optional[int] = None
     responsible_person_id: Optional[int] = None
     description: Optional[str] = None
@@ -84,6 +87,11 @@ class EquipmentUpdate(BaseModel):
     status: Optional[str] = None
     is_active: Optional[bool] = None
     is_critical: Optional[bool] = None
+    maintenance_interval_days: Optional[int] = None
+    maintenance_base_date: Optional[str] = None
+    maintenance_warning_days: Optional[int] = None
+    maintenance_plan_type: Optional[str] = None
+    inspection_interval_days: Optional[int] = None
     description: Optional[str] = None
     notes: Optional[str] = None
     manual_url: Optional[str] = None
@@ -236,6 +244,10 @@ def get_equipment_list(
                 "purchase_date": equipment.purchase_date.isoformat() if equipment.purchase_date else None,
                 "last_maintenance_date": equipment.last_maintenance_date.isoformat() if equipment.last_maintenance_date else None,
                 "next_maintenance_date": equipment.next_maintenance_date.isoformat() if equipment.next_maintenance_date else None,
+                "maintenance_interval_days": equipment.maintenance_interval_days,
+                "maintenance_base_date": equipment.maintenance_base_date.isoformat() if equipment.maintenance_base_date else None,
+                "maintenance_warning_days": equipment.maintenance_warning_days,
+                "maintenance_plan_type": equipment.maintenance_plan_type,
                 "created_at": equipment.created_at.isoformat() if equipment.created_at else None,
                 "updated_at": equipment.updated_at.isoformat() if equipment.updated_at else None
             })
@@ -687,6 +699,9 @@ def get_equipment_detail(
                 "last_maintenance_date": equipment.last_maintenance_date.isoformat() if equipment.last_maintenance_date else None,
                 "next_maintenance_date": equipment.next_maintenance_date.isoformat() if equipment.next_maintenance_date else None,
                 "maintenance_interval_days": equipment.maintenance_interval_days,
+                "maintenance_base_date": equipment.maintenance_base_date.isoformat() if equipment.maintenance_base_date else None,
+                "maintenance_warning_days": equipment.maintenance_warning_days,
+                "maintenance_plan_type": equipment.maintenance_plan_type,
                 "maintenance_count": equipment.maintenance_count,
                 "last_inspection_date": equipment.last_inspection_date.isoformat() if equipment.last_inspection_date else None,
                 "next_inspection_date": equipment.next_inspection_date.isoformat() if equipment.next_inspection_date else None,
@@ -970,10 +985,13 @@ def get_maintenance_alerts(
         )
 
         # 筛选需要维护的设备
-        target_date = date.today() + timedelta(days=days)
         maintenance_alerts = []
 
         for equipment in equipments:
+            if not equipment.is_active or equipment.status == "retired":
+                continue
+            warning_days = equipment.maintenance_warning_days if equipment.maintenance_warning_days is not None else days
+            target_date = date.today() + timedelta(days=warning_days)
             if (equipment.next_maintenance_date and
                 equipment.next_maintenance_date <= target_date):
 

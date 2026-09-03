@@ -192,16 +192,9 @@ const CertificationCard: React.FC<CertificationCardProps> = ({
                 <List.Item
                   actions={[
                     onRenewProject ? (
-                      <Popconfirm
-                        key="renew"
-                        title="记录审证通过？"
-                        description="写入审证日并将到期延长约一年"
-                        onConfirm={() => onRenewProject(certification, p)}
-                      >
-                        <Button type="link" size="small" icon={<AuditOutlined />}>
-                          记审证
-                        </Button>
-                      </Popconfirm>
+                      <Button key="renew" type="link" size="small" icon={<AuditOutlined />} onClick={() => onRenewProject(certification, p)}>
+                        记审证
+                      </Button>
                     ) : null,
                     onEditProject ? (
                       <Button

@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react'
-import { Button, Card, Form, Input, Select, Space, Spin, Switch, Typography, message } from 'antd'
+import { Button, Card, DatePicker, Form, Input, InputNumber, Select, Space, Spin, Switch, Typography, message } from 'antd'
 import { ArrowLeftOutlined, SaveOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
 import equipmentService, { EquipmentType } from '@/services/equipment'
+import dayjs from 'dayjs'
 
 const { Title } = Typography
 const { Option } = Select
@@ -32,6 +33,11 @@ const EquipmentEdit: React.FC = () => {
           is_critical: data.is_critical,
           description: data.description,
           notes: data.notes,
+          maintenance_interval_days: data.maintenance_interval_days,
+          maintenance_base_date: data.maintenance_base_date ? dayjs(data.maintenance_base_date) : undefined,
+          maintenance_warning_days: data.maintenance_warning_days ?? 30,
+          maintenance_plan_type: data.maintenance_plan_type || 'routine',
+          inspection_interval_days: data.inspection_interval_days,
         })
       } catch {
         message.error('加载设备失败')
@@ -46,7 +52,10 @@ const EquipmentEdit: React.FC = () => {
     if (!id) return
     setSaving(true)
     try {
-      await equipmentService.updateEquipment(id, values as never)
+      await equipmentService.updateEquipment(id, {
+        ...values,
+        maintenance_base_date: (values.maintenance_base_date as dayjs.Dayjs | undefined)?.format('YYYY-MM-DD'),
+      } as never)
       message.success('设备已更新')
       navigate('/equipment')
     } catch {
@@ -106,6 +115,19 @@ const EquipmentEdit: React.FC = () => {
           </Form.Item>
           <Form.Item name="is_critical" label="关键设备" valuePropName="checked">
             <Switch />
+          </Form.Item>
+          <Title level={4}>维护计划</Title>
+          <Form.Item name="maintenance_plan_type" label="维护类型">
+            <Select options={[{ value: 'routine', label: '保养' }, { value: 'inspection', label: '点检' }, { value: 'calibration', label: '校准' }, { value: 'verification', label: '检定' }]} />
+          </Form.Item>
+          <Form.Item name="maintenance_interval_days" label="维护周期（天）">
+            <InputNumber min={1} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="maintenance_base_date" label="维护基准日" dependencies={['maintenance_interval_days']} rules={[({ getFieldValue }) => ({ validator(_, value) { return getFieldValue('maintenance_interval_days') && !value ? Promise.reject(new Error('填写维护周期时必须选择基准日')) : Promise.resolve() } })]}>
+            <DatePicker style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="maintenance_warning_days" label="提前预警（天）">
+            <InputNumber min={0} max={365} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="description" label="描述">
             <TextArea rows={3} />

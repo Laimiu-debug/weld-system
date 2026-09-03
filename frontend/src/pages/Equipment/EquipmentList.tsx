@@ -363,6 +363,7 @@ const EquipmentList: React.FC = () => {
       commissioning_date: record.commissioning_date ? dayjs(record.commissioning_date) : null,
       last_maintenance_date: record.last_maintenance_date ? dayjs(record.last_maintenance_date) : null,
       next_maintenance_date: record.next_maintenance_date ? dayjs(record.next_maintenance_date) : null,
+      maintenance_base_date: record.maintenance_base_date ? dayjs(record.maintenance_base_date) : null,
     })
   }
 
@@ -458,7 +459,7 @@ const EquipmentList: React.FC = () => {
       Object.keys(values).forEach(key => {
         const value = values[key]
         // 跳过日期字段（稍后单独处理）和 undefined 值
-        if (!['purchase_date', 'warranty_expiry_date', 'installation_date', 'commissioning_date'].includes(key)
+        if (!['purchase_date', 'warranty_expiry_date', 'installation_date', 'commissioning_date', 'maintenance_base_date'].includes(key)
             && value !== undefined) {
           formData[key] = value
         }
@@ -476,6 +477,9 @@ const EquipmentList: React.FC = () => {
       }
       if (values.commissioning_date) {
         formData.commissioning_date = values.commissioning_date.format('YYYY-MM-DD')
+      }
+      if (values.maintenance_base_date) {
+        formData.maintenance_base_date = values.maintenance_base_date.format('YYYY-MM-DD')
       }
 
       console.log('提交的设备数据:', formData)
@@ -992,6 +996,23 @@ const EquipmentList: React.FC = () => {
                   ]}
                   locale={{ emptyText: '近期没有待维护设备' }}
                 />
+                <Title level={5} style={{ marginTop: 24 }}>未配置维护计划</Title>
+                <Table
+                  rowKey="id"
+                  dataSource={equipment.filter((item) => !item.next_maintenance_date)}
+                  pagination={false}
+                  columns={[
+                    { title: '设备编号', dataIndex: 'equipment_code', key: 'equipment_code' },
+                    { title: '设备名称', dataIndex: 'equipment_name', key: 'equipment_name' },
+                    { title: '位置', dataIndex: 'location', key: 'location' },
+                    {
+                      title: '操作', key: 'action', render: (_: unknown, item: Equipment) => (
+                        <Button type="link" icon={<SettingOutlined />} onClick={() => navigate(`/equipment/${item.id}/edit`)}>配置计划</Button>
+                      ),
+                    },
+                  ]}
+                  locale={{ emptyText: '当前设备均已配置维护计划' }}
+                />
               </Card>
             ),
           },
@@ -1333,6 +1354,30 @@ const EquipmentList: React.FC = () => {
                     <Option value="company">公司</Option>
                     <Option value="public">公开</Option>
                   </Select>
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Divider orientation="left">维护计划</Divider>
+            <Row gutter={16}>
+              <Col span={6}>
+                <Form.Item name="maintenance_plan_type" label="维护类型" initialValue="routine">
+                  <Select options={[{ value: 'routine', label: '保养' }, { value: 'inspection', label: '点检' }, { value: 'calibration', label: '校准' }, { value: 'verification', label: '检定' }]} />
+                </Form.Item>
+              </Col>
+              <Col span={6}>
+                <Form.Item name="maintenance_interval_days" label="周期（天）">
+                  <InputNumber min={1} style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={6}>
+                <Form.Item name="maintenance_base_date" label="基准日" dependencies={['maintenance_interval_days']} rules={[({ getFieldValue }) => ({ validator(_, value) { return getFieldValue('maintenance_interval_days') && !value ? Promise.reject(new Error('请填写维护基准日')) : Promise.resolve() } })]}>
+                  <DatePicker style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={6}>
+                <Form.Item name="maintenance_warning_days" label="提前预警（天）" initialValue={30}>
+                  <InputNumber min={0} max={365} style={{ width: '100%' }} />
                 </Form.Item>
               </Col>
             </Row>

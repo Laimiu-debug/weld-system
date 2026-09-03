@@ -1,10 +1,10 @@
 /**
  * 焊工培训记录添加/编辑模态框
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal, Form, Input, DatePicker, InputNumber, Select, Row, Col, message, Switch } from 'antd';
 import dayjs from 'dayjs';
-import { trainingRecordService } from '../../../services/welderRecords';
+import { trainingRecordService, type WelderTrainingRecord } from '../../../services/welderRecords';
 import { workspaceService } from '../../../services/workspace';
 
 const { TextArea } = Input;
@@ -13,6 +13,7 @@ const { Option } = Select;
 interface TrainingRecordModalProps {
   visible: boolean;
   welderId: number;
+  editing?: WelderTrainingRecord | null;
   onSuccess: () => void;
   onCancel: () => void;
 }
@@ -20,11 +21,26 @@ interface TrainingRecordModalProps {
 const TrainingRecordModal: React.FC<TrainingRecordModalProps> = ({
   visible,
   welderId,
+  editing,
   onSuccess,
   onCancel,
 }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    if (editing) {
+      form.setFieldsValue({
+        ...editing,
+        start_date: editing.start_date ? dayjs(editing.start_date) : undefined,
+        end_date: editing.end_date ? dayjs(editing.end_date) : undefined,
+      });
+    } else {
+      form.resetFields();
+      form.setFieldsValue({ certificate_issued: false, pass_status: false });
+    }
+  }, [visible, editing, form]);
 
   const handleOk = async () => {
     const currentWorkspace = workspaceService.getCurrentWorkspaceFromStorage();
@@ -50,15 +66,19 @@ const TrainingRecordModal: React.FC<TrainingRecordModalProps> = ({
         factory_id: currentWorkspace.factory_id,
       };
 
-      await trainingRecordService.create(welderId, formattedValues, params);
-      message.success('添加成功');
+      if (editing) {
+        await trainingRecordService.update(welderId, editing.id, formattedValues, params);
+      } else {
+        await trainingRecordService.create(welderId, formattedValues, params);
+      }
+      message.success(editing ? '培训记录已更新' : '添加成功');
       form.resetFields();
       onSuccess();
     } catch (error: any) {
       if (error.errorFields) {
         message.error('请填写必填字段');
       } else {
-        message.error(error.response?.data?.detail || '添加失败');
+        message.error(error.response?.data?.detail || '保存失败');
       }
     } finally {
       setLoading(false);
@@ -72,7 +92,7 @@ const TrainingRecordModal: React.FC<TrainingRecordModalProps> = ({
 
   return (
     <Modal
-      title="添加培训记录"
+      title={editing ? '编辑培训记录' : '添加培训记录'}
       open={visible}
       onOk={handleOk}
       onCancel={handleCancel}
