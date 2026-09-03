@@ -232,5 +232,14 @@ def build_welder_resume_pdf(
   </table>
 </body></html>"""
 
-    pdf_bytes = HTML(string=html).write_pdf() if HTML is not None else _build_reportlab_pdf(welder, certs, histories)
+    if HTML is not None:
+        try:
+            pdf_bytes = HTML(string=html).write_pdf()
+        except Exception:
+            # Native-library and pydyf compatibility problems can surface only
+            # when rendering starts, so keep the ReportLab path as a runtime
+            # fallback rather than limiting it to import-time failures.
+            pdf_bytes = _build_reportlab_pdf(welder, certs, histories)
+    else:
+        pdf_bytes = _build_reportlab_pdf(welder, certs, histories)
     return pdf_bytes, f"焊工履历表-{full_name or welder_id}.pdf"
