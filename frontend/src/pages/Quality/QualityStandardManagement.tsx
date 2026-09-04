@@ -13,9 +13,28 @@ import {
   Tag,
   message,
 } from 'antd'
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import {
+  DeleteOutlined,
+  EditOutlined,
+  MinusCircleOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { qualityStandardApi, readWorkspaceQuery } from '@/services/businessExtensions'
+
+const toTextItems = (value: unknown): string[] => {
+  if (!value) return []
+  if (Array.isArray(value)) return value.map(item => typeof item === 'string' ? item : JSON.stringify(item))
+  if (typeof value !== 'string') return [String(value)]
+  try {
+    const parsed = JSON.parse(value)
+    if (Array.isArray(parsed)) return parsed.map(item => typeof item === 'string' ? item : JSON.stringify(item))
+  } catch {
+    // 兼容历史纯文本数据。
+  }
+  return value.split(/\r?\n/).map(item => item.trim()).filter(Boolean)
+}
 
 const QualityStandardManagement: React.FC = () => {
   const [loading, setLoading] = useState(false)
@@ -54,7 +73,7 @@ const QualityStandardManagement: React.FC = () => {
   const openCreate = () => {
     setEditing(null)
     form.resetFields()
-    form.setFieldsValue({ status: 'active', version: '1.0' })
+    form.setFieldsValue({ status: 'active', version: '1.0', test_methods: [], acceptance_criteria: [] })
     setOpen(true)
   }
 
@@ -62,6 +81,8 @@ const QualityStandardManagement: React.FC = () => {
     setEditing(record)
     form.setFieldsValue({
       ...record,
+      test_methods: toTextItems(record.test_methods),
+      acceptance_criteria: toTextItems(record.acceptance_criteria),
       effective_date: record.effective_date ? dayjs(record.effective_date) : undefined,
       expiry_date: record.expiry_date ? dayjs(record.expiry_date) : undefined,
     })
@@ -72,6 +93,8 @@ const QualityStandardManagement: React.FC = () => {
     const values = await form.validateFields()
     const payload = {
       ...values,
+      test_methods: JSON.stringify(values.test_methods || []),
+      acceptance_criteria: JSON.stringify(values.acceptance_criteria || []),
       effective_date: values.effective_date?.format('YYYY-MM-DD'),
       expiry_date: values.expiry_date?.format('YYYY-MM-DD'),
     }
@@ -168,7 +191,8 @@ const QualityStandardManagement: React.FC = () => {
         onCancel={() => setOpen(false)}
         onOk={() => void submit()}
         width={720}
-        destroyOnClose
+        destroyOnHidden
+        forceRender
       >
         <Form form={form} layout="vertical">
           <Form.Item name="standard_code" label="标准编号" rules={[{ required: true }]}>
@@ -206,11 +230,39 @@ const QualityStandardManagement: React.FC = () => {
               <DatePicker />
             </Form.Item>
           </Space>
-          <Form.Item name="test_methods" label="检验方法">
-            <Input.TextArea rows={2} placeholder="可填文本或 JSON" />
+          <Form.Item label="检验方法" extra="逐条填写，例如：外观检查、射线检测（RT）">
+            <Form.List name="test_methods">
+              {(fields, { add, remove }) => (
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  {fields.map(field => (
+                    <Space.Compact key={field.key} block>
+                      <Form.Item {...field} noStyle rules={[{ required: true, message: '请填写检验方法' }]}>
+                        <Input placeholder="输入一项检验方法" />
+                      </Form.Item>
+                      <Button danger icon={<MinusCircleOutlined />} onClick={() => remove(field.name)} aria-label="删除检验方法" />
+                    </Space.Compact>
+                  ))}
+                  <Button type="dashed" icon={<PlusOutlined />} onClick={() => add()} block>添加检验方法</Button>
+                </Space>
+              )}
+            </Form.List>
           </Form.Item>
-          <Form.Item name="acceptance_criteria" label="验收准则">
-            <Input.TextArea rows={2} placeholder="可填文本或 JSON" />
+          <Form.Item label="验收准则" extra="每行一条可直接执行的合格要求">
+            <Form.List name="acceptance_criteria">
+              {(fields, { add, remove }) => (
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  {fields.map(field => (
+                    <Space.Compact key={field.key} block>
+                      <Form.Item {...field} noStyle rules={[{ required: true, message: '请填写验收准则' }]}>
+                        <Input placeholder="例如：焊缝表面不得有裂纹" />
+                      </Form.Item>
+                      <Button danger icon={<MinusCircleOutlined />} onClick={() => remove(field.name)} aria-label="删除验收准则" />
+                    </Space.Compact>
+                  ))}
+                  <Button type="dashed" icon={<PlusOutlined />} onClick={() => add()} block>添加验收准则</Button>
+                </Space>
+              )}
+            </Form.List>
           </Form.Item>
           <Form.Item name="description" label="描述">
             <Input.TextArea rows={3} />

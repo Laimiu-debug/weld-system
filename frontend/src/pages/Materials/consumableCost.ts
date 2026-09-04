@@ -34,7 +34,15 @@ export const loadCostParams = (): CostParams => {
   try {
     const raw = localStorage.getItem(COST_STORAGE_KEY)
     if (!raw) return defaultCostParams()
-    return { ...defaultCostParams(), ...JSON.parse(raw) }
+    const saved = JSON.parse(raw)
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return defaultCostParams()
+    const defaults = defaultCostParams()
+    return Object.fromEntries(
+      Object.entries(defaults).map(([key, fallback]) => {
+        const value = Number((saved as Record<string, unknown>)[key])
+        return [key, Number.isFinite(value) ? value : fallback]
+      }),
+    ) as CostParams
   } catch {
     return defaultCostParams()
   }

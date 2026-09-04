@@ -4,12 +4,13 @@ Generic workspace-scoped CRUD helpers for MVP business entities.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import date, datetime
 from math import ceil
 from typing import Any, Dict, List, Optional, Tuple, Type
 
 from fastapi import HTTPException
 from fastapi import status as http_status
+from sqlalchemy import String, cast
 from sqlalchemy.orm import Session
 
 from app.core.data_access import DataAccessMiddleware, WorkspaceContext
@@ -197,6 +198,12 @@ def run_report_template(
         sources = []
     if isinstance(sources, str):
         sources = [sources]
+    try:
+        filters = json.loads(template.get("filters") or "[]")
+    except json.JSONDecodeError:
+        filters = []
+    if not isinstance(filters, list):
+        filters = []
 
     source_model = {
         "wps": WPS,
@@ -220,9 +227,48 @@ def run_report_template(
             user=current_user,
             workspace_context=workspace_context,
         )
+        # 仅允许使用模型真实列，避免把用户输入拼进 SQL。某数据源没有的字段会忽略。
+        applied_filters = 0
+        for item in filters:
+            if not isinstance(item, dict):
+                continue
+            field = str(item.get("field") or "").strip()
+            value = item.get("value")
+            operator = str(item.get("operator") or "eq").lower()
+            column = getattr(model, field, None)
+            if not field or column is None or value in (None, ""):
+                continue
+            try:
+                python_type = column.property.columns[0].type.python_type
+                if python_type is bool:
+                    value = str(value).strip().lower() in {"1", "true", "yes", "是"}
+                elif python_type is int:
+                    value = int(value)
+                elif python_type is float:
+                    value = float(value)
+                elif python_type is datetime:
+                    value = datetime.fromisoformat(str(value))
+                elif python_type is date:
+                    value = date.fromisoformat(str(value))
+            except (AttributeError, TypeError, ValueError):
+                # 无法转换的筛选条件不应让整份报表失败。
+                continue
+            if operator == "contains":
+                query = query.filter(cast(column, String).ilike(f"%{value}%"))
+            elif operator == "gte":
+                query = query.filter(column >= value)
+            elif operator == "lte":
+                query = query.filter(column <= value)
+            else:
+                query = query.filter(column == value)
+            applied_filters += 1
         # QualityInspection uses owner_id; DataAccessMiddleware should handle via user_id property or owner_id
         total = query.count()
-        results.append({"source": source, "total": total})
+        results.append({
+            "source": source,
+            "total": total,
+            "note": f"已应用 {applied_filters} 个筛选条件" if applied_filters else None,
+        })
 
     return {
         "template_id": template.get("id"),

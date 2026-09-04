@@ -16,80 +16,11 @@ import {
 } from './consumableCalc'
 import ConsumableQuotePanel from './ConsumableQuotePanel'
 import ConsumableIssuePanel from './ConsumableIssuePanel'
+import GroovePreview from './GroovePreview'
+import { printUsageReport } from './consumablePrint'
 import './consumableCalculator.css'
 
 const { Title, Text } = Typography
-
-const GroovePreview: React.FC<{ value: Joint }> = ({ value }) => {
-  const area = geometry(value).total
-  const label = grooveOptions.find(item => item.value === value.groove)?.label
-  const isFillet = value.groove === 'FILLET' || value.groove === 'LAP'
-  const isTubePlate = isTubePlateGroove(value.groove)
-  const isBackGouge = isBackGougeGroove(value.groove)
-  return (
-    <div className="cc-preview" role="img" aria-label={`${label}截面预览`}>
-      <div className="cc-preview__title">{label}　A = {area.toFixed(1)} mm²</div>
-      <svg viewBox="0 0 480 230" aria-hidden="true">
-        {isFillet ? (
-          <>
-            <rect x="70" y="145" width="340" height="55" fill="#8a9097" stroke="#4b5563" />
-            <rect x="210" y="30" width="55" height="145" fill="#8a9097" stroke="#4b5563" />
-            <path d="M210 145 L145 145 L210 82 Z" fill="#e3a11a" stroke="#9a6700" strokeWidth="3" />
-          </>
-        ) : isTubePlate ? (
-          <>
-            <rect x="40" y="150" width="400" height="45" fill="#8a9097" stroke="#4b5563" strokeWidth="2" />
-            <rect x="200" y="35" width="80" height="120" fill="#8a9097" stroke="#4b5563" strokeWidth="2" />
-            <path
-              d={
-                value.groove === 'TP_X'
-                  ? 'M208 40 L272 40 L240 95 L260 150 H220 L240 95 Z'
-                  : 'M208 40 L272 40 L240 150 H220 Z'
-              }
-              fill="#e3a11a"
-              stroke="#9a6700"
-              strokeWidth="3"
-            />
-            {value.groove === 'TP_V' && value.legSize > 0 && (
-              <path d="M200 150 L170 150 L200 120 Z" fill="#fbbf24" stroke="#9a6700" strokeWidth="2" />
-            )}
-            <text x="248" y="28" fill="#475569" fontSize="14" textAnchor="middle">
-              Φ{value.tubeDiameter || 219}
-            </text>
-          </>
-        ) : (
-          <>
-            <path d="M45 70 H205 L240 145 L275 70 H435 V190 H275 L240 145 L205 190 H45 Z" fill="#8a9097" stroke="#4b5563" strokeWidth="3" />
-            <path
-              d={
-                value.groove === 'I'
-                  ? 'M226 65 H254 V194 H226 Z'
-                  : 'M196 65 H284 L240 145 L265 194 H215 L240 145 Z'
-              }
-              fill="#e3a11a"
-              stroke="#9a6700"
-              strokeWidth="3"
-            />
-            {value.groove !== 'I' && (
-              <path d="M196 65 Q240 35 284 65" fill="#e3a11a" stroke="#9a6700" strokeWidth="3" />
-            )}
-            {isBackGouge && value.backGougeDepth > 0 && (
-              <path d="M218 194 L262 194 L240 168 Z" fill="#fb923c" stroke="#c2410c" strokeWidth="2" />
-            )}
-          </>
-        )}
-        {!isFillet && (
-          <>
-            <line x1="370" y1="70" x2="370" y2="190" stroke="#1677ff" strokeWidth="2" />
-            <text x="378" y="136" fill="#1677ff" fontSize="18">
-              t={value.thickness}
-            </text>
-          </>
-        )}
-      </svg>
-    </div>
-  )
-}
 
 const ConsumableUsagePage: React.FC = () => {
   const [projects, setProjects] = useState<DataRow[]>([])
@@ -114,18 +45,30 @@ const ConsumableUsagePage: React.FC = () => {
     straight: 1000,
   })
 
-  useEffect(() => { void engineeringService.projects().then(setProjects) }, [])
+  useEffect(() => {
+    void engineeringService.projects()
+      .then(values => setProjects(Array.isArray(values) ? values : []))
+      .catch(() => setProjects([]))
+  }, [])
   useEffect(() => {
     setProductId(undefined)
     setRevisionId(undefined)
     setProducts([])
     setRevisions([])
-    if (projectId) void engineeringService.products(projectId).then(setProducts)
+    if (projectId) {
+      void engineeringService.products(projectId)
+        .then(values => setProducts(Array.isArray(values) ? values : []))
+        .catch(() => setProducts([]))
+    }
   }, [projectId])
   useEffect(() => {
     setRevisionId(undefined)
     setRevisions([])
-    if (productId) void engineeringService.revisions(productId).then(setRevisions)
+    if (productId) {
+      void engineeringService.revisions(productId)
+        .then(values => setRevisions(Array.isArray(values) ? values : []))
+        .catch(() => setRevisions([]))
+    }
   }, [productId])
   useEffect(() => {
     if (!selectedId && joints[0]) setSelectedId(joints[0].id)
@@ -394,7 +337,10 @@ const ConsumableUsagePage: React.FC = () => {
             <Button icon={<FileExcelOutlined />} onClick={exportCsv}>
               导出 Excel
             </Button>
-            <Button icon={<FilePdfOutlined />} onClick={() => window.print()}>
+            <Button
+              icon={<FilePdfOutlined />}
+              onClick={() => printUsageReport(joints, projectLabel || '项目')}
+            >
               导出 PDF
             </Button>
           </Space>

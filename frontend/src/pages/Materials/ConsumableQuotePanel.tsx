@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import {
   Alert, Button, Card, Col, Divider, Form, Input, InputNumber, Row, Space, Statistic, Table, Typography, message,
 } from 'antd'
-import { CloudSyncOutlined, FileExcelOutlined, SaveOutlined } from '@ant-design/icons'
+import { CloudSyncOutlined, FileExcelOutlined, FilePdfOutlined, SaveOutlined } from '@ant-design/icons'
 import materialsService, { Material } from '@/services/materials'
 import consumablesService, { mapServerSummary } from '@/services/consumables'
 import { workspaceService } from '@/services/workspace'
@@ -12,6 +12,7 @@ import {
   CostParams, ProjectCostSummary, exportQuoteCsv,
   jointsToQuotePayload, loadCostParams, operationCostBreakdown, saveCostParams, summarizeProjectCosts,
 } from './consumableCost'
+import { printQuoteReport } from './consumablePrint'
 
 const { Text, Title } = Typography
 
@@ -35,7 +36,14 @@ const ConsumableQuotePanel: React.FC<Props> = ({ joints, projectLabel }) => {
       company_id: ws.company_id,
       factory_id: ws.factory_id,
       limit: 200,
-    }).then((res) => setMaterials(res.data.items))
+    }).then((res) => {
+      // apiService 的历史接口存在一层或两层 data 包装，报价页不应因此崩溃。
+      const body = res?.data as unknown as { items?: Material[]; data?: { items?: Material[] } }
+      setMaterials(body?.items ?? body?.data?.items ?? [])
+    }).catch(() => {
+      // 台账仅用于单价提示，加载失败不影响本地报价。
+      setMaterials([])
+    })
   }, [])
 
   const localSummary = useMemo(() => summarizeProjectCosts(joints, cost), [joints, cost])
@@ -139,6 +147,13 @@ const ConsumableQuotePanel: React.FC<Props> = ({ joints, projectLabel }) => {
             <Divider />
             <Button icon={<FileExcelOutlined />} onClick={() => exportQuoteCsv(joints, cost, summary, projectLabel || '项目')}>
               导出报价 CSV
+            </Button>
+            <Button
+              icon={<FilePdfOutlined />}
+              onClick={() => printQuoteReport(joints, cost, summary, projectLabel || '项目', customer)}
+              style={{ marginLeft: 8 }}
+            >
+              导出报价 PDF
             </Button>
           </Card>
           <Card title="焊缝成本明细" style={{ marginTop: 16 }}>

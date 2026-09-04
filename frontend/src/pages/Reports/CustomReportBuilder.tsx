@@ -15,6 +15,7 @@ import {
 import {
   DeleteOutlined,
   EditOutlined,
+  MinusCircleOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -27,6 +28,21 @@ const sourceOptions = [
   { value: 'quality', label: '质量检验' },
   { value: 'production', label: '生产任务' },
 ]
+
+const metricOptions = [
+  { value: 'count', label: '记录数量' },
+]
+
+const parseJsonArray = <T,>(value: unknown, fallback: T[] = []): T[] => {
+  if (Array.isArray(value)) return value as T[]
+  if (typeof value !== 'string' || !value.trim()) return fallback
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed as T[] : fallback
+  } catch {
+    return fallback
+  }
+}
 
 const CustomReportBuilder: React.FC = () => {
   const [loading, setLoading] = useState(false)
@@ -67,19 +83,18 @@ const CustomReportBuilder: React.FC = () => {
   const openCreate = () => {
     setEditing(null)
     form.resetFields()
-    form.setFieldsValue({ chart_type: 'table', data_sources: ['wps'] })
+    form.setFieldsValue({ chart_type: 'table', data_sources: ['wps'], metrics: ['count'], filters: [] })
     setOpen(true)
   }
 
   const openEdit = (record: any) => {
     setEditing(record)
-    let sources: string[] = []
-    try {
-      sources = JSON.parse(record.data_sources || '[]')
-    } catch {
-      sources = []
-    }
-    form.setFieldsValue({ ...record, data_sources: sources })
+    form.setFieldsValue({
+      ...record,
+      data_sources: parseJsonArray<string>(record.data_sources),
+      metrics: parseJsonArray<string>(record.metrics, ['count']),
+      filters: parseJsonArray<{ field?: string; operator?: string; value?: string }>(record.filters),
+    })
     setOpen(true)
   }
 
@@ -88,6 +103,8 @@ const CustomReportBuilder: React.FC = () => {
     const payload = {
       ...values,
       data_sources: JSON.stringify(values.data_sources || []),
+      metrics: JSON.stringify(values.metrics || []),
+      filters: JSON.stringify(values.filters || []),
     }
     try {
       if (editing) {
@@ -207,7 +224,8 @@ const CustomReportBuilder: React.FC = () => {
         onCancel={() => setOpen(false)}
         onOk={() => void submit()}
         width={640}
-        destroyOnClose
+        destroyOnHidden
+        forceRender
       >
         <Form form={form} layout="vertical">
           <Form.Item name="name" label="模板名称" rules={[{ required: true }]}>
@@ -229,11 +247,36 @@ const CustomReportBuilder: React.FC = () => {
               ]}
             />
           </Form.Item>
-          <Form.Item name="metrics" label="指标配置（JSON，可选）">
-            <Input.TextArea rows={2} placeholder='例如 ["count"]' />
+          <Form.Item name="metrics" label="统计指标" rules={[{ required: true, message: '请选择统计指标' }]}>
+            <Select mode="multiple" options={metricOptions} placeholder="选择要统计的指标" />
           </Form.Item>
-          <Form.Item name="filters" label="筛选配置（JSON，可选）">
-            <Input.TextArea rows={2} />
+          <Form.Item label="筛选条件" extra="不填写则统计所选数据源的全部记录">
+            <Form.List name="filters">
+              {(fields, { add, remove }) => (
+                <Space direction="vertical" style={{ width: '100%' }}>
+                  {fields.map(field => (
+                    <Space key={field.key} align="baseline" wrap>
+                      <Form.Item name={[field.name, 'field']} rules={[{ required: true, message: '请输入字段' }]}>
+                        <Input placeholder="字段，如 status" style={{ width: 150 }} />
+                      </Form.Item>
+                      <Form.Item name={[field.name, 'operator']} initialValue="eq">
+                        <Select style={{ width: 110 }} options={[
+                          { value: 'eq', label: '等于' },
+                          { value: 'contains', label: '包含' },
+                          { value: 'gte', label: '大于等于' },
+                          { value: 'lte', label: '小于等于' },
+                        ]} />
+                      </Form.Item>
+                      <Form.Item name={[field.name, 'value']} rules={[{ required: true, message: '请输入值' }]}>
+                        <Input placeholder="筛选值" style={{ width: 160 }} />
+                      </Form.Item>
+                      <Button type="text" danger icon={<MinusCircleOutlined />} onClick={() => remove(field.name)} aria-label="删除筛选条件" />
+                    </Space>
+                  ))}
+                  <Button type="dashed" icon={<PlusOutlined />} onClick={() => add({ operator: 'eq' })} block>添加筛选条件</Button>
+                </Space>
+              )}
+            </Form.List>
           </Form.Item>
         </Form>
       </Modal>
@@ -244,7 +287,23 @@ const CustomReportBuilder: React.FC = () => {
         onCancel={() => setRunOpen(false)}
         footer={<Button onClick={() => setRunOpen(false)}>关闭</Button>}
       >
-        <pre style={{ whiteSpace: 'pre-wrap' }}>{JSON.stringify(runResult, null, 2)}</pre>
+        {runResult ? (
+          <Space direction="vertical" style={{ width: '100%' }} size="middle">
+            <div><b>{runResult.name || '自定义报表'}</b></div>
+            <Table<{ source: string; total: number; note?: string }>
+              rowKey={(record) => record.source}
+              size="small"
+              pagination={false}
+              dataSource={(runResult.results || []) as { source: string; total: number; note?: string }[]}
+              columns={[
+                { title: '数据源', dataIndex: 'source', render: (v: string) => sourceOptions.find(item => item.value === v)?.label || v },
+                { title: '记录数量', dataIndex: 'total' },
+                { title: '说明', dataIndex: 'note', render: (v?: string) => v === 'unsupported' ? '暂不支持' : (v || '—') },
+              ]}
+            />
+            <span style={{ color: '#64748b' }}>生成时间：{runResult.generated_at ? new Date(runResult.generated_at).toLocaleString() : '—'}</span>
+          </Space>
+        ) : '暂无结果'}
       </Modal>
     </Card>
   )
