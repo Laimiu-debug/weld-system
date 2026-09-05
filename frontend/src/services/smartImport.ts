@@ -1,3 +1,4 @@
+import { unwrapApiData } from './response'
 import api from './api'
 
 export type ImportEntityType = 'wps' | 'pqr' | 'ppqr' | 'welder'
@@ -312,7 +313,7 @@ export interface ManualDraftField {
 class SmartImportService {
   async listAIProviderConfigs(): Promise<AIProviderConfig[]> {
     const response = await api.get('/smart-import/ai-provider-configs')
-    return response.data
+    return unwrapApiData<AIProviderConfig[]>(response.data)
   }
 
   async createAIProviderConfig(data: {
@@ -325,7 +326,7 @@ class SmartImportService {
     is_default?: boolean
   }): Promise<AIProviderConfig> {
     const response = await api.post('/smart-import/ai-provider-configs', data)
-    return response.data
+    return unwrapApiData<AIProviderConfig>(response.data)
   }
 
   async updateAIProviderConfig(id: string, data: {
@@ -336,7 +337,7 @@ class SmartImportService {
     is_default?: boolean
   }): Promise<AIProviderConfig> {
     const response = await api.patch(`/smart-import/ai-provider-configs/${id}`, data)
-    return response.data
+    return unwrapApiData<AIProviderConfig>(response.data)
   }
 
   async testAIProviderConnection(data: {
@@ -346,31 +347,32 @@ class SmartImportService {
     api_key: string
   }): Promise<{ success: boolean; message: string }> {
     const response = await api.post('/smart-import/ai-provider-configs/test-connection', data)
-    return response.data
+    return unwrapApiData<{ success: boolean; message: string }>(response.data)
   }
 
   async testAIProviderConfig(id: string): Promise<AIProviderConfig> {
     const response = await api.post(`/smart-import/ai-provider-configs/${id}/test`)
-    return response.data
+    return unwrapApiData<AIProviderConfig>(response.data)
   }
 
   async rotateAIProviderKey(id: string, apiKey: string): Promise<AIProviderConfig> {
     const response = await api.post(`/smart-import/ai-provider-configs/${id}/rotate`, { api_key: apiKey })
-    return response.data
+    return unwrapApiData<AIProviderConfig>(response.data)
   }
 
   async disableAIProviderConfig(id: string): Promise<void> {
-    await api.delete(`/smart-import/ai-provider-configs/${id}`)
+    const response = await api.delete(`/smart-import/ai-provider-configs/${id}`)
+    unwrapApiData(response.data)
   }
 
   async getEnterpriseAIPolicy(): Promise<EnterpriseAIPolicy> {
     const response = await api.get('/smart-import/enterprise-ai-policy')
-    return response.data
+    return unwrapApiData<EnterpriseAIPolicy>(response.data)
   }
 
   async updateEnterpriseAIPolicy(data: Omit<EnterpriseAIPolicy, 'company_id' | 'updated_at'>): Promise<EnterpriseAIPolicy> {
     const response = await api.put('/smart-import/enterprise-ai-policy', data)
-    return response.data
+    return unwrapApiData<EnterpriseAIPolicy>(response.data)
   }
 
   async getAICapabilities(route?: { task_type: string; complexity: string }): Promise<{
@@ -384,7 +386,16 @@ class SmartImportService {
     max_input_chars: number
   }> {
     const response = await api.get('/smart-import/ai-capabilities', { params: route })
-    return response.data
+    return unwrapApiData<{
+    platform_available: boolean
+    platform_provider: string
+    platform_model?: string
+    platform_host: string
+    byok_providers: Array<'openai_responses' | 'openai_compatible_chat'>
+    byok_allowed_hosts: string[]
+    max_document_pages: number
+    max_input_chars: number
+  }>(response.data)
   }
 
   async createOutboundConsent(data: {
@@ -396,19 +407,19 @@ class SmartImportService {
     authorized: boolean
   }): Promise<{ id: string }> {
     const response = await api.post('/operations/outbound-consents', data)
-    return response.data
+    return unwrapApiData<{ id: string }>(response.data)
   }
 
   async getAIQuota(estimatedPages?: number): Promise<AIQuotaStatus> {
     const response = await api.get('/smart-import/ai-quota', {
       params: estimatedPages ? { estimated_pages: estimatedPages } : undefined,
     })
-    return response.data
+    return unwrapApiData<AIQuotaStatus>(response.data)
   }
 
   async getAIUsage(days = 30): Promise<AIUsageReport> {
     const response = await api.get('/smart-import/ai-usage', { params: { days } })
-    return response.data
+    return unwrapApiData<AIUsageReport>(response.data)
   }
 
   async createBatch(data: {
@@ -418,17 +429,17 @@ class SmartImportService {
     access_level?: 'private' | 'factory' | 'company'
   }): Promise<ImportBatch> {
     const response = await api.post('/smart-import/batches', data)
-    return response.data
+    return unwrapApiData<ImportBatch>(response.data)
   }
 
   async listBatches(): Promise<ImportBatch[]> {
     const response = await api.get('/smart-import/batches')
-    return response.data
+    return unwrapApiData<ImportBatch[]>(response.data)
   }
 
   async getBatch(id: string): Promise<ImportBatchDetail> {
     const response = await api.get(`/smart-import/batches/${id}`)
-    return response.data
+    return unwrapApiData<ImportBatchDetail>(response.data)
   }
 
   async deleteBatch(
@@ -444,7 +455,13 @@ class SmartImportService {
     const response = await api.delete(`/smart-import/batches/${id}`, {
       params: { delete_related_data: deleteRelatedData },
     })
-    return response.data
+    return unwrapApiData<{
+    batch_id: string
+    deleted_documents: number
+    deleted_related_data: boolean
+    related_records_deleted: number
+    cancelled_job_ids: string[]
+  }>(response.data)
   }
 
   async registerDocument(
@@ -461,7 +478,7 @@ class SmartImportService {
     }
   ): Promise<SourceDocument> {
     const response = await api.post(`/smart-import/batches/${batchId}/documents`, data)
-    return response.data
+    return unwrapApiData<SourceDocument>(response.data)
   }
 
   async uploadDocument(
@@ -475,7 +492,7 @@ class SmartImportService {
     if (documentType) form.append('document_type', documentType)
     if (documentVersion) form.append('document_version', documentVersion)
     const response = await api.post(`/smart-import/batches/${batchId}/upload`, form)
-    return response.data
+    return unwrapApiData<SourceDocument>(response.data)
   }
 
   async downloadDocument(documentId: string): Promise<Blob> {
@@ -483,7 +500,7 @@ class SmartImportService {
       `/smart-import/documents/${documentId}/content`,
       { responseType: 'blob' }
     )
-    return response.data
+    return unwrapApiData<Blob>(response.data)
   }
 
   async getDocumentPagePreview(documentId: string, pageNumber: number): Promise<Blob> {
@@ -491,31 +508,31 @@ class SmartImportService {
       `/smart-import/documents/${documentId}/pages/${pageNumber}/preview`,
       { responseType: 'blob' }
     )
-    return response.data
+    return unwrapApiData<Blob>(response.data)
   }
 
   async parseDocument(
     documentId: string
   ): Promise<{ document: SourceDocument; pages: DocumentPage[] }> {
     const response = await api.post(`/smart-import/documents/${documentId}/parse`)
-    return response.data
+    return unwrapApiData<{ document: SourceDocument; pages: DocumentPage[] }>(response.data)
   }
 
   async queueDocumentParse(
     documentId: string
   ): Promise<{ job: AIExtractionJob; message: string }> {
     const response = await api.post(`/smart-import/documents/${documentId}/parse-async`)
-    return response.data
+    return unwrapApiData<{ job: AIExtractionJob; message: string }>(response.data)
   }
 
   async listDocumentPages(documentId: string): Promise<DocumentPage[]> {
     const response = await api.get(`/smart-import/documents/${documentId}/pages`)
-    return response.data
+    return unwrapApiData<DocumentPage[]>(response.data)
   }
 
   async recommendTemplates(documentId: string): Promise<TemplateRecommendationResult> {
     const response = await api.get(`/smart-import/documents/${documentId}/template-recommendations`)
-    return response.data
+    return unwrapApiData<TemplateRecommendationResult>(response.data)
   }
 
   async extractDocument(
@@ -541,7 +558,11 @@ class SmartImportService {
       `/smart-import/documents/${documentId}/extract`,
       data
     )
-    return response.data
+    return unwrapApiData<{
+    job: AIExtractionJob
+    entity: ExtractedEntity
+    pages: DocumentPage[]
+  }>(response.data)
   }
 
   async queueExtraction(
@@ -556,27 +577,27 @@ class SmartImportService {
     }
   ): Promise<{ job: AIExtractionJob; message: string }> {
     const response = await api.post(`/smart-import/documents/${documentId}/extract-async`, data)
-    return response.data
+    return unwrapApiData<{ job: AIExtractionJob; message: string }>(response.data)
   }
 
   async getExtractionJob(jobId: string): Promise<AIExtractionJob> {
     const response = await api.get(`/smart-import/extraction-jobs/${jobId}`)
-    return response.data
+    return unwrapApiData<AIExtractionJob>(response.data)
   }
 
   async listDocumentExtractionJobs(documentId: string): Promise<AIExtractionJob[]> {
     const response = await api.get(`/smart-import/documents/${documentId}/extraction-jobs`)
-    return response.data
+    return unwrapApiData<AIExtractionJob[]>(response.data)
   }
 
   async cancelExtractionJob(jobId: string): Promise<AIExtractionJob> {
     const response = await api.post(`/smart-import/extraction-jobs/${jobId}/cancel`)
-    return response.data
+    return unwrapApiData<AIExtractionJob>(response.data)
   }
 
   async retryExtractionJob(jobId: string): Promise<{ job: AIExtractionJob; message: string }> {
     const response = await api.post(`/smart-import/extraction-jobs/${jobId}/retry`)
-    return response.data
+    return unwrapApiData<{ job: AIExtractionJob; message: string }>(response.data)
   }
 
   async queueBatchExtraction(
@@ -592,39 +613,39 @@ class SmartImportService {
     }
   ): Promise<BatchOperationResult> {
     const response = await api.post(`/smart-import/batches/${batchId}/extract-async`, data)
-    return response.data
+    return unwrapApiData<BatchOperationResult>(response.data)
   }
 
   async retryFailedBatchJobs(batchId: string): Promise<BatchOperationResult> {
     const response = await api.post(`/smart-import/batches/${batchId}/retry-failed`)
-    return response.data
+    return unwrapApiData<BatchOperationResult>(response.data)
   }
 
   async publishReviewedBatch(batchId: string): Promise<BatchOperationResult> {
     const response = await api.post(`/smart-import/batches/${batchId}/publish-reviewed`)
-    return response.data
+    return unwrapApiData<BatchOperationResult>(response.data)
   }
 
   async getExtractedEntity(entityId: string): Promise<ExtractedEntity> {
     const response = await api.get(`/smart-import/entities/${entityId}`)
-    return response.data
+    return unwrapApiData<ExtractedEntity>(response.data)
   }
 
   async getCurrentDocumentEntity(documentId: string): Promise<ExtractedEntity> {
     const response = await api.get(
       `/smart-import/documents/${documentId}/current-entity`
     )
-    return response.data
+    return unwrapApiData<ExtractedEntity>(response.data)
   }
 
   async getWorkbenchValidation(entityId: string): Promise<WorkbenchValidation> {
     const response = await api.get(`/smart-import/entities/${entityId}/workbench-validation`)
-    return response.data
+    return unwrapApiData<WorkbenchValidation>(response.data)
   }
 
   async getReviewHistory(entityId: string): Promise<ImportReviewHistory[]> {
     const response = await api.get(`/smart-import/entities/${entityId}/reviews`)
-    return response.data
+    return unwrapApiData<ImportReviewHistory[]>(response.data)
   }
 
   async bindUnmappedField(
@@ -647,7 +668,7 @@ class SmartImportService {
       `/smart-import/entities/${entityId}/fields/${fieldId}/bind-unmapped`,
       data
     )
-    return response.data
+    return unwrapApiData<ExtractedEntity>(response.data)
   }
 
   async addManualWorkbenchField(
@@ -662,7 +683,7 @@ class SmartImportService {
     }
   ): Promise<ExtractedEntity> {
     const response = await api.post(`/smart-import/entities/${entityId}/manual-fields`, data)
-    return response.data
+    return unwrapApiData<ExtractedEntity>(response.data)
   }
 
   async reviewField(
@@ -678,7 +699,7 @@ class SmartImportService {
       `/smart-import/entities/${entityId}/fields/${fieldId}/review`,
       data
     )
-    return response.data
+    return unwrapApiData<ExtractedEntity>(response.data)
   }
 
   async bulkAcceptFields(
@@ -689,17 +710,17 @@ class SmartImportService {
       `/smart-import/entities/${entityId}/fields/bulk-accept`,
       data
     )
-    return response.data
+    return unwrapApiData<ExtractedEntity>(response.data)
   }
 
   async publishEntity(entityId: string): Promise<EntityPublishResult> {
     const response = await api.post(`/smart-import/entities/${entityId}/publish`)
-    return response.data
+    return unwrapApiData<EntityPublishResult>(response.data)
   }
 
   async getWelderImportReview(entityId: string): Promise<WelderImportReview> {
     const response = await api.get(`/smart-import/entities/${entityId}/welder-review`)
-    return response.data
+    return unwrapApiData<WelderImportReview>(response.data)
   }
 
   async publishWelderImport(
@@ -712,12 +733,12 @@ class SmartImportService {
     }>
   ): Promise<EntityPublishResult> {
     const response = await api.post(`/smart-import/entities/${entityId}/welder-publish`, { decisions })
-    return response.data
+    return unwrapApiData<EntityPublishResult>(response.data)
   }
 
   async getFormHandoff(entityId: string): Promise<FormHandoff> {
     const response = await api.get(`/smart-import/entities/${entityId}/form-handoff`)
-    return response.data
+    return unwrapApiData<FormHandoff>(response.data)
   }
 
   async publishFormEntity(
@@ -729,7 +750,7 @@ class SmartImportService {
     }
   ): Promise<EntityPublishResult> {
     const response = await api.post(`/smart-import/entities/${entityId}/form-publish`, data)
-    return response.data
+    return unwrapApiData<EntityPublishResult>(response.data)
   }
 
   async createManualDraft(
@@ -746,7 +767,7 @@ class SmartImportService {
       `/smart-import/documents/${documentId}/manual-drafts`,
       data
     )
-    return response.data
+    return unwrapApiData<{ id: string; status: string; version: number }>(response.data)
   }
 }
 

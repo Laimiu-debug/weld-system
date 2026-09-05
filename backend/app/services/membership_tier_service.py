@@ -181,7 +181,7 @@ class MembershipTierService:
         
         return current_tier, current_subscription, next_subscription
 
-    def update_user_tier(self, user_id: int) -> Dict[str, any]:
+    def update_user_tier(self, user_id: int, *, commit: bool = True) -> Dict[str, any]:
         """
         更新用户的会员等级
 
@@ -240,18 +240,14 @@ class MembershipTierService:
             user.subscription_expires_at = None
 
         user.updated_at = datetime.utcnow()
-        self.db.commit()
+        self.db.flush()
 
-        # 如果升级到企业会员,需要创建或更新企业记录
-        if changed:
-            is_enterprise_tier = new_tier in ["enterprise", "enterprise_pro", "enterprise_pro_max"]
-            if is_enterprise_tier:
-                # 如果是新升级到企业会员,创建企业记录
-                if old_membership_type != "enterprise":
-                    self._create_enterprise_for_user(user, new_tier, current_subscription)
-                else:
-                    # 如果已经是企业会员,更新企业的会员等级和到期时间
-                    self._update_enterprise_tier(user, new_tier, current_subscription)
+        # Same-tier renewals must also refresh enterprise expiry and quotas.
+        if new_tier in ["enterprise", "enterprise_pro", "enterprise_pro_max"]:
+            self._create_enterprise_for_user(user, new_tier, current_subscription)
+            self._update_enterprise_tier(user, new_tier, current_subscription)
+        if commit:
+            self.db.commit()
 
         return {
             "old_tier": old_tier,
@@ -397,7 +393,7 @@ class MembershipTierService:
         """为用户创建企业和员工记录"""
         from app.services.enterprise_service import EnterpriseService
 
-        enterprise_service = EnterpriseService(self.db)
+        enterprise_service = EnterpriseService(self.db, commit=False)
 
         # 检查是否已有企业
         existing_company = enterprise_service.get_company_by_owner(user.id)
@@ -457,7 +453,7 @@ class MembershipTierService:
         """更新企业的会员等级、配额和到期时间"""
         from app.services.enterprise_service import EnterpriseService
 
-        enterprise_service = EnterpriseService(self.db)
+        enterprise_service = EnterpriseService(self.db, commit=False)
 
         # 获取用户的企业
         company = enterprise_service.get_company_by_owner(user.id)

@@ -439,7 +439,7 @@ def submit_manual_payment(
     """提交手动支付凭证"""
     transaction = db.query(SubscriptionTransaction).filter(
         SubscriptionTransaction.transaction_id == request.order_id
-    ).first()
+    ).populate_existing().with_for_update().first()
 
     if not transaction:
         raise HTTPException(
@@ -559,7 +559,7 @@ def confirm_manual_payment(
     payment_service = PaymentService(db)
     transaction = db.query(SubscriptionTransaction).filter(
         SubscriptionTransaction.transaction_id == request.order_id
-    ).first()
+    ).populate_existing().with_for_update().first()
 
     if not transaction:
         raise HTTPException(
@@ -567,7 +567,7 @@ def confirm_manual_payment(
             detail="订单不存在"
         )
 
-    if transaction.status not in ('pending_confirm', 'pending'):
+    if transaction.status not in ('pending_confirm', 'pending', 'success'):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"订单状态不正确，当前状态: {transaction.status}"

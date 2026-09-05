@@ -67,6 +67,7 @@ class NotificationService:
         priority: str = "normal",
         expire_days: int = 14,
         commit: bool = True,
+        strict_delivery: bool = False,
     ) -> Optional[SystemAnnouncement]:
         """
         Create an in-app announcement for one user and optionally email/SMS,
@@ -94,13 +95,17 @@ class NotificationService:
             try:
                 from app.services.email_service import email_service
 
-                email_service.send_email(
+                sent = email_service.send_email(
                     to_email=user.email,
                     subject=f"【焊序】{title}",
                     html_content=f"<p>{content}</p>",
                     text_content=content,
                 )
+                if strict_delivery and not sent:
+                    raise RuntimeError("email_delivery_failed")
             except Exception as exc:
+                if strict_delivery:
+                    raise
                 print(f"发送通知邮件失败: {exc}")
 
         if should_send_sms(prefs, category, priority=priority) and getattr(user, "phone", None):
@@ -108,12 +113,16 @@ class NotificationService:
                 from app.services.sms_service import sms_service
 
                 # 复用短信通道发送简短提醒（开发环境会 mock）
-                sms_service.send_sms(
+                sent = sms_service.send_sms(
                     phone=user.phone,
                     template_code=getattr(settings, "SMS_TEMPLATE_LOGIN", "SMS_LOGIN"),
                     template_params={"code": title[:20], "minutes": "0"},
                 )
+                if strict_delivery and not sent:
+                    raise RuntimeError("sms_delivery_failed")
             except Exception as exc:
+                if strict_delivery:
+                    raise
                 print(f"发送通知短信失败: {exc}")
 
         if commit:

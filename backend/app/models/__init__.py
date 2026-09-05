@@ -2,6 +2,8 @@
 Database models for the welding system backend.
 """
 from app.models.user import User
+from app.models.attachment import Attachment
+from app.models.payment_delivery import PaymentActivation, PaymentNotification
 from app.models.verification_code import VerificationCode
 from app.models.admin import Admin
 from app.models.subscription import (

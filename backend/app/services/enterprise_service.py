@@ -13,8 +13,15 @@ from app.models.user import User
 class EnterpriseService:
     """Service for enterprise management operations."""
     
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, *, commit: bool = True):
         self.db = db
+        self.commit = commit
+
+    def _finish(self):
+        if self.commit:
+            self.db.commit()
+        else:
+            self.db.flush()
     
     # ==================== Company Management ====================
     
@@ -55,7 +62,7 @@ class EnterpriseService:
         )
         
         self.db.add(company)
-        self.db.commit()
+        self._finish()
         self.db.refresh(company)
         
         return company
@@ -82,7 +89,7 @@ class EnterpriseService:
                 setattr(company, key, value)
         
         company.updated_at = datetime.utcnow()
-        self.db.commit()
+        self._finish()
         self.db.refresh(company)
         
         return company
@@ -107,7 +114,7 @@ class EnterpriseService:
         )
         
         self.db.add(factory)
-        self.db.commit()
+        self._finish()
         self.db.refresh(factory)
         
         return factory
@@ -174,7 +181,7 @@ class EnterpriseService:
                 existing.permissions = permissions
             existing.data_access_scope = data_access_scope
             
-            self.db.commit()
+            self._finish()
             self.db.refresh(existing)
             return existing
         
@@ -203,7 +210,7 @@ class EnterpriseService:
         )
         
         self.db.add(employee)
-        self.db.commit()
+        self._finish()
         self.db.refresh(employee)
         
         return employee
@@ -276,7 +283,7 @@ class EnterpriseService:
                 setattr(employee, key, value)
         
         employee.updated_at = datetime.utcnow()
-        self.db.commit()
+        self._finish()
         self.db.refresh(employee)
         
         return employee
@@ -291,7 +298,7 @@ class EnterpriseService:
         employee.left_at = datetime.utcnow()
         employee.updated_at = datetime.utcnow()
         
-        self.db.commit()
+        self._finish()
         return True
     
     def enable_employee(self, employee_id: int) -> bool:
@@ -304,7 +311,7 @@ class EnterpriseService:
         employee.left_at = None
         employee.updated_at = datetime.utcnow()
         
-        self.db.commit()
+        self._finish()
         return True
     
     def delete_employee(self, employee_id: int) -> bool:
@@ -314,7 +321,7 @@ class EnterpriseService:
             return False
         
         self.db.delete(employee)
-        self.db.commit()
+        self._finish()
         return True
     
     # ==================== Helper Methods ====================

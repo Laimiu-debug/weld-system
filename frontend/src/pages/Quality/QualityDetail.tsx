@@ -33,6 +33,7 @@ import {
   FileImageOutlined,
   UploadOutlined,
 } from '@ant-design/icons'
+import { unwrapApiData } from '@/services/response'
 import type { QualityInspection } from '@/services/quality'
 import qualityService from '@/services/quality'
 import { StandardSnapshot } from '@/components/QualityStandardField'
@@ -238,30 +239,33 @@ const QualityDetail: React.FC = () => {
   const persistPhotos = async (photos: InspectionPhoto[]) => {
     if (!id) return
     const ws = workspace()
-    await qualityService.updateQualityInspection(
+    const response = await qualityService.updateQualityInspection(
       Number(id),
       { photos: JSON.stringify(photos) },
       ws.type,
       ws.companyId,
       ws.factoryId,
     )
+    unwrapApiData(response.data)
     await loadInspection()
   }
 
   const handleUploadImage = async (file: File) => {
     if (!id) return false
     setUploading(true)
+    let uploadedId: string | undefined
     try {
       const uploadResp = await apiService.uploadFile(file, {
         resource_type: 'quality',
         resource_id: String(id),
         description: '质量检验图片',
       })
-      const payload = (uploadResp as any)?.data?.data || (uploadResp as any)?.data || uploadResp
+      const payload = unwrapApiData<{ file_id: string; filename: string; url: string }>(uploadResp.data)
       const fileId = payload?.file_id
       if (!fileId) {
         throw new Error('上传未返回文件编号')
       }
+      uploadedId = fileId
       const nextPhotos = [
         ...inspectionImages,
         {
@@ -273,6 +277,10 @@ const QualityDetail: React.FC = () => {
       await persistPhotos(nextPhotos)
       message.success('图片已上传')
     } catch {
+      if (uploadedId) {
+        try { await apiService.delete(`/files/${uploadedId}`) }
+        catch { message.warning('附件清理失败，请稍后重试') }
+      }
       message.error('上传图片失败')
     } finally {
       setUploading(false)

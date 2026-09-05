@@ -6,6 +6,7 @@ from fastapi import status as http_status
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.schemas.api_response import SuccessResponse
 from app.core.data_access import WorkspaceContext
 from app.services.workspace_entity_service import (
     paginated_payload,
@@ -40,13 +41,13 @@ def _workspace(
     return ctx
 
 
-@router.get("/reports/field-catalog")
+@router.get("/reports/field-catalog", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def report_field_catalog(current_user: Any = Depends(deps.get_current_active_user)):
     from app.services.report_template_runner import catalog
     return {"success": True, "data": catalog()}
 
 
-@router.get("/employees/performance-options")
+@router.get("/employees/performance-options", response_model=SuccessResponse[list[dict]], response_model_exclude_none=True)
 def performance_employee_options(workspace_type: str = Query(...), company_id: Optional[int] = None,
                                  factory_id: Optional[int] = None, db: Session = Depends(deps.get_db),
                                  current_user: Any = Depends(deps.get_current_active_user)):
@@ -55,7 +56,7 @@ def performance_employee_options(workspace_type: str = Query(...), company_id: O
     return {"success": True, "data": employee_options(db, current_user, ctx)}
 
 
-@router.get("/production/plan-task-options")
+@router.get("/production/plan-task-options", response_model=SuccessResponse[list[dict]], response_model_exclude_none=True)
 def plan_task_options(workspace_type: str = Query(...), company_id: Optional[int] = None,
                       factory_id: Optional[int] = None, plan_id: Optional[int] = None,
                       search: Optional[str] = None, db: Session = Depends(deps.get_db),
@@ -78,7 +79,7 @@ def plan_task_options(workspace_type: str = Query(...), company_id: Optional[int
             "plan_id": row.plan_id, "status": row.status, "progress_percentage": row.progress_percentage} for row in rows]}
 
 
-@router.put("/production/plans/{plan_id}/tasks")
+@router.put("/production/plans/{plan_id}/tasks", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def link_plan_tasks(plan_id: int, payload: PlanTasksInput, workspace_type: str = Query(...),
                     company_id: Optional[int] = None, factory_id: Optional[int] = None,
                     db: Session = Depends(deps.get_db), current_user: Any = Depends(deps.get_current_active_user)):
@@ -88,7 +89,7 @@ def link_plan_tasks(plan_id: int, payload: PlanTasksInput, workspace_type: str =
 
 # -------------------- Production plans --------------------
 
-@router.get("/production/plans")
+@router.get("/production/plans", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def list_production_plans(
     workspace_type: str = Query(...),
     company_id: Optional[int] = Query(None),
@@ -115,7 +116,7 @@ def list_production_plans(
     return {"success": True, "data": paginated_payload(items, total, skip, limit)}
 
 
-@router.post("/production/plans")
+@router.post("/production/plans", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def create_production_plan(
     payload: Dict[str, Any],
     workspace_type: str = Query(...),
@@ -129,7 +130,7 @@ def create_production_plan(
     return {"success": True, "data": item, "message": "创建生产计划成功"}
 
 
-@router.get("/production/plans/{plan_id}")
+@router.get("/production/plans/{plan_id}", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def get_production_plan(
     plan_id: int,
     workspace_type: str = Query(...),
@@ -143,7 +144,7 @@ def get_production_plan(
     return {"success": True, "data": item}
 
 
-@router.put("/production/plans/{plan_id}")
+@router.put("/production/plans/{plan_id}", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def update_production_plan(
     plan_id: int,
     payload: Dict[str, Any],
@@ -158,7 +159,7 @@ def update_production_plan(
     return {"success": True, "data": item, "message": "更新生产计划成功"}
 
 
-@router.delete("/production/plans/{plan_id}")
+@router.delete("/production/plans/{plan_id}", response_model=SuccessResponse[None], response_model_exclude_none=True)
 def delete_production_plan(
     plan_id: int,
     workspace_type: str = Query(...),
@@ -174,7 +175,7 @@ def delete_production_plan(
 
 # -------------------- Quality standards --------------------
 
-@router.get("/quality/standards")
+@router.get("/quality/standards", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def list_quality_standards(
     workspace_type: str = Query(...),
     company_id: Optional[int] = Query(None),
@@ -199,7 +200,7 @@ def list_quality_standards(
     return {"success": True, "data": paginated_payload(items, total, skip, limit)}
 
 
-@router.post("/quality/standards")
+@router.post("/quality/standards", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def create_quality_standard(
     payload: Dict[str, Any],
     workspace_type: str = Query(...),
@@ -213,7 +214,7 @@ def create_quality_standard(
     return {"success": True, "data": item, "message": "创建质量标准成功"}
 
 
-@router.get("/quality/standards/{standard_id}")
+@router.get("/quality/standards/{standard_id}", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def get_quality_standard(
     standard_id: int,
     workspace_type: str = Query(...),
@@ -227,7 +228,7 @@ def get_quality_standard(
     return {"success": True, "data": item}
 
 
-@router.put("/quality/standards/{standard_id}")
+@router.put("/quality/standards/{standard_id}", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def update_quality_standard(
     standard_id: int,
     payload: Dict[str, Any],
@@ -242,7 +243,7 @@ def update_quality_standard(
     return {"success": True, "data": item, "message": "更新质量标准成功"}
 
 
-@router.delete("/quality/standards/{standard_id}")
+@router.delete("/quality/standards/{standard_id}", response_model=SuccessResponse[None], response_model_exclude_none=True)
 def delete_quality_standard(
     standard_id: int,
     workspace_type: str = Query(...),
@@ -258,7 +259,7 @@ def delete_quality_standard(
 
 # -------------------- Employee performances --------------------
 
-@router.get("/employees/performances")
+@router.get("/employees/performances", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def list_performances(
     workspace_type: str = Query(...),
     company_id: Optional[int] = Query(None),
@@ -283,7 +284,7 @@ def list_performances(
     return {"success": True, "data": paginated_payload(items, total, skip, limit)}
 
 
-@router.post("/employees/performances")
+@router.post("/employees/performances", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def create_performance(
     payload: Dict[str, Any],
     workspace_type: str = Query(...),
@@ -297,7 +298,7 @@ def create_performance(
     return {"success": True, "data": item, "message": "创建绩效记录成功"}
 
 
-@router.get("/employees/performances/{record_id}")
+@router.get("/employees/performances/{record_id}", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def get_performance(
     record_id: int,
     workspace_type: str = Query(...),
@@ -311,7 +312,7 @@ def get_performance(
     return {"success": True, "data": item}
 
 
-@router.put("/employees/performances/{record_id}")
+@router.put("/employees/performances/{record_id}", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def update_performance(
     record_id: int,
     payload: Dict[str, Any],
@@ -326,7 +327,7 @@ def update_performance(
     return {"success": True, "data": item, "message": "更新绩效记录成功"}
 
 
-@router.delete("/employees/performances/{record_id}")
+@router.delete("/employees/performances/{record_id}", response_model=SuccessResponse[None], response_model_exclude_none=True)
 def delete_performance(
     record_id: int,
     workspace_type: str = Query(...),
@@ -342,7 +343,7 @@ def delete_performance(
 
 # -------------------- Report templates --------------------
 
-@router.get("/reports/templates")
+@router.get("/reports/templates", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def list_report_templates(
     workspace_type: str = Query(...),
     company_id: Optional[int] = Query(None),
@@ -365,7 +366,7 @@ def list_report_templates(
     return {"success": True, "data": paginated_payload(items, total, skip, limit)}
 
 
-@router.post("/reports/templates")
+@router.post("/reports/templates", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def create_report_template(
     payload: Dict[str, Any],
     workspace_type: str = Query(...),
@@ -379,7 +380,7 @@ def create_report_template(
     return {"success": True, "data": item, "message": "创建报表模板成功"}
 
 
-@router.get("/reports/templates/{template_id}")
+@router.get("/reports/templates/{template_id}", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def get_report_template(
     template_id: int,
     workspace_type: str = Query(...),
@@ -393,7 +394,7 @@ def get_report_template(
     return {"success": True, "data": item}
 
 
-@router.put("/reports/templates/{template_id}")
+@router.put("/reports/templates/{template_id}", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def update_report_template(
     template_id: int,
     payload: Dict[str, Any],
@@ -408,7 +409,7 @@ def update_report_template(
     return {"success": True, "data": item, "message": "更新报表模板成功"}
 
 
-@router.delete("/reports/templates/{template_id}")
+@router.delete("/reports/templates/{template_id}", response_model=SuccessResponse[None], response_model_exclude_none=True)
 def delete_report_template(
     template_id: int,
     workspace_type: str = Query(...),
@@ -422,7 +423,7 @@ def delete_report_template(
     return {"success": True, "message": "删除报表模板成功"}
 
 
-@router.post("/reports/templates/{template_id}/run")
+@router.post("/reports/templates/{template_id}/run", response_model=SuccessResponse[dict], response_model_exclude_none=True)
 def run_report_template_endpoint(
     template_id: int,
     workspace_type: str = Query(...),

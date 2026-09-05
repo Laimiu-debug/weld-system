@@ -67,6 +67,10 @@ jobs:
           alembic downgrade add_company_invitations
           alembic upgrade head
           alembic current | grep "(head)"
+      - name: Payment and attachment PostgreSQL regression
+        run: python -m pytest tests/integration/test_foundation_integrity.py -q --tb=short
+        env:
+          RUN_LOCAL_DB_TESTS: "1"
 
   frontend-build:
     runs-on: ubuntu-latest
@@ -84,6 +88,8 @@ jobs:
         run: npm ci
       - name: Type check
         run: npm run type-check
+      - name: Business interaction tests
+        run: npm test
       - name: Lint
         run: npm run lint
       - name: Build

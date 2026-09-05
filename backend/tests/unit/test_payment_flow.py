@@ -19,6 +19,7 @@ def _transaction(
 ):
     subscription = SimpleNamespace(
         id=10,
+        billing_cycle="monthly",
         user_id=user_id,
         plan_id="personal_pro",
         status="pending",
@@ -30,6 +31,10 @@ def _transaction(
         updated_at=None,
     )
     return SimpleNamespace(
+        id=1,
+        subscription_id=10,
+        payment_method="alipay",
+        currency="CNY",
         transaction_id="TXN1",
         status=status,
         amount=19.0,
@@ -83,10 +88,12 @@ def test_activate_paid_renewal_extends_once():
     db = MagicMock()
     db.query.return_value.filter.return_value.first.return_value = user
     service = PaymentService(db)
-    service._notify_user = MagicMock()
+    service._lock_payment = lambda _: (txn, txn.subscription, user)
+    service._queue_notification = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = None
 
     with patch("app.services.payment_service.MembershipTierService") as tier_cls:
-        tier_cls.return_value.update_user_tier.return_value = {"changed": True}
+        tier_cls.return_value.update_user_tier.return_value = {"changed": True, "old_tier": "free", "new_tier": "personal_pro"}
         service.activate_paid_transaction(txn)
         first_end = txn.subscription.end_date
         assert first_end > original_end
@@ -171,3 +178,17 @@ def test_auto_renewal_creates_pending_order_without_extending():
     assert count == 1
     assert subscription.end_date == end_date
     payment_cls.return_value.create_renewal_order_if_needed.assert_called_once()
+
+
+
+def test_mock_callback_preserves_development_payment_channel():
+    txn = _transaction()
+    service = PaymentService(MagicMock())
+    service._find_transaction = lambda _: txn
+    service.activate_paid_transaction = MagicMock()
+    callback = PaymentCallback(order_id="TXN1", transaction_id="TXN1", amount=19, payment_method="mock",
+                               status="success", paid_at=datetime.utcnow())
+    with patch("app.services.payment_service.settings") as settings:
+        settings.PAYMENT_PROVIDER = "mock"
+        service.handle_payment_callback(callback)
+    service.activate_paid_transaction.assert_called_once_with(txn)

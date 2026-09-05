@@ -1,3 +1,6 @@
+import { entityLabels, statusLabels, statusColors, sha256Hex, errorMessage, displayValue, parseEditedValue, providerPresets, applyProviderPreset, parseManualValue } from './helpers'
+import WelderReviewModal from './WelderReviewModal'
+import ManualFieldModal from './ManualFieldModal'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
@@ -46,7 +49,6 @@ import {
   WarningOutlined,
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
-import type { FormInstance } from 'antd'
 import smartImportService, {
   AIExtractionJob,
   AIQuotaStatus,
@@ -95,116 +97,6 @@ interface UploadResultItem {
   message?: string
 }
 
-const entityLabels: Record<ImportEntityType, string> = {
-  wps: 'WPS',
-  pqr: 'PQR',
-  ppqr: 'pPQR',
-  welder: '焊工资质',
-}
-
-const statusLabels: Record<string, string> = {
-  draft: '待上传',
-  queued: '排队中',
-  processing: '处理中',
-  review: '待审核',
-  partial_success: '部分成功',
-  completed: '已完成',
-  failed: '失败',
-  cancelled: '已取消',
-  registered: '已登记',
-  stored: '已上传',
-  parsing: '解析中',
-  ready: '可提取',
-}
-
-const sha256Hex = async (value: string) => {
-  const bytes = new TextEncoder().encode(value)
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
-}
-
-const statusColors: Record<string, string> = {
-  draft: 'default',
-  queued: 'processing',
-  processing: 'processing',
-  review: 'warning',
-  partial_success: 'warning',
-  completed: 'success',
-  ready: 'success',
-  failed: 'error',
-  cancelled: 'default',
-}
-
-function errorMessage(error: unknown, fallback: string): string {
-  const detail = (error as any)?.response?.data?.detail
-  if (typeof detail === 'string') return detail
-  if (typeof detail?.message === 'string') return detail.message
-  return fallback
-}
-
-function displayValue(value: unknown): string {
-  if (value === null || value === undefined || value === '') return '—'
-  if (typeof value === 'object') return JSON.stringify(value, null, 2)
-  return String(value)
-}
-
-function parseEditedValue(original: unknown, value: string): unknown {
-  if (typeof original === 'number') {
-    const parsed = Number(value)
-    if (!Number.isNaN(parsed)) return parsed
-  }
-  if (typeof original === 'boolean') {
-    if (value === 'true' || value === '是') return true
-    if (value === 'false' || value === '否') return false
-  }
-  if (original && typeof original === 'object') {
-    try {
-      return JSON.parse(value)
-    } catch {
-      return value
-    }
-  }
-  return value
-}
-
-const providerPresets = [
-  { value: 'openai', label: 'OpenAI', provider: 'openai_responses', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-  { value: 'deepseek', label: 'DeepSeek', provider: 'openai_compatible_chat', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash' },
-  { value: 'qwen', label: '阿里云百炼 / 通义千问', provider: 'openai_compatible_chat', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus' },
-  { value: 'kimi', label: 'Moonshot / Kimi', provider: 'openai_compatible_chat', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
-  { value: 'zhipu', label: '智谱 GLM', provider: 'openai_compatible_chat', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' },
-  { value: 'siliconflow', label: '硅基流动', provider: 'openai_compatible_chat', baseUrl: 'https://api.siliconflow.cn/v1', model: 'Qwen/Qwen2.5-72B-Instruct' },
-  { value: 'custom', label: '自定义兼容接口', provider: 'openai_compatible_chat', baseUrl: '', model: '' },
-] as const
-
-type ProviderPreset = typeof providerPresets[number]
-
-function applyProviderPreset(form: FormInstance, value: string) {
-  const preset = providerPresets.find(item => item.value === value) as ProviderPreset | undefined
-  if (!preset) return
-  form.setFieldsValue({
-    provider: preset.provider,
-    base_url: preset.baseUrl,
-    model: preset.model,
-  })
-}
-
-function parseManualValue(fieldType: string, value: string): unknown {
-  if (['number', 'integer'].includes(fieldType)) {
-    const parsed = Number(value)
-    if (!Number.isNaN(parsed)) return fieldType === 'integer' ? Math.trunc(parsed) : parsed
-    throw new Error('请输入有效数值')
-  }
-  if (fieldType === 'checkbox') {
-    if (['true', '是', '1'].includes(value)) return true
-    if (['false', '否', '0'].includes(value)) return false
-  }
-  if (['table', 'object', 'array'].includes(fieldType)) {
-    try { return JSON.parse(value) } catch { throw new Error('请输入合法 JSON') }
-  }
-  return value
-}
-
 const SmartImportPage: React.FC = () => {
   const navigate = useNavigate()
   const workspace = workspaceService.getCurrentWorkspaceFromStorage()
@@ -221,6 +113,9 @@ const SmartImportPage: React.FC = () => {
   const [uploading, setUploading] = useState(false)
   const [uploadResults, setUploadResults] = useState<UploadResultItem[]>([])
   const [createOpen, setCreateOpen] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const createInFlight = useRef(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteRelatedData, setDeleteRelatedData] = useState(false)
   const [deletingBatch, setDeletingBatch] = useState(false)
@@ -320,6 +215,7 @@ const SmartImportPage: React.FC = () => {
 
   const loadBatches = useCallback(async (preferredId?: string) => {
     setLoading(true)
+    setLoadError(null)
     try {
       const list = await smartImportService.listBatches()
       setBatches(list)
@@ -357,7 +253,7 @@ const SmartImportPage: React.FC = () => {
         if (active) setQueuedJob(active)
       } else setBatch(null)
     } catch (error) {
-      message.error(errorMessage(error, '加载导入任务失败'))
+      setLoadError(errorMessage(error, '加载导入任务失败'))
     } finally {
       setLoading(false)
     }
@@ -383,7 +279,7 @@ const SmartImportPage: React.FC = () => {
     smartImportService.getAICapabilities().then(setCapabilities).catch(() => undefined)
     smartImportService.getAIQuota().then(setQuota).catch(() => undefined)
     smartImportService.getAIUsage().then(setAIUsage).catch(() => undefined)
-    void loadProviderSettings()
+    void loadProviderSettings().catch(error => message.error(errorMessage(error, '加载模型配置失败')))
   }, [])
 
   useEffect(() => {
@@ -516,8 +412,11 @@ const SmartImportPage: React.FC = () => {
   }
 
   const createBatch = async () => {
-    const values = await createForm.validateFields()
+    if (createInFlight.current) return
+    createInFlight.current = true
+    setCreating(true)
     try {
+      const values = await createForm.validateFields()
       const created = await smartImportService.createBatch(values)
       setCreateOpen(false)
       createForm.resetFields()
@@ -525,7 +424,10 @@ const SmartImportPage: React.FC = () => {
       await loadBatches(created.id)
       message.success('导入任务已创建')
     } catch (error) {
-      message.error(errorMessage(error, '创建导入任务失败'))
+      if (!(error && typeof error === 'object' && 'errorFields' in error)) message.error(errorMessage(error, '创建导入任务失败'))
+    } finally {
+      createInFlight.current = false
+      setCreating(false)
     }
   }
 
@@ -1444,6 +1346,8 @@ const SmartImportPage: React.FC = () => {
         </Card>
       )}
 
+      {loadError && <Alert type="error" showIcon message={loadError}
+        action={<Button onClick={() => void loadBatches()}>重试加载</Button>} />}
       <Spin spinning={loading}>
         <Row gutter={[16, 16]} className="smart-import__workspace">
           <Col xs={24} lg={7}>
@@ -1544,7 +1448,8 @@ const SmartImportPage: React.FC = () => {
       <Modal
         title="新建导入任务"
         open={createOpen}
-        onCancel={() => setCreateOpen(false)}
+        onCancel={() => !creating && setCreateOpen(false)}
+        confirmLoading={creating}
         onOk={() => void createBatch()}
         okText="创建"
       >
@@ -1996,104 +1901,14 @@ const SmartImportPage: React.FC = () => {
         )}
       </Drawer>
 
-      <Modal
-        title="焊工、证书与持证项目审核"
-        open={Boolean(welderReview)}
-        onCancel={() => !publishing && setWelderReview(null)}
-        onOk={() => void publishWelderReview()}
-        confirmLoading={publishing}
-        okText="确认导入现有焊工库"
-        width="min(1200px, 96vw)"
-      >
-        <Alert
-          type="info"
-          showIcon
-          message="编号或身份证件优先匹配；只有姓名相同的记录必须人工确认"
-          description="重复证书默认跳过；有效期更晚的同号证书按续证更新。每个持证项目会单独保存到期状态。"
-          style={{ marginBottom: 16 }}
-        />
-        <Table
-          rowKey="record_key"
-          dataSource={welderReview?.records || []}
-          pagination={{ pageSize: 10 }}
-          scroll={{ x: 1050 }}
-          columns={[
-            { title: '姓名 / 编号', width: 180, render: (_, item) => <><Text strong>{item.full_name || '未识别姓名'}</Text><br /><Text type="secondary">{item.welder_code || item.id_number || '无身份编号'}</Text></> },
-            { title: '身份处理', width: 250, render: (_, item) => (
-              <Select
-                value={welderChoices[item.record_key]}
-                placeholder="请选择对应焊工"
-                style={{ width: '100%' }}
-                onChange={value => setWelderChoices(current => ({ ...current, [item.record_key]: value }))}
-                options={[
-                  ...item.candidates.map(candidate => ({ value: candidate.id, label: `${candidate.full_name} · ${candidate.welder_code}` })),
-                  { value: 'new', label: '确认新建焊工' },
-                ]}
-              />
-            ) },
-            { title: '证书号', dataIndex: 'certification_number', width: 170, render: value => value || '未识别' },
-            { title: '证书判断', width: 120, render: (_, item) => {
-              const config = { new: ['blue', '新证书'], duplicate: ['default', '重复·跳过'], renewal: ['green', '续证更新'], conflict: ['red', '归属冲突'] }[item.certificate_status]
-              return <Tag color={config[0]}>{config[1]}</Tag>
-            } },
-            { title: '有效期', width: 110, render: (_, item) => {
-              const config = { valid: ['success', '有效'], expiring_soon: ['warning', '即将到期'], expired: ['error', '已过期'] }[item.expiry_status]
-              return <Tag color={config[0]}>{config[1]}</Tag>
-            } },
-            { title: '持证项目', width: 100, render: (_, item) => `${item.qualified_projects.length} 项` },
-          ]}
-        />
-      </Modal>
+      <WelderReviewModal review={welderReview} choices={welderChoices} publishing={publishing}
+        onCancel={() => setWelderReview(null)} onPublish={() => void publishWelderReview()}
+        onChoice={(key, value) => setWelderChoices(current => ({ ...current, [key]: value }))} />
 
-      <Modal
-        title="手工录入模块字段"
-        open={manualFieldOpen}
+      <ManualFieldModal open={manualFieldOpen} saving={manualFieldSaving} form={manualFieldForm}
+        options={manualFieldOptions} selected={selectedManualField}
         onCancel={() => { setManualFieldOpen(false); manualFieldForm.resetFields() }}
-        onOk={() => void addManualField()}
-        confirmLoading={manualFieldSaving}
-        okText="保存并确认"
-      >
-        <Alert
-          type="info"
-          showIcon
-          message="用于补录未识别或禁止自动提取的模块字段"
-          description="本操作不会调用模型或扣减额度；保存后字段直接标记为人工确认，并进入审核历史。"
-          className="smart-import__modal-alert"
-        />
-        <Form form={manualFieldForm} layout="vertical">
-          <Form.Item name="target" label="模块字段" rules={[{ required: true, message: '请选择字段' }]}>
-            <Select
-              showSearch
-              optionFilterProp="label"
-              options={manualFieldOptions.map(item => ({
-                value: `${item.field_id || ''}|${item.module_id || ''}|${item.instance_id || ''}|${item.field_key}`,
-                label: `${item.label} · ${item.extractable ? '支持自动提取' : item.ai_extract_mode === 'disabled' ? '已禁用自动提取' : '仅手工录入'}`,
-              }))}
-              placeholder={manualFieldOptions.length ? '选择需要补录的字段' : '没有可补录字段'}
-            />
-          </Form.Item>
-          {selectedManualField && (
-            <Tag color={selectedManualField.extractable ? 'blue' : 'orange'}>
-              {selectedManualField.extractable ? 'AI 未识别，可人工补录' : '该字段不支持自动提取'}
-            </Tag>
-          )}
-          <Form.Item
-            name="value"
-            label="字段值"
-            rules={[{ required: true, message: '请输入字段值' }]}
-            extra={selectedManualField?.field_type === 'table' ? '表格字段请输入合法 JSON 数组。' : undefined}
-          >
-            {selectedManualField?.field_type === 'checkbox' ? (
-              <Select options={[{ value: 'true', label: '是' }, { value: 'false', label: '否' }]} />
-            ) : (
-              <Input.TextArea rows={4} maxLength={10000} />
-            )}
-          </Form.Item>
-          <Form.Item name="reason" label="录入说明（可选）">
-            <Input.TextArea rows={2} maxLength={1000} />
-          </Form.Item>
-        </Form>
-      </Modal>
+        onSave={() => void addManualField()} />
 
       <Modal
         title="绑定未映射字段"

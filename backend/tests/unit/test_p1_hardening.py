@@ -165,10 +165,17 @@ def test_file_upload_rejects_disallowed_type(tmp_path, monkeypatch):
     monkeypatch.setattr(files.settings, "UPLOAD_DIR", str(tmp_path))
     app = FastAPI()
     app.include_router(files.router, prefix="/files")
-    app.dependency_overrides[deps.get_current_user] = lambda: SimpleNamespace(id=1)
+    app.dependency_overrides[deps.get_current_active_user] = lambda: SimpleNamespace(id=1)
+    db = MagicMock()
+    app.dependency_overrides[deps.get_db] = lambda: db
+    parent = SimpleNamespace(workspace_type="personal", company_id=None, factory_id=None)
+    monkeypatch.setattr(files, "_business_record", lambda *args: parent)
+    monkeypatch.setattr(files, "enforce_rate_limit", lambda *args, **kwargs: None)
+    db.add.side_effect = lambda item: setattr(db.query.return_value.filter.return_value.first, "return_value", item)
     client = TestClient(app)
     response = client.post(
         "/files/upload",
+        data={"resource_type": "quality", "resource_id": "1"},
         files={"file": ("payload.exe", b"binary", "application/octet-stream")},
     )
     assert response.status_code == 400
@@ -180,10 +187,17 @@ def test_file_upload_and_download_roundtrip(tmp_path, monkeypatch):
     monkeypatch.setattr(files.settings, "UPLOAD_DIR", str(tmp_path))
     app = FastAPI()
     app.include_router(files.router, prefix="/files")
-    app.dependency_overrides[deps.get_current_user] = lambda: SimpleNamespace(id=1)
+    app.dependency_overrides[deps.get_current_active_user] = lambda: SimpleNamespace(id=1)
+    db = MagicMock()
+    app.dependency_overrides[deps.get_db] = lambda: db
+    parent = SimpleNamespace(workspace_type="personal", company_id=None, factory_id=None)
+    monkeypatch.setattr(files, "_business_record", lambda *args: parent)
+    monkeypatch.setattr(files, "enforce_rate_limit", lambda *args, **kwargs: None)
+    db.add.side_effect = lambda item: setattr(db.query.return_value.filter.return_value.first, "return_value", item)
     client = TestClient(app)
     uploaded = client.post(
         "/files/upload",
+        data={"resource_type": "quality", "resource_id": "1"},
         files={"file": ("note.png", b"png-bytes", "image/png")},
     )
     assert uploaded.status_code == 200

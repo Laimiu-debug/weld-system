@@ -2,6 +2,7 @@
 Payment service for handling payment processing.
 """
 import uuid
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Any
 
@@ -14,6 +15,7 @@ from app.api.v1.schemas.payment import (
 )
 from app.models.subscription import Subscription, SubscriptionTransaction, SubscriptionPlan
 from app.models.user import User
+from app.models.payment_delivery import PaymentActivation, PaymentNotification
 from app.core.config import settings
 from app.services.payment_gateway import get_payment_gateway
 from app.services.membership_tier_service import MembershipTierService
@@ -312,25 +314,30 @@ class PaymentService:
                 detail="交易记录不存在"
             )
 
-        if transaction.status == "success":
-            return {
-                "success": True,
-                "message": "订单已处理",
-                "transaction_id": transaction.transaction_id,
-                "status": transaction.status,
-            }
+        try:
+            amount = Decimal(str(callback_data.amount))
+            if not amount.is_finite() or amount != Decimal(str(transaction.amount)):
+                raise HTTPException(400, "支付回调金额与订单不符")
+        except InvalidOperation as exc:
+            raise HTTPException(400, "无效的支付金额") from exc
+        mock_channel = callback_data.payment_method == "mock" and settings.PAYMENT_PROVIDER == "mock"
+        if (not mock_channel and callback_data.payment_method != transaction.payment_method) or callback_data.currency != transaction.currency:
+            raise HTTPException(400, "支付回调渠道与订单不符")
 
         if callback_data.status == "success":
             self.activate_paid_transaction(transaction)
         else:
-            transaction.status = "failed"
-            self.db.commit()
-            self._notify_user(
-                transaction.subscription.user_id,
-                "支付未完成",
-                "会员订单支付失败或已取消，请重新发起支付。",
-                "warning",
-            )
+            try:
+                transaction, _, _ = self._lock_payment(transaction.transaction_id)
+                # A late failure callback can never reverse a settled/refunded payment.
+                if callback_data.status == "failed" and transaction.status in {"pending", "pending_confirm"}:
+                    transaction.status = "failed"
+                    self._queue_notification(transaction, "failed", "支付未完成",
+                                             "会员订单支付失败或已取消，请重新发起支付。", "warning")
+                self.db.commit()
+            except Exception:
+                self.db.rollback()
+                raise
 
         return {
             "success": True,
@@ -369,74 +376,91 @@ class PaymentService:
             SubscriptionTransaction.transaction_id == order_id
         ).first()
 
+    def _lock_payment(self, order_id):
+        """Serialize all payments for a user, then refresh subscription and transaction."""
+        txn = self.db.query(SubscriptionTransaction).filter(
+            SubscriptionTransaction.transaction_id == order_id
+        ).populate_existing().with_for_update().first()
+        if txn is None:
+            raise HTTPException(404, "交易记录不存在")
+        owner_id = txn.subscription.user_id
+        user = self.db.query(User).filter(User.id == owner_id).populate_existing().with_for_update().first()
+        if user is None:
+            raise HTTPException(404, "支付用户不存在")
+        subscription = self.db.query(Subscription).filter(
+            Subscription.id == txn.subscription_id
+        ).populate_existing().with_for_update().first()
+        txn = self.db.query(SubscriptionTransaction).filter(
+            SubscriptionTransaction.transaction_id == order_id
+        ).populate_existing().with_for_update().first()
+        if txn is None or subscription is None:
+            raise HTTPException(404, "交易记录不存在")
+        return txn, subscription, user
+
+    def _queue_notification(self, transaction, event, title, content, kind):
+        key = f"payment:{transaction.id}:{event}"
+        if self.db.query(PaymentNotification).filter(PaymentNotification.event_key == key).first() is None:
+            self.db.add(PaymentNotification(event_key=key, user_id=transaction.subscription.user_id,
+                                           title=title, content=content, announcement_type=kind))
+
     def activate_paid_transaction(self, transaction: SubscriptionTransaction) -> Dict[str, Any]:
-        """支付成功后激活订阅、刷新会员等级并通知用户。幂等。"""
-        subscription = transaction.subscription
-        already_active = transaction.status == "success" and subscription.status == "active"
-        if already_active:
-            return {
-                "already_active": True,
-                "tier": None,
-                "transaction_id": transaction.transaction_id,
-                "subscription_id": subscription.id,
-            }
-        transaction.status = "success"
-        transaction.transaction_date = transaction.transaction_date or datetime.utcnow()
-        transaction.updated_at = datetime.utcnow()
-
-        description = transaction.description or ""
-        duration_months = 1
-        if "duration_months=" in description:
-            try:
+        """Atomically settle, provision and queue delivery; failed transactions are safe to retry."""
+        try:
+            transaction, subscription, user = self._lock_payment(transaction.transaction_id)
+            receipt = self.db.query(PaymentActivation).filter(
+                PaymentActivation.transaction_id == transaction.id
+            ).first()
+            # Legacy successful payments are already applied, even if now expired/cancelled.
+            if receipt is not None or transaction.status == "success":
+                result = {"already_active": True, "tier": None,
+                          "transaction_id": transaction.transaction_id, "subscription_id": subscription.id}
+                if receipt is None:
+                    # Repair an old success-before-tier-commit failure without extending dates
+                    # or reactivating an expired/cancelled subscription.
+                    repaired = MembershipTierService(self.db).update_user_tier(user.id, commit=False)
+                    self.db.add(PaymentActivation(transaction_id=transaction.id))
+                    result["tier"] = {key: repaired[key] for key in ("old_tier", "new_tier", "changed")}
+                self.db.commit()
+                return result
+            if transaction.status not in {"pending", "pending_confirm", "failed"}:
+                raise HTTPException(409, "当前支付状态不允许开通会员")
+            now = datetime.utcnow()
+            description = transaction.description or ""
+            duration_months = {"monthly": 1, "quarterly": 3, "yearly": 12}.get(subscription.billing_cycle, 1)
+            if "duration_months=" in description:
                 duration_months = int(description.split("duration_months=")[1].split(";")[0])
-            except (ValueError, IndexError):
-                duration_months = 1
-        is_renewal = "purpose=renew" in description or description.startswith("续费")
-
-        if is_renewal:
-            base = subscription.end_date if subscription.end_date and subscription.end_date > datetime.utcnow() else datetime.utcnow()
+            if duration_months not in {1, 3, 12}:
+                raise HTTPException(409, "订单订阅时长无效")
+            is_renewal = "purpose=renew" in description or description.startswith("续费")
+            if is_renewal:
+                base = max(subscription.end_date or now, now)
+            else:
+                base = now
+                subscription.start_date = now
             subscription.end_date = base + _billing_period_delta(duration_months)
             subscription.status = "active"
-        else:
-            # 升级：沿用创单时写入的 end_date，不再叠加，避免管理员确认时被加两次
-            subscription.status = "active"
-
-        subscription.last_payment_date = datetime.utcnow()
-        subscription.next_billing_date = (subscription.end_date - timedelta(days=7)) if subscription.end_date else None
-        subscription.updated_at = datetime.utcnow()
-
-        user = self.db.query(User).filter(User.id == subscription.user_id).first()
-        if user:
-            # 当前无自动扣款能力，统一关闭自动续费标志
-            user.auto_renewal = False
+            subscription.last_payment_date = now
+            subscription.next_billing_date = subscription.end_date - timedelta(days=7)
+            subscription.updated_at = now
             subscription.auto_renew = False
-            user.subscription_status = "active"
-            user.subscription_start_date = subscription.start_date
-            user.subscription_end_date = subscription.end_date
-            user.updated_at = datetime.utcnow()
-
-        self.db.commit()
-
-        tier_result = MembershipTierService(self.db).update_user_tier(subscription.user_id)
-
-        if not already_active:
-            plan = self.db.query(SubscriptionPlan).filter(
-                SubscriptionPlan.id == subscription.plan_id
-            ).first()
-            plan_name = plan.name if plan else subscription.plan_id
-            self._notify_user(
-                subscription.user_id,
-                "会员已开通" if not is_renewal else "会员续费成功",
-                f"您的{plan_name}已生效，有效期至 {subscription.end_date.strftime('%Y-%m-%d') if subscription.end_date else '-'}。",
-                "success",
-            )
-
-        return {
-            "already_active": already_active,
-            "tier": tier_result,
-            "transaction_id": transaction.transaction_id,
-            "subscription_id": subscription.id,
-        }
+            user.auto_renewal = False
+            transaction.status = "success"
+            transaction.transaction_date = now
+            transaction.updated_at = now
+            self.db.add(PaymentActivation(transaction_id=transaction.id))
+            # SessionLocal has autoflush=False; tier calculation must see the new subscription.
+            self.db.flush()
+            tier_result = MembershipTierService(self.db).update_user_tier(user.id, commit=False)
+            self._queue_notification(transaction, "activated", "会员续费成功" if is_renewal else "会员已开通",
+                                     f"您的会员已生效，有效期至 {subscription.end_date:%Y-%m-%d}。", "success")
+            result = {"already_active": False,
+                      "tier": {k: tier_result[k] for k in ("old_tier", "new_tier", "changed")},
+                      "transaction_id": transaction.transaction_id, "subscription_id": subscription.id}
+            self.db.commit()
+            return result
+        except Exception:
+            self.db.rollback()
+            raise
 
     def create_renewal_order_if_needed(
         self,
@@ -474,7 +498,7 @@ class PaymentService:
 
     def delete_unpaid_order(self, user_id: int, order_id: str) -> Dict[str, Any]:
         """用户删除未支付/已拒绝的订单；若对应订阅仍为 pending 且无成功交易，一并删除订阅。"""
-        transaction = self._find_transaction(order_id)
+        transaction, _, _ = self._lock_payment(order_id)
         if not transaction:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

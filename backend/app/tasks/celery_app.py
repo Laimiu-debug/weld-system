@@ -21,6 +21,7 @@ celery_app = Celery(
         "app.tasks.smart_import_tasks",
         "app.tasks.document_tasks",
         "app.tasks.operations_tasks",
+        "app.tasks.payment_tasks",
     ],
 )
 
@@ -34,6 +35,10 @@ celery_app.conf.update(
     worker_concurrency=settings.AI_MAX_CONCURRENT_TASKS,
     broker_connection_retry_on_startup=True,
     beat_schedule={
+        "payment-notification-outbox": {
+            "task": "payments.deliver_notifications",
+            "schedule": 60.0,
+        },
         "daily-notifications-at-08-00": {
             "task": "notifications.daily",
             "schedule": crontab(hour=8, minute=0),

@@ -63,6 +63,8 @@ class WorkspaceContext:
     
     def validate(self):
         """验证工作区上下文的有效性"""
+        if self.workspace_type not in {WorkspaceType.PERSONAL, WorkspaceType.ENTERPRISE}:
+            raise ValueError("无效的工作区类型")
         if self.is_enterprise() and not self.company_id:
             raise ValueError("企业工作区必须指定company_id")
 
@@ -96,12 +98,16 @@ class DataAccessMiddleware:
             HTTPException: 如果没有权限
         """
         # 检查资源是否有必需的数据隔离字段
-        action = action.lower()
+        action = action.strip().lower() if isinstance(action, str) else ""
+        if action not in {"view", "create", "edit", "delete", "share"}:
+            raise HTTPException(status_code=403, detail="权限不足：未知的数据操作")
         if not hasattr(resource, 'workspace_type'):
             raise ValueError(f"资源 {type(resource).__name__} 缺少 workspace_type 字段")
 
         # 若提供了当前工作区上下文，资源必须属于该工作区
         if workspace_context is not None:
+            if workspace_context.user_id != user.id or workspace_context.workspace_type not in {"personal", "enterprise"}:
+                raise HTTPException(status_code=403, detail="权限不足：无效的工作区上下文")
             if workspace_context.is_personal():
                 if resource.workspace_type != WorkspaceType.PERSONAL or getattr(resource, "user_id", None) != user.id:
                     raise HTTPException(
@@ -112,6 +118,8 @@ class DataAccessMiddleware:
                 if (
                     resource.workspace_type != WorkspaceType.ENTERPRISE
                     or getattr(resource, "company_id", None) != workspace_context.company_id
+                    or (getattr(workspace_context, "factory_id", None) is not None
+                        and getattr(resource, "factory_id", None) not in {None, workspace_context.factory_id})
                 ):
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
@@ -241,6 +249,7 @@ class DataAccessMiddleware:
         if employee.company_role_id:
             role = self.db.query(CompanyRole).filter(
                 CompanyRole.id == employee.company_role_id,
+                CompanyRole.company_id == employee.company_id,
                 CompanyRole.is_active == True
             ).first()
 
@@ -268,6 +277,7 @@ class DataAccessMiddleware:
         # 获取角色
         role = self.db.query(CompanyRole).filter(
             CompanyRole.id == employee.company_role_id,
+            CompanyRole.company_id == employee.company_id,
             CompanyRole.is_active == True
         ).first()
 
@@ -390,6 +400,8 @@ class DataAccessMiddleware:
             Query: 过滤后的查询对象
         """
         workspace_context.validate()
+        if workspace_context.user_id != user.id:
+            raise HTTPException(403, "权限不足：工作区用户不匹配")
 
         print(f"[数据隔离] 模型: {model.__name__}")
         print(f"[数据隔离] 用户ID: {user.id}")
@@ -402,6 +414,8 @@ class DataAccessMiddleware:
         has_owner_col = isinstance(getattr(model, 'owner_id', None), InstrumentedAttribute)
         has_company_col = isinstance(getattr(model, 'company_id', None), InstrumentedAttribute)
         has_factory_col = isinstance(getattr(model, 'factory_id', None), InstrumentedAttribute)
+        if workspace_context.is_enterprise() and workspace_context.factory_id is not None and has_factory_col:
+            query = query.filter(or_(model.factory_id == workspace_context.factory_id, model.factory_id.is_(None)))
 
         # 个人工作区：只查询用户自己的数据
         if workspace_context.is_personal():
@@ -481,16 +495,26 @@ class DataAccessMiddleware:
             if has_company_col:
                 conditions.append(model.company_id == workspace_context.company_id)
 
+            # Detail checks must not be bypassed through list/search endpoints.
+            if isinstance(getattr(model, "access_level", None), InstrumentedAttribute) and has_user_col:
+                conditions.append(or_(
+                    model.access_level.in_([AccessLevel.FACTORY, AccessLevel.COMPANY, AccessLevel.PUBLIC]),
+                    and_(model.access_level == AccessLevel.PRIVATE, model.user_id == user.id),
+                ))
+
             # 根据data_access_scope决定访问范围
             data_access_scope = "factory"  # 默认工厂级别
 
             if employee.company_role_id:
                 role = self.db.query(CompanyRole).filter(
                     CompanyRole.id == employee.company_role_id,
+                    CompanyRole.company_id == employee.company_id,
                     CompanyRole.is_active == True
                 ).first()
                 if role:
                     data_access_scope = role.data_access_scope or employee.data_access_scope or "factory"
+                else:
+                    raise HTTPException(403, "权限不足：您的角色不存在或已被禁用")
             else:
                 data_access_scope = employee.data_access_scope or "factory"
 
@@ -506,7 +530,11 @@ class DataAccessMiddleware:
             # 如果是factory级别，只能查看所在工厂的数据
             if employee.factory_id and has_factory_col:
                 print(f"[数据隔离] factory级别,只能查看工厂{employee.factory_id}的数据")
-                conditions.append(model.factory_id == employee.factory_id)
+                from app.models.workspace_entity_access import WorkspaceEntityAccessMixin
+                if issubclass(model, WorkspaceEntityAccessMixin):
+                    conditions.append(or_(model.factory_id == employee.factory_id, model.factory_id.is_(None)))
+                else:
+                    conditions.append(model.factory_id == employee.factory_id)
             else:
                 # Fail closed: factory-scope without factory assignment must not see all company data
                 print(

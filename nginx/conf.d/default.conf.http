@@ -1,5 +1,10 @@
 # 首次启动使用的 HTTP 配置。证书签发后重启 nginx 会自动切换到 HTTPS。
 server {
+    # Private files must only be served by authenticated backend endpoints.
+    location ^~ /uploads/files { return 404; }
+    location ^~ /uploads/private_documents { return 404; }
+    location ^~ /storage/uploads/files { return 404; }
+    location ^~ /storage/uploads/private_documents { return 404; }
     listen 80;
     server_name sdhaohan.cn;
 
@@ -18,6 +23,11 @@ server {
 }
 
 server {
+    # Private files must only be served by authenticated backend endpoints.
+    location ^~ /uploads/files { return 404; }
+    location ^~ /uploads/private_documents { return 404; }
+    location ^~ /storage/uploads/files { return 404; }
+    location ^~ /storage/uploads/private_documents { return 404; }
     listen 80;
     server_name laimiu.sdhaohan.cn;
     location /.well-known/acme-challenge/ { root /var/www/certbot; }
@@ -35,6 +45,11 @@ server {
 }
 
 server {
+    # Private files must only be served by authenticated backend endpoints.
+    location ^~ /uploads/files { return 404; }
+    location ^~ /uploads/private_documents { return 404; }
+    location ^~ /storage/uploads/files { return 404; }
+    location ^~ /storage/uploads/private_documents { return 404; }
     listen 80;
     server_name api.sdhaohan.cn;
     location /.well-known/acme-challenge/ { root /var/www/certbot; }
@@ -46,6 +61,11 @@ server {
 }
 
 server {
+    # Private files must only be served by authenticated backend endpoints.
+    location ^~ /uploads/files { return 404; }
+    location ^~ /uploads/private_documents { return 404; }
+    location ^~ /storage/uploads/files { return 404; }
+    location ^~ /storage/uploads/private_documents { return 404; }
     listen 80;
     server_name lifecard.sdhaohan.cn;
     location /.well-known/acme-challenge/ { root /var/www/certbot; }
@@ -54,6 +74,11 @@ server {
 
 # 健康检查
 server {
+    # Private files must only be served by authenticated backend endpoints.
+    location ^~ /uploads/files { return 404; }
+    location ^~ /uploads/private_documents { return 404; }
+    location ^~ /storage/uploads/files { return 404; }
+    location ^~ /storage/uploads/private_documents { return 404; }
     listen 80 default_server;
     server_name localhost;
     location /health {

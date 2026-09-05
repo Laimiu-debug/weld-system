@@ -194,7 +194,7 @@ def test_resource_assignment_rejects_welder_from_another_personal_workspace():
             None,
             SimpleNamespace(id=7),
             SimpleNamespace(
-                workspace_type="personal", company_id=None, is_personal=lambda: True
+                user_id=7, workspace_type="personal", company_id=None, is_personal=lambda: True
             ),
         )
     assert exc.value.status_code == 403
@@ -226,7 +226,7 @@ def test_welding_execution_requires_assigned_authorized_welder():
             {"idempotency_key": "execution-0001", "status": "completed"},
             SimpleNamespace(id=7),
             SimpleNamespace(
-                workspace_type="personal", company_id=None, is_personal=lambda: True
+                user_id=7, workspace_type="personal", company_id=None, is_personal=lambda: True
             ),
         )
 

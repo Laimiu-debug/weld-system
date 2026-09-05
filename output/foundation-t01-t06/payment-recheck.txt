@@ -1,0 +1,13 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-7.4.3, pluggy-1.6.0
+PySide6 6.11.1 -- Qt runtime 6.11.1 -- Qt compiled 6.11.1
+rootdir: F:\code\weldsystem\backend
+configfile: pyproject.toml
+plugins: anyio-3.7.1, hypothesis-6.151.5, asyncio-0.21.1, cov-7.0.0, qt-4.5.0
+asyncio: mode=Mode.STRICT
+collected 28 items
+
+tests\unit\test_payment_flow.py ........                                 [ 28%]
+tests\integration\test_foundation_integrity.py ....................      [100%]
+
+============================= 28 passed in 8.34s ==============================
