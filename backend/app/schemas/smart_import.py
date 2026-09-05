@@ -367,6 +367,7 @@ class AIQuotaStatusResponse(BaseModel):
 
 
 class AIExtractionRequest(BaseModel):
+    expected_platform_route: str | None = Field(None, pattern=r"^[a-f0-9]{64}$")
     mode: Literal["platform", "byok", "offline"] = "platform"
     provider: Literal["openai_responses", "openai_compatible_chat"] | None = None
     model: str | None = Field(None, min_length=1, max_length=120)
@@ -487,6 +488,7 @@ class AIExtractionQueuedResponse(BaseModel):
 
 
 class BatchAIExtractionRequest(AIExtractionRequest):
+    expected_platform_routes: dict[str, str] = Field(default_factory=dict)
     document_ids: list[str] = Field(default_factory=list, max_length=100)
     outbound_consent_ids: dict[str, str] = Field(default_factory=dict)
 

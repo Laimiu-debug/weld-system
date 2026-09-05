@@ -1,11 +1,14 @@
 """Orientation and region preparation for dense engineering drawings."""
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from io import BytesIO
+from math import atan2, degrees
 from typing import Any
 
 from PIL import Image
+from pypdf import PdfReader
 
 
 MAX_AI_DRAWING_EDGE = 4096
@@ -22,13 +25,45 @@ class PreparedDrawingPage:
     title_box: tuple[int, int, int, int]
 
 
-def prepare_drawing_page(png: bytes, page_number: int) -> PreparedDrawingPage:
+def pdf_text_rotation(stream, page_number: int) -> int:
+    """Rotate only when embedded text gives a strong, explicit reading direction."""
+    try:
+        page = PdfReader(stream).pages[page_number - 1]
+        weights = Counter()
+        page_rotation = int(page.get("/Rotate", 0))
+
+        def visit(value, cm, tm, font, size):
+            count = len("".join(value.split()))
+            a = tm[0] * cm[0] + tm[1] * cm[2]
+            b = tm[0] * cm[1] + tm[1] * cm[3]
+            angle = (degrees(atan2(b, a)) - page_rotation) % 360
+            nearest = round(angle / 90) * 90 % 360
+            if min(abs(angle - nearest), 360 - abs(angle - nearest)) <= 3:
+                weights[nearest] += count
+
+        page.extract_text(visitor_text=visit)
+        angle, count = weights.most_common(1)[0]
+        return (
+            (-angle) % 360
+            if count >= 40 and count / sum(weights.values()) >= 0.85
+            else 0
+        )
+    except Exception:
+        return 0
+
+
+def prepare_drawing_page(
+    png: bytes, page_number: int, *, rotation_degrees: int = 0
+) -> PreparedDrawingPage:
     """Orient a drawing and isolate the conventional bottom-right title region."""
     with Image.open(BytesIO(png)) as source:
         original = source.convert("RGB")
     # Ink density is not evidence of reading direction: a dense upper-left
     # assembly used to turn a correctly oriented sheet upside down.
-    rotation, oriented = 0, original.copy()
+    if rotation_degrees not in {0, 90, 180, 270}:
+        raise ValueError("Invalid drawing rotation")
+    rotation = rotation_degrees
+    oriented = original.rotate(rotation, expand=True)
     if max(oriented.size) > MAX_AI_DRAWING_EDGE:
         oriented.thumbnail(
             (MAX_AI_DRAWING_EDGE, MAX_AI_DRAWING_EDGE), Image.Resampling.LANCZOS
@@ -94,9 +129,7 @@ def _orientation_score(image: Image.Image) -> float:
     )
     bottom = _ink_ratio(sample.crop((0, int(height * 0.78), width, height)))
     right = _ink_ratio(sample.crop((int(width * 0.82), 0, width, height)))
-    top_left = _ink_ratio(
-        sample.crop((0, 0, int(width * 0.42), int(height * 0.48)))
-    )
+    top_left = _ink_ratio(sample.crop((0, 0, int(width * 0.42), int(height * 0.48))))
     # Most fabrication drawings use a landscape sheet and a bottom-right title
     # block. The density terms choose between the two landscape rotations.
     landscape_bonus = 0.75 if width >= height else 0.0
@@ -140,9 +173,7 @@ def _restore_evidence(
             (top + y1 * (bottom - top)) / height,
             (top + y2 * (bottom - top)) / height,
         )
-    evidence["bbox"] = _inverse_rotation_bbox(
-        [x1, y1, x2, y2], page.rotation_degrees
-    )
+    evidence["bbox"] = _inverse_rotation_bbox([x1, y1, x2, y2], page.rotation_degrees)
 
 
 def _inverse_rotation_bbox(bbox: list[float], degrees: int) -> list[float]:

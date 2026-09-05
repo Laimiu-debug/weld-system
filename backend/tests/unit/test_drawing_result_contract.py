@@ -95,6 +95,12 @@ def test_unknown_dimensions_and_zero_gap_remain_valid_partial_findings():
     assert payload == original
 
 
+@pytest.mark.parametrize("bbox", [[0, 0, 1, 1.01], [-0.1, 0, 0.5, 1]])
+def test_provider_evidence_outside_image_is_rejected_before_coordinate_transform(bbox):
+    with pytest.raises(AIExtractionRunError):
+        validate_drawing_payload({"parts": [{"ref": "A", "evidence": {"page": 1, "bbox": bbox}}]})
+
+
 @pytest.mark.parametrize("parents", [
     [("A", "A")], [("A", "B"), ("B", "A")],
     [("C", "A"), ("A", "B"), ("B", "C")],
@@ -139,6 +145,7 @@ def test_text_provider_result_is_validated_before_identity_reads_or_replacing_sa
     revision = SimpleNamespace(
         id="revision-1", drawing_document_id="document-1", status="draft",
         parse_status="completed", access_level="private", drawing_metadata={"previous": "valid"},
+        data_version=1,
     )
     queries = {model: Mock() for model in (DocumentPage, SourceDocument, ProductRevision, DrawingParseRun, ExtractionJob)}
     queries[DocumentPage].filter.return_value.order_by.return_value.all.return_value = [

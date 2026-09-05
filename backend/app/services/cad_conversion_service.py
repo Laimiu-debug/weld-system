@@ -8,6 +8,20 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from importlib.util import find_spec
+
+
+def cad_capabilities() -> dict:
+    dependencies = all(find_spec(name) is not None for name in ("ezdxf", "matplotlib", "pypdf"))
+    converter = os.environ.get("CAD_DWG_CONVERTER") or shutil.which("ODAFileConverter")
+    dwg = dependencies and bool(converter and (Path(converter).is_file() or shutil.which(converter)))
+    return {
+        "extensions": [".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff"]
+        + ([".dxf"] if dependencies else []) + ([".dwg"] if dwg else []),
+        "dxf_available": dependencies, "dwg_available": dwg,
+        "cad_notice": "仅支持自包含二维 CAD；外部参照须绑定。"
+        + ("DWG 依赖 ODA 转换，仍需以实际转换结果为准。" if dwg else "当前 DWG 转换器不可用，请先导出 DXF 或 PDF。"),
+    }
 
 
 def cad_to_pdf(stream, filename: str) -> bytes:

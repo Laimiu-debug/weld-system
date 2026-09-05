@@ -83,6 +83,7 @@ from app.services.ai_extraction_service import (
 )
 from app.services.ai_extraction_queue_service import AIExtractionQueueService
 from app.services.ai_quota_service import AIQuotaService
+from app.services.ai_routing_service import routing_snapshot, route_fingerprint, require_expected_route
 from app.services.ai_credential_service import (
     AIProviderConfigService,
     provider_config_response,
@@ -188,6 +189,7 @@ def get_ai_capabilities(
         "platform_provider": platform["provider"],
         "platform_model": platform["model"],
         "platform_host": (urlsplit(platform["base_url"]).hostname or "").lower(),
+        "platform_route": route_fingerprint(platform),
         "byok_providers": ["openai_responses", "openai_compatible_chat"],
         "byok_allowed_hosts": settings.AI_BYOK_ALLOWED_HOSTS,
         "max_document_pages": settings.AI_MAX_DOCUMENT_PAGES,
@@ -311,6 +313,8 @@ def require_sensitive_document_consent(
     db, document, request, provider_config, current_user, context
 ) -> None:
     """Drawings and procedure records require explicit, versioned outbound consent."""
+    if request.mode == "platform" and provider_config is not None:
+        require_expected_route(request.expected_platform_route, provider_config)
     if document.document_type not in {"drawing", "pqr"}:
         return
     if request.mode == "offline":
@@ -1081,9 +1085,12 @@ def queue_document_extraction(
     schema_snapshot = {
         **schema_snapshot,
         "outbound_consent_id": request.outbound_consent_id,
+        "actor_user_id": current_user.id,
+        "x-weld-routing": routing_snapshot(provider_config, *platform_task_route(document)),
     }
     if request.mode == "platform":
         schema_snapshot["x-weld-routing"] = {
+            **schema_snapshot["x-weld-routing"],
             "config_id": provider_config.id,
             "task_type": platform_task_route(document)[0],
             "complexity": provider_config.complexity_level,
@@ -1176,6 +1183,8 @@ def retry_extraction_job(
     context = resolve_workspace(db, current_user, workspace_id)
     service = AIExtractionQueueService(db)
     source = service.get_job(job_id, current_user, context)
+    if (source.schema_snapshot or {}).get("job_kind") == "drawing":
+        raise HTTPException(409, "请在图纸审核页重新选择模型并重试识别")
     if (source.schema_snapshot or {}).get("job_kind") == "parse":
         if source.status not in {"failed", "cancelled"}:
             raise HTTPException(status_code=409, detail="只有失败或已取消任务可以重试")
@@ -1268,15 +1277,17 @@ def queue_batch_extraction(
         provider_name, model_name = provider_config.provider, provider_config.model
     else:
         credentials.enforce_policy("platform", None, context)
-        provider_config, _ = resolve_platform_provider_config(db)
-        provider_name, model_name = provider_config.provider, provider_config.model
     queue = AIExtractionQueueService(db)
     items: list[BatchOperationItem] = []
     for document in documents:
         try:
+            if request.mode == "platform":
+                provider_config, _ = resolve_platform_provider_config(db, document)
+                provider_name, model_name = provider_config.provider, provider_config.model
             document_request = request.model_copy(
                 update={
-                    "outbound_consent_id": request.outbound_consent_ids.get(document.id)
+                    "outbound_consent_id": request.outbound_consent_ids.get(document.id),
+                    "expected_platform_route": request.expected_platform_routes.get(document.id),
                 }
             )
             require_sensitive_document_consent(
@@ -1292,6 +1303,10 @@ def queue_batch_extraction(
                 schema_snapshot={
                     **schema_snapshot,
                     "outbound_consent_id": document_request.outbound_consent_id,
+                    "actor_user_id": current_user.id,
+                    "x-weld-routing": routing_snapshot(
+                        provider_config, *platform_task_route(document)
+                    ),
                 },
                 template_id=template_id,
                 mode=request.mode,
@@ -1373,7 +1388,15 @@ def retry_failed_batch_jobs(
             else:
                 credentials.enforce_policy(source.mode, None, context)
             job = queue.retry_job(source, current_user, context)
-            dispatch_extraction_job(job)
+            try:
+                dispatch_extraction_job(job)
+            except HTTPException:
+                job.status = "failed"
+                job.error_code = "queue_unavailable"
+                job.error_message = "后台任务队列暂时不可用"
+                job.completed_at = datetime.utcnow()
+                db.commit()
+                raise
             items.append(
                 BatchOperationItem(
                     document_id=document.id,

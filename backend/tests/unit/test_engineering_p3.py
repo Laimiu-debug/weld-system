@@ -235,6 +235,7 @@ def test_drawing_provider_rejection_becomes_user_facing_run_error() -> None:
         drawing_page_count=1,
         status="draft",
         parse_status="pending",
+        data_version=1,
         access_level="private",
         user_id=7,
         workspace_type="personal",

@@ -71,10 +71,14 @@ const DrawingReview: React.FC = () => {
   const [detail, setDetail] = useState<RevisionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [parsing, setParsing] = useState(false);
+  const [parseJob, setParseJob] = useState<DataRow | null>(null);
+  const [pollFailed, setPollFailed] = useState(false);
+  const parseSubmitting = useRef(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [privacyConfirmed, setPrivacyConfirmed] = useState(false);
   const [productOpen, setProductOpen] = useState(false);
   const [platformHost, setPlatformHost] = useState("");
+  const [platformRoute, setPlatformRoute] = useState("");
   const [page, setPage] = useState(1);
   const [preview, setPreview] = useState("");
   const [focus, setFocus] = useState<DataRow | null>(null);
@@ -95,6 +99,9 @@ const DrawingReview: React.FC = () => {
     try {
       setDetail(await engineeringService.detail(id));
       setHistory(await engineeringService.history(id));
+      const jobs = await engineeringService.parseJobs(id);
+      setParseJob(jobs[0] || null);
+      setParsing(["queued", "processing"].includes(jobs[0]?.status));
     } finally {
       setLoading(false);
     }
@@ -103,8 +110,35 @@ const DrawingReview: React.FC = () => {
     void load();
     void smartImportService
       .getAICapabilities({ task_type: "drawing_import", complexity: "advanced" })
-      .then((value) => setPlatformHost(value.platform_host || ""));
+      .then((value) => {
+        setPlatformHost(value.platform_available ? value.platform_host : "");
+        setPlatformRoute(value.platform_route || "");
+      }).catch(() => setPlatformHost(""));
   }, [load]);
+  useEffect(() => {
+    if (!parseJob || !["queued", "processing"].includes(parseJob.status)) return;
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const jobs = await engineeringService.parseJobs(id);
+        if (cancelled) return;
+        setPollFailed(false);
+        const latest = jobs[0] || null;
+        setParseJob(latest);
+        if (!latest || !["queued", "processing"].includes(latest.status)) {
+          setParsing(false);
+          if (latest?.status === "completed") message.success("图纸解析完成，请逐项核对");
+          await load();
+        }
+      } catch {
+        if (!cancelled) {
+          setPollFailed(true);
+          setParseJob({ ...parseJob });
+        }
+      }
+    }, pollFailed ? 10000 : 2500);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [id, load, parseJob, pollFailed]);
   useEffect(() => {
     let url = "";
     void engineeringService.preview(id, page).then((blob) => {
@@ -145,10 +179,12 @@ const DrawingReview: React.FC = () => {
     setPrivacyOpen(true);
   };
   const confirmRunAI = async () => {
+    if (parseSubmitting.current || parsing) return;
     if (!detail?.revision.drawing_document_id || !platformHost) {
       message.error("无法识别图纸文档或外部模型服务域名");
       return;
     }
+    parseSubmitting.current = true;
     setParsing(true);
     try {
       const notice = aiDataOutboundNotice(platformHost);
@@ -160,18 +196,20 @@ const DrawingReview: React.FC = () => {
         privacy_notice_hash: await sha256Hex(notice),
         authorized: true,
       });
-      await engineeringService.parse(id, {
+      const result = await engineeringService.parse(id, {
         mode: "platform",
         run_ocr: true,
         outbound_consent_id: consent.id,
+        expected_platform_route: platformRoute || undefined,
       });
+      setParseJob(result.job);
       setPrivacyOpen(false);
-      message.success("图纸解析完成，请逐项核对");
-      await load();
+      message.info("图纸已进入后台识别，可离开页面后返回查看");
     } catch {
       // The shared API layer displays one normalized error message.
-    } finally {
       setParsing(false);
+    } finally {
+      parseSubmitting.current = false;
     }
   };
   const openEdit = (type: "part" | "joint" | "requirement", row: DataRow) => {
@@ -485,6 +523,14 @@ const DrawingReview: React.FC = () => {
   return (
     <Spin spinning={loading}>
       <div className="drawing-review">
+        {parseJob && <Alert showIcon style={{ marginBottom: 16 }}
+          type={parseJob.status === "failed" || parseJob.status === "cancelled" ? "error" : "info"}
+          message={parseJob.status === "completed" ? "识别完成，结果须人工核对" :
+            parseJob.status === "failed" || parseJob.status === "cancelled" ? "识别未完成，可重新提交" :
+              `后台识别中 · ${parseJob.progress || 0}%`}
+          description={pollFailed ? "暂时无法获取进度，正在重试；后台任务仍会继续。" :
+            parseJob.error_message || ({ queued: "等待后台处理", rendering: "渲染页面", title: "识别图签", parts: "识别零件", welds: "识别焊缝", validating: "校验并保存" } as Record<string, string>)[parseJob.progress_detail?.phase] || "请逐项核对图签、零件、焊缝和证据位置。"}
+        />}
         <div className="review-header">
           <Space>
             <Button

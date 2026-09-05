@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlalchemy import func
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from jsonschema import Draft202012Validator
 
@@ -60,6 +60,7 @@ from app.services.document_storage_service import DocumentStorage
 from app.services.drawing_preprocessing_service import (
     PreparedDrawingPage,
     prepare_drawing_page,
+    pdf_text_rotation,
     restore_payload_evidence,
 )
 from app.services.smart_import_service import SmartImportService
@@ -227,7 +228,7 @@ DRAWING_SCHEMA: dict[str, Any] = {
                 "page": {"type": ["integer", "null"]},
                 "bbox": {
                     "type": ["array", "null"],
-                    "items": {"type": "number"},
+                    "items": {"type": "number", "minimum": 0, "maximum": 1},
                     "minItems": 4,
                     "maxItems": 4,
                 },
@@ -255,6 +256,7 @@ DRAWING_PARTS_INSTRUCTIONS = """识别承压设备图纸中的零部件、材料
 
 DRAWING_WELDS_INSTRUCTIONS = """识别承压设备图纸中的焊缝编号、连接零件、接头/坡口、焊接尺寸以及 NDE、PWHT、冲击要求。
 请根据文字判断阅读方向。技术要求中的全局要求不得臆造为某条焊缝的专属参数。
+严禁自行编造 W1、B1、C1 等焊缝编号。图中 A/B 类别、I/II/III 详图序号和 N1/N2 管口编号不等于焊缝编号；没有明确焊缝编号时返回 null。
 每条记录必须包含对应页码、可见原文和相对于整页图片的归一化 bbox；没有明确证据时返回 null 并写入 unresolved_regions。"""
 
 
@@ -903,8 +905,14 @@ class EngineeringService:
         storage: DocumentStorage,
         point_multiplier: float = 1.0,
         routing: dict[str, Any] | None = None,
+        existing_job: ExtractionJob | None = None,
     ):
         revision = self._get(ProductRevision, revision_id, user, context, True)
+        source_version = revision.data_version
+        if existing_job is not None and existing_job.schema_snapshot.get("source_data_version", source_version) != source_version:
+            raise AIExtractionRunError("drawing_changed", "排队期间图纸已被修改，请重新提交", 409)
+        if existing_job is None and revision.parse_status == "processing":
+            raise HTTPException(409, "图纸已有正在执行的识别任务")
         if revision.status in {"approved", "superseded"}:
             raise HTTPException(409, "已批准版本不可重新解析，请上传新图纸版本")
         pages = (
@@ -937,11 +945,11 @@ class EngineeringService:
                 if provider is None:
                     raise HTTPException(422, "未提供 AI 服务或结构化结果")
                 quota = AIQuotaService(self.db)
-                if mode == "platform":
+                if mode == "platform" and existing_job is None:
                     quota.enforce_task_limits(
                         user, context, len(pages), point_multiplier
                     )
-                job = ExtractionJob(
+                job = existing_job or ExtractionJob(
                     id=str(uuid4()),
                     document_id=revision.drawing_document_id,
                     mode=mode,
@@ -963,6 +971,8 @@ class EngineeringService:
                     started_at=datetime.utcnow(),
                     **no_created,
                 )
+                job.status = "processing"
+                run.extraction_job_id = job.id
                 self.db.add(job)
                 self.db.commit()
                 if mode == "platform":
@@ -975,6 +985,11 @@ class EngineeringService:
                 )
                 if supports_visual_render(document.original_filename):
                     for page in pages:
+                        self._drawing_progress(job, "rendering", 10)
+                        rotation = 0
+                        if Path(document.original_filename).suffix.lower() == ".pdf":
+                            with storage.open_stream(document.storage_key) as stream:
+                                rotation = pdf_text_rotation(stream, page.page_number)
                         with storage.open_stream(document.storage_key) as stream:
                             png = DocumentPageRenderer().render_png(
                                 stream,
@@ -983,7 +998,7 @@ class EngineeringService:
                                 scale=3.0,
                             )
                         prepared_pages.append(
-                            prepare_drawing_page(png, page.page_number)
+                            prepare_drawing_page(png, page.page_number, rotation_degrees=rotation)
                         )
                 text = "\n\n".join(
                     f"--- 第 {p.page_number} 页 ---\n{p.text_content or ''}"
@@ -998,16 +1013,32 @@ class EngineeringService:
                         )
                         for page in prepared_pages
                     ]
+                    self._drawing_progress(job, "title", 25)
                     title_result = provider.structured_response(
                         StructuredAIRequest(
-                            instructions=DRAWING_TITLE_INSTRUCTIONS,
-                            input_text="逐页查找并读取图签，不得从零部件明细推测产品名称。",
+                            instructions=DRAWING_TITLE_INSTRUCTIONS + "\n本次输入为候选图签区域的局部放大图，bbox 相对于该局部图。若不含图签，返回 null，不得猜测。",
+                            input_text="逐字读取局部图中的图签，不得从零部件明细推测产品名称。",
                             json_schema=DRAWING_TITLE_SCHEMA,
-                            images=full_images,
+                            images=[AIImageInput("data:image/png;base64," + base64.b64encode(page.title_png).decode(), page.page_number) for page in prepared_pages],
                             schema_name="engineering_drawing_title_v2",
                         )
                     )
                     validate_drawing_payload(title_result.data, DRAWING_TITLE_SCHEMA)
+                    title_is_crop = True
+                    title_results = [title_result]
+                    if not (title_result.data.get("product") or {}).get("drawing_number"):
+                        title_result = provider.structured_response(StructuredAIRequest(
+                            instructions=DRAWING_TITLE_INSTRUCTIONS,
+                            input_text="局部图未找到图签。请在完整页面查找并逐字抄录，不能猜测。",
+                            json_schema=DRAWING_TITLE_SCHEMA, images=full_images,
+                            schema_name="engineering_drawing_title_full_v2",
+                        ))
+                        validate_drawing_payload(title_result.data, DRAWING_TITLE_SCHEMA)
+                        title_results.append(title_result)
+                        title_is_crop = False
+                    if "识别图号与文件名编号不一致" in drawing_identity_problems(title_result.data, document.original_filename, len(pages)):
+                        raise AIExtractionRunError("drawing_identity_unverified", "识别图号与文件名编号不一致，请核对图纸方向与清晰度后重试", 422)
+                    self._drawing_progress(job, "parts", 45)
                     parts_result = provider.structured_response(
                         StructuredAIRequest(
                             instructions=DRAWING_PARTS_INSTRUCTIONS,
@@ -1018,6 +1049,7 @@ class EngineeringService:
                         )
                     )
                     validate_drawing_payload(parts_result.data, DRAWING_PARTS_SCHEMA)
+                    self._drawing_progress(job, "welds", 65)
                     welds_result = provider.structured_response(
                         StructuredAIRequest(
                             instructions=DRAWING_WELDS_INSTRUCTIONS,
@@ -1032,11 +1064,11 @@ class EngineeringService:
                         )
                     )
                     validate_drawing_payload(welds_result.data, DRAWING_WELDS_SCHEMA)
-                    results = [title_result, parts_result, welds_result]
+                    results = [*title_results, parts_result, welds_result]
                     restore_payload_evidence(
                         title_result.data,
                         prepared_pages,
-                        title_crop_sections=frozenset(),
+                        title_crop_sections=frozenset({"product"}) if title_is_crop else frozenset(),
                     )
                     restore_payload_evidence(parts_result.data, prepared_pages)
                     restore_payload_evidence(welds_result.data, prepared_pages)
@@ -1071,10 +1103,28 @@ class EngineeringService:
             assert payload is not None
             validate_drawing_payload(payload)
             if job:
+                self._drawing_progress(job, "validating", 85)
+                job_status = self.db.query(ExtractionJob.status).filter(ExtractionJob.id == job.id).with_for_update().scalar()
+                if job_status != "processing":
+                    raise AIExtractionRunError("task_cancelled", "任务已停止，请重新提交", 409)
+                # Serialize the replacement and reject changes made during model calls.
+                revision = self.db.query(ProductRevision).filter(
+                    ProductRevision.id == revision_id
+                ).populate_existing().with_for_update().one()
+                self.access.check_access(user, revision, DataAccessAction.EDIT, context)
+                if revision.data_version != source_version or revision.status in {"approved", "superseded"}:
+                    raise AIExtractionRunError("drawing_changed", "识别期间图纸已被修改或批准，请重新提交", 409)
+            if job:
                 identity_problems = drawing_identity_problems(
                     payload, document.original_filename, len(pages)
                 )
             if not payload.get("parts") and not payload.get("weld_joints"):
+                if job and not identity_problems:
+                    raise AIExtractionRunError(
+                        "drawing_detail_required",
+                        f"已读取图号 {payload['product']['drawing_number']}，但未识别出有明确标注的零部件或焊缝；请补充明细表/焊缝布置图，或人工核对并录入，现有审核数据已保留",
+                        422,
+                    )
                 raise AIExtractionRunError(
                     "empty_drawing_extraction", "未识别出零部件或焊缝，请检查图纸清晰度及视觉模型配置", 422
                 )
@@ -1111,16 +1161,26 @@ class EngineeringService:
             if job:
                 job.status = "completed"
                 job.progress = 100
+                job.progress_detail = {"job_kind": "drawing", "phase": "completed"}
                 job.completed_at = datetime.utcnow()
                 # Flush the extracted rows before settling the reservation.
                 # A validation or database failure must remain refundable.
                 self.db.flush()
-                quota.settle(job, user, context, len(pages))
+                if mode != "offline":
+                    quota.settle(job, user, context, len(pages))
+                else:
+                    self.db.commit()
             else:
                 self.db.commit()
             return run
         except Exception as exc:
             logger.exception("Drawing extraction failed for revision %s", revision_id)
+            safe_message = (
+                str(exc) if isinstance(exc, (AIProviderError, AIExtractionRunError, DocumentParseError, AIQuotaError))
+                else str(exc.detail) if isinstance(exc, HTTPException)
+                else "图纸结果保存失败，原有审核数据已保留，请重试或联系管理员"
+            )
+            error_code = "drawing_persistence_failed" if isinstance(exc, SQLAlchemyError) else getattr(exc, "code", "drawing_failed")
             self.db.rollback()
             revision = (
                 self.db.query(ProductRevision)
@@ -1136,7 +1196,9 @@ class EngineeringService:
                 revision.parse_status = "failed"
             if run:
                 run.status = "failed"
-                run.error_message = str(exc)[:1000]
+                if error_code == "drawing_detail_required":
+                    run.output_snapshot = {"product": payload.get("product") or {}}
+                run.error_message = safe_message[:1000]
                 run.finished_at = datetime.utcnow()
             if job:
                 failed = (
@@ -1145,17 +1207,32 @@ class EngineeringService:
                     .first()
                 )
                 if failed:
-                    failed.status = "failed"
-                    failed.error_message = str(exc)[:1000]
+                    if failed.status != "cancelled":
+                        failed.status = "failed"
+                    failed.error_code = error_code
+                    failed.error_message = safe_message[:1000]
+                    failed.progress_detail = {**(failed.progress_detail or {}), "phase": failed.status}
+                    if error_code == "drawing_detail_required":
+                        failed.progress_detail["partial_product"] = payload.get("product") or {}
                     failed.completed_at = datetime.utcnow()
-                AIQuotaService(self.db).refund(job.id, user, context, str(exc))
+                AIQuotaService(self.db).refund(job.id, user, context, safe_message)
             self.db.commit()
             if isinstance(exc, AIProviderError):
                 status_code = 503 if exc.retryable else 422
                 raise AIExtractionRunError(exc.code, str(exc), status_code) from exc
             if isinstance(exc, DocumentParseError):
                 raise AIExtractionRunError("drawing_render_failed", str(exc), 422) from exc
+            if not isinstance(exc, (AIExtractionRunError, HTTPException, AIQuotaError)):
+                raise AIExtractionRunError(error_code, safe_message, 503) from exc
             raise
+
+    def _drawing_progress(self, job, phase, progress):
+        status = self.db.query(ExtractionJob.status).filter(ExtractionJob.id == job.id).scalar()
+        if status != "processing":
+            raise AIExtractionRunError("task_cancelled", "任务已停止，请重新提交", 409)
+        job.progress = progress
+        job.progress_detail = {"job_kind": "drawing", "phase": phase}
+        self.db.commit()
 
     def _replace_extracted_data(
         self, revision: ProductRevision, payload: dict[str, Any], user, context

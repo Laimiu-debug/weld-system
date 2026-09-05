@@ -12,6 +12,12 @@ export interface RevisionDetail {
 }
 
 export const engineeringService = {
+  async drawingCapabilities(): Promise<{ extensions: string[]; cad_notice: string }> {
+    return (await api.get("/engineering/drawing-capabilities")).data;
+  },
+  async parseJobs(revisionId: string): Promise<DataRow[]> {
+    return (await api.get(`/engineering/revisions/${revisionId}/parse-jobs`)).data;
+  },
   async projects(): Promise<DataRow[]> {
     return (await api.get("/engineering/projects")).data;
   },
@@ -60,7 +66,7 @@ export const engineeringService = {
     revisionId: string,
     data: DataRow = { mode: "platform", run_ocr: true },
   ): Promise<DataRow> {
-    return (await api.post(`/engineering/revisions/${revisionId}/parse`, data, { timeout: 600000 }))
+    return (await api.post(`/engineering/revisions/${revisionId}/parse-async`, data))
       .data;
   },
   async patchPart(id: string, values: DataRow): Promise<DataRow> {

@@ -35,6 +35,10 @@ celery_app.conf.update(
     worker_concurrency=settings.AI_MAX_CONCURRENT_TASKS,
     broker_connection_retry_on_startup=True,
     beat_schedule={
+        "recover-abandoned-ai-jobs": {
+            "task": "smart_import.recover_stale",
+            "schedule": 300.0,
+        },
         "payment-notification-outbox": {
             "task": "payments.deliver_notifications",
             "schedule": 60.0,

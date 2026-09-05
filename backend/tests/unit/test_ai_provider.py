@@ -5,6 +5,7 @@ import pytest
 
 from app.services.ai_provider_service import (
     AIProviderConfig,
+    AIImageInput,
     AIProviderError,
     OpenAICompatibleProvider,
     StructuredAIRequest,
@@ -22,6 +23,42 @@ SCHEMA = {
     "required": ["required_value"],
     "additionalProperties": False,
 }
+
+
+@pytest.mark.parametrize("protocol", ["openai_responses", "openai_compatible_chat"])
+def test_image_requests_preserve_original_nonsequential_page_numbers(protocol):
+    def handler(request):
+        body = json.loads(request.content)
+        if protocol == "openai_responses":
+            content = body["input"][0]["content"]
+            response = {"output_text": '{"required_value":"ok"}'}
+        else:
+            content = body["messages"][1]["content"]
+            response = {
+                "choices": [{"message": {"content": '{"required_value":"ok"}'}}]
+            }
+        assert "image 1 = source page 3" in content[0]["text"]
+        assert "image 2 = source page 9" in content[0]["text"]
+        assert len(content) == 3
+        return httpx.Response(200, json=response)
+
+    provider = OpenAICompatibleProvider(
+        AIProviderConfig(
+            protocol, "https://compatible.example/v1", "test-key", "vision"
+        ),
+        httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    provider.structured_response(
+        StructuredAIRequest(
+            "Return JSON",
+            "source",
+            SCHEMA,
+            images=[
+                AIImageInput("data:image/png;base64,AA==", 3),
+                AIImageInput("data:image/png;base64,AA==", 9),
+            ],
+        )
+    )
 
 
 def test_strict_schema_makes_optional_fields_nullable_and_removes_extensions() -> None:
@@ -213,8 +250,10 @@ def test_deepseek_retries_one_empty_json_response() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal calls
         calls += 1
-        content = "" if calls == 1 else json.dumps(
-            {"required_value": "Q345R", "optional_value": None}
+        content = (
+            ""
+            if calls == 1
+            else json.dumps({"required_value": "Q345R", "optional_value": None})
         )
         return httpx.Response(
             200,

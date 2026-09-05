@@ -42,8 +42,143 @@ from app.services.engineering_service import EngineeringService
 from app.services.ai_quota_service import AIQuotaError
 from app.services.operations_service import OperationsService
 from app.services.system_config_service import get_max_upload_bytes
+from app.services.ai_extraction_queue_service import AIExtractionQueueService
+from app.services.ai_routing_service import routing_snapshot, require_expected_route
+from app.api.v1.endpoints.smart_import import (
+    resolve_platform_provider_config,
+    resolve_offline_provider_config,
+    dispatch_extraction_job,
+)
+from app.models.smart_import import ExtractionJob
+from app.schemas.smart_import import ExtractionJobResponse
+from datetime import datetime
 
 router = APIRouter()
+
+
+@router.get("/drawing-capabilities")
+def drawing_capabilities(current_user: User = Depends(deps.get_current_active_user)):
+    from app.services.cad_conversion_service import cad_capabilities
+
+    return cad_capabilities()
+
+
+@router.get("/revisions/{revision_id}/parse-jobs")
+def drawing_jobs(
+    revision_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+):
+    context = resolve_workspace(db, current_user, workspace_id)
+    permitted(db, current_user, context)
+    EngineeringService(db)._get(ProductRevision, revision_id, current_user, context)
+    jobs = (
+        db.query(ExtractionJob)
+        .filter(
+            ExtractionJob.schema_snapshot["drawing_revision_id"].astext == revision_id
+        )
+        .order_by(ExtractionJob.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    return [ExtractionJobResponse.model_validate(job) for job in jobs]
+
+
+@router.post("/revisions/{revision_id}/parse-async", status_code=202)
+def queue_drawing(
+    revision_id: str,
+    request: DrawingAIRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+):
+    context = resolve_workspace(db, current_user, workspace_id)
+    permitted(db, current_user, context, "create")
+    validate_ai_extraction_request(request)
+    if request.extracted_payload is not None or (
+        request.mode == "byok" and not request.provider_config_id
+    ):
+        raise HTTPException(422, "后台识别仅支持平台、离线模型或已保存的模型配置")
+    revision = EngineeringService(db)._get(
+        ProductRevision, revision_id, current_user, context, True
+    )
+    revision = (
+        db.query(ProductRevision)
+        .filter(ProductRevision.id == revision.id)
+        .populate_existing()
+        .with_for_update()
+        .one()
+    )
+    if revision.status in {"approved", "superseded"}:
+        raise HTTPException(409, "已批准版本不可重新解析，请上传新图纸版本")
+    if revision.parse_status == "processing":
+        raise HTTPException(409, "图纸已有正在执行的识别任务")
+    document = (
+        db.query(SourceDocument)
+        .filter(SourceDocument.id == revision.drawing_document_id)
+        .one()
+    )
+    credentials = AIProviderConfigService(db)
+    if request.provider_config_id:
+        config, _ = credentials.resolve_for_use(
+            request.provider_config_id, current_user, context
+        )
+    else:
+        credentials.enforce_policy(request.mode, None, context)
+        config = (
+            resolve_offline_provider_config(db, context)
+            if request.mode == "offline"
+            else resolve_platform_provider_config(db, document)[0]
+        )
+    if request.mode != "offline":
+        if request.mode == "platform":
+            require_expected_route(request.expected_platform_route, config)
+        OperationsService(db).require_consent(
+            document.id,
+            config.base_url,
+            current_user,
+            context,
+            request.outbound_consent_id,
+        )
+    revision.parse_status = "processing"
+    try:
+        job = AIExtractionQueueService(db).create_job(
+            document_id=document.id,
+            schema_snapshot={
+                "schema_version": "drawing-v3",
+                "job_kind": "drawing",
+                "drawing_revision_id": revision.id,
+                "actor_user_id": current_user.id,
+                "source_data_version": revision.data_version,
+                "outbound_consent_id": request.outbound_consent_id,
+                "x-weld-routing": routing_snapshot(
+                    config, "drawing_import", "advanced"
+                ),
+            },
+            template_id=None,
+            mode=request.mode,
+            provider=config.provider,
+            model=config.model,
+            provider_config_id=request.provider_config_id,
+            run_ocr=True,
+            user=current_user,
+            context=context,
+        )
+    except Exception:
+        db.rollback()
+        raise
+    try:
+        dispatch_extraction_job(job)
+    except HTTPException:
+        job.status = "failed"
+        job.error_code = "queue_unavailable"
+        job.error_message = "后台任务队列不可用，请稍后重试"
+        job.completed_at = datetime.utcnow()
+        revision.parse_status = "failed"
+        db.commit()
+        raise
+    return {"job": ExtractionJobResponse.model_validate(job)}
 
 
 def permitted(db, user, context, action="view"):
@@ -112,9 +247,7 @@ def delete_project(
 ):
     context = resolve_workspace(db, current_user, workspace_id)
     permitted(db, current_user, context, "delete")
-    EngineeringService(db).delete_project(
-        project_id, current_user, context, storage
-    )
+    EngineeringService(db).delete_project(project_id, current_user, context, storage)
 
 
 @router.get("/projects/{project_id}/products")
@@ -177,6 +310,14 @@ def upload_drawing(
     context = resolve_workspace(db, current_user, workspace_id)
     permitted(db, current_user, context, "create")
     try:
+        from pathlib import Path
+        from app.services.cad_conversion_service import cad_capabilities
+
+        suffix = Path(file.filename or "").suffix.lower()
+        if suffix not in cad_capabilities()["extensions"]:
+            raise HTTPException(
+                422, "当前服务器不支持此图纸格式；DWG 需要可用的 ODA 转换器，请导出 PDF 或 DXF 后上传"
+            )
         return row(
             EngineeringService(db).upload_drawing(
                 product_id,
@@ -227,9 +368,7 @@ def delete_revision(
 ):
     context = resolve_workspace(db, current_user, workspace_id)
     permitted(db, current_user, context, "delete")
-    EngineeringService(db).delete_revision(
-        revision_id, current_user, context, storage
-    )
+    EngineeringService(db).delete_revision(revision_id, current_user, context, storage)
 
 
 @router.get("/revisions/{revision_id}/pages/{page_number}/preview")
@@ -303,21 +442,20 @@ def parse_drawing(
                     from types import SimpleNamespace
 
                     config = SimpleNamespace(
-                        id=None,
+                        id=platform["id"],
                         provider=platform["provider"],
                         base_url=platform["base_url"],
                         model=platform["model"],
-                        complexity_level=platform.get("complexity_level")
-                        or "advanced",
-                        point_multiplier=float(
-                            platform.get("point_multiplier") or 1
-                        ),
+                        complexity_level=platform.get("complexity_level") or "advanced",
+                        point_multiplier=float(platform.get("point_multiplier") or 1),
                     )
                     key = platform["api_key"]
             revision = EngineeringService(db)._get(
                 ProductRevision, revision_id, current_user, context
             )
             if request.mode != "offline":
+                if request.mode == "platform":
+                    require_expected_route(request.expected_platform_route, config)
                 provider_url = (
                     config.base_url if config is not None else request.base_url
                 )
@@ -336,7 +474,7 @@ def parse_drawing(
             request.extracted_payload,
             provider,
             request.mode,
-            config.id if config else None,
+            config.id if config and request.mode == "byok" else None,
             current_user,
             context,
             storage,
@@ -345,9 +483,7 @@ def parse_drawing(
                 "config_id": getattr(config, "id", None),
                 "task_type": "drawing_import",
                 "complexity": getattr(config, "complexity_level", "advanced"),
-                "point_multiplier": float(
-                    getattr(config, "point_multiplier", 1) or 1
-                ),
+                "point_multiplier": float(getattr(config, "point_multiplier", 1) or 1),
             },
         )
         return row(run)

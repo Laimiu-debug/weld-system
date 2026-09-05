@@ -129,8 +129,9 @@ def resolve_platform_ai_config(
     )
     if config_id:
         selected = next((item for item in items if item.id == config_id), None)
-        if selected is not None:
+        if selected is not None and selected.last_test_status == "success":
             return _platform_config_payload(selected, include_key=include_key)
+        raise HTTPException(409, "已选模型配置已停用或未通过测试，请重新选择并授权")
     # A saved platform model is only user-routable after the administrator's
     # real provider test succeeds. This prevents a merely persisted key/model
     # from appearing available in the user portal.

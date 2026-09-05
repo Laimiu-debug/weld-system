@@ -107,6 +107,12 @@ class OpenAICompatibleProvider:
         response = self._post(endpoint, payload)
         try:
             body = response.json()
+            if not isinstance(body, dict):
+                raise TypeError("provider response is not an object")
+            if body.get("status") == "incomplete" or any(
+                choice.get("finish_reason") == "length" for choice in body.get("choices", []) if isinstance(choice, dict)
+            ):
+                raise AIProviderError("provider_output_truncated", "模型输出超过长度限制，请拆分文档或提高输出上限后重试")
             output = (
                 _responses_output_text(body)
                 if self.config.provider == "openai_responses"
@@ -122,31 +128,30 @@ class OpenAICompatibleProvider:
             data = json.loads(output)
             if not isinstance(data, dict):
                 raise TypeError("structured output is not an object")
+            usage = body.get("usage") or {}
+            input_tokens = int(usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0)
+            output_tokens = int(usage.get("output_tokens", usage.get("completion_tokens", 0)) or 0)
+            total_tokens = int(usage.get("total_tokens", input_tokens + output_tokens) or 0)
+            if min(input_tokens, output_tokens, total_tokens) < 0:
+                raise ValueError("invalid usage")
         except (
             KeyError,
             IndexError,
             TypeError,
             ValueError,
             json.JSONDecodeError,
+            AttributeError,
+            OverflowError,
         ) as exc:
             raise AIProviderError(
                 "invalid_provider_response", "AI 服务返回了无法解析的结构化结果"
             ) from exc
-        usage = body.get("usage") or {}
-        input_tokens = int(
-            usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0
-        )
-        output_tokens = int(
-            usage.get("output_tokens", usage.get("completion_tokens", 0)) or 0
-        )
         return AIProviderResult(
             data=data,
             response_id=body.get("id"),
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            total_tokens=int(
-                usage.get("total_tokens", input_tokens + output_tokens) or 0
-            ),
+            total_tokens=total_tokens,
         )
 
     def close(self) -> None:
@@ -181,7 +186,7 @@ class OpenAICompatibleProvider:
         self, request: StructuredAIRequest, schema: dict[str, Any]
     ) -> dict[str, Any]:
         content: list[dict[str, Any]] = [
-            {"type": "input_text", "text": request.input_text}
+            {"type": "input_text", "text": _input_with_page_map(request)}
         ]
         content.extend(
             {"type": "input_image", "image_url": image.data_url, "detail": "high"}
@@ -207,7 +212,7 @@ class OpenAICompatibleProvider:
     def _chat_payload(
         self, request: StructuredAIRequest, schema: dict[str, Any]
     ) -> dict[str, Any]:
-        content: list[dict[str, Any]] = [{"type": "text", "text": request.input_text}]
+        content: list[dict[str, Any]] = [{"type": "text", "text": _input_with_page_map(request)}]
         content.extend(
             {
                 "type": "image_url",
@@ -251,6 +256,15 @@ class OpenAICompatibleProvider:
         return (
             urlsplit(self.config.base_url).hostname or ""
         ).lower() == "api.deepseek.com"
+
+
+def _input_with_page_map(request: StructuredAIRequest) -> str:
+    if not request.images:
+        return request.input_text
+    return request.input_text + "\nSource-page mapping (use these page numbers in evidence): " + "; ".join(
+        f"image {index} = source page {image.page_number}"
+        for index, image in enumerate(request.images, 1)
+    )
 
 
 def connection_test_request(*, vision: bool = False) -> StructuredAIRequest:

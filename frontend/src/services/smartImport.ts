@@ -380,6 +380,7 @@ class SmartImportService {
     platform_provider: string
     platform_model?: string
     platform_host: string
+    platform_route?: string
     byok_providers: Array<'openai_responses' | 'openai_compatible_chat'>
     byok_allowed_hosts: string[]
     max_document_pages: number
@@ -391,6 +392,7 @@ class SmartImportService {
     platform_provider: string
     platform_model?: string
     platform_host: string
+    platform_route?: string
     byok_providers: Array<'openai_responses' | 'openai_compatible_chat'>
     byok_allowed_hosts: string[]
     max_document_pages: number

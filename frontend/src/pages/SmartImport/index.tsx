@@ -124,6 +124,7 @@ const SmartImportPage: React.FC = () => {
   const [activeDocument, setActiveDocument] = useState<SourceDocument | null>(null)
   const [capabilities, setCapabilities] = useState<AICapabilities | null>(null)
   const [platformHosts, setPlatformHosts] = useState<Record<string, string>>({})
+  const [platformRoutes, setPlatformRoutes] = useState<Record<string, string>>({})
   const [quota, setQuota] = useState<AIQuotaStatus | null>(null)
   const [aiUsage, setAIUsage] = useState<AIUsageReport | null>(null)
   const [templates, setTemplates] = useState<WPSTemplateSummary[]>([])
@@ -514,6 +515,7 @@ const SmartImportPage: React.FC = () => {
         return { id: item.id, capabilities: await routes.get(key)! }
       }))
       setPlatformHosts(Object.fromEntries(resolved.map(item => [item.id, item.capabilities.platform_host])))
+      setPlatformRoutes(Object.fromEntries(resolved.map(item => [item.id, item.capabilities.platform_route || ''])))
       routedCapabilities = resolved[0].capabilities
     } catch (error) {
       message.error(errorMessage(error, '加载文档对应的模型配置失败'))
@@ -883,6 +885,8 @@ const SmartImportPage: React.FC = () => {
         provider_config_id: values.mode === 'saved' ? values.provider_config_id : undefined,
         outbound_consent_id: outboundConsentId,
         outbound_consent_ids: outboundConsentIds,
+        expected_platform_route: values.mode === 'platform' && activeDocument ? platformRoutes[activeDocument.id] || undefined : undefined,
+        expected_platform_routes: values.mode === 'platform' ? platformRoutes : undefined,
         template_id: sourceType === 'template' ? sourceId : undefined,
         module_id: sourceType === 'module' ? sourceId : undefined,
         run_ocr: values.run_ocr,

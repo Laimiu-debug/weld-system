@@ -43,6 +43,8 @@ const EngineeringProjects: React.FC = () => {
   const [revisions, setRevisions] = useState<Record<string, DataRow[]>>({});
   const [active, setActive] = useState<DataRow | null>(null);
   const [loading, setLoading] = useState(true);
+  const [drawingFormats, setDrawingFormats] = useState(".pdf,.png,.jpg,.jpeg,.tif,.tiff");
+  const [cadNotice, setCadNotice] = useState("CAD 支持状态尚未加载，可先上传 PDF。");
   const [projectOpen, setProjectOpen] = useState(false);
   const [productOpen, setProductOpen] = useState(false);
   const [projectForm] = Form.useForm();
@@ -63,6 +65,10 @@ const EngineeringProjects: React.FC = () => {
   }, []);
   useEffect(() => {
     void loadProjects();
+    void engineeringService.drawingCapabilities().then((value) => {
+      setDrawingFormats(value.extensions.join(","));
+      setCadNotice(value.cad_notice);
+    }).catch(() => undefined);
   }, [loadProjects]);
   useEffect(() => {
     if (!active) {
@@ -273,7 +279,7 @@ const EngineeringProjects: React.FC = () => {
                             </Space>
                           </div>
                           <Upload
-          accept=".pdf,.dxf,.dwg,.png,.jpg,.jpeg,.tif,.tiff"
+                            accept={drawingFormats}
                             showUploadList={false}
                             beforeUpload={(file) => upload(product, file)}
                           >
@@ -285,6 +291,7 @@ const EngineeringProjects: React.FC = () => {
                               上传新图纸
                             </Button>
                           </Upload>
+                          <Text type="secondary">{cadNotice}</Text>
                         </div>
                         <div className="engineering-revisions">
                           {(revisions[product.id] || []).map((rev) => (

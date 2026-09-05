@@ -269,11 +269,13 @@ class AIExtractionQueueService:
     def retry_job(
         self, source: ExtractionJob, user: User, context: WorkspaceContext
     ) -> ExtractionJob:
+        if (source.schema_snapshot or {}).get("job_kind") == "drawing":
+            raise HTTPException(409, "请在图纸审核页重新选择模型并重试识别")
         if source.status not in {"failed", "cancelled"}:
             raise HTTPException(status_code=409, detail="只有失败或已取消任务可以重试")
         return self.create_job(
             document_id=source.document_id,
-            schema_snapshot=source.schema_snapshot,
+            schema_snapshot={**source.schema_snapshot, "actor_user_id": user.id},
             template_id=source.template_id,
             mode=source.mode,
             provider=source.provider,
@@ -286,8 +288,14 @@ class AIExtractionQueueService:
         )
 
     def cancel_job(self, job: ExtractionJob) -> ExtractionJob:
+        self.db.refresh(job, with_for_update=True)
         if job.status in {"completed", "failed", "cancelled"}:
             raise HTTPException(status_code=409, detail="当前任务状态不能取消")
+        if job.status == "queued" and (job.schema_snapshot or {}).get("job_kind") == "drawing":
+            from app.models.engineering import ProductRevision
+            revision = self.db.query(ProductRevision).filter(ProductRevision.id == job.schema_snapshot["drawing_revision_id"]).first()
+            if revision:
+                revision.parse_status = "failed"
         job.status = "cancelled"
         job.error_code = "task_cancelled"
         job.error_message = "任务已由用户取消"
