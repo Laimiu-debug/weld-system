@@ -714,7 +714,7 @@ class AIExtractionService:
                 continue
             value = _binding_value(data, binding)
             if value is None:
-                continue
+                value = {"value": None, "confidence": 0, "evidence": []}
             field = ExtractedField(
                 id=str(uuid4()),
                 entity_id=entity.id,

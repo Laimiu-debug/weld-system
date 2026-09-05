@@ -63,6 +63,7 @@ import {
 } from "@/services/sequence";
 import "./sequence.css";
 import ProductionReleasePanel from "./ProductionReleasePanel";
+import SourceImpactAlert from "./SourceImpactAlert";
 import { productionError } from "./SequenceChangePanel";
 import { productionReleaseService } from "@/services/productionRelease";
 
@@ -458,15 +459,18 @@ const WeldSequencePlanning: React.FC = () => {
         />
 
         {detail && (
-          <ProductionReleasePanel
-            key={detail.revision.id}
-            sequenceId={detail.revision.id}
-            approved={detail.revision.status === "approved"}
-            onSequenceChange={async (newId) => {
-              await load();
-              setActiveId(newId);
-            }}
-          />
+          <>
+            <SourceImpactAlert impact={detail?.source_impact} revisionId={id} />
+            <ProductionReleasePanel
+              key={detail.revision.id}
+              sequenceId={detail.revision.id}
+              approved={detail.revision.status === "approved"}
+              onSequenceChange={async (newId) => {
+                await load();
+                setActiveId(newId);
+              }}
+            />
+          </>
         )}
         <Card className="sequence-toolbar">
           <Space wrap>

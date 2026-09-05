@@ -102,14 +102,26 @@ class DrawingProvider:
             },
         ]
         return AIProviderResult(
-            deepcopy(values[(len(self.requests) - 1) % 3]), "qa-response", 3, 4, 7
+            deepcopy(
+                values[
+                    0
+                    if "title" in request.schema_name
+                    else 1
+                    if "parts" in request.schema_name
+                    else 2
+                ]
+            ),
+            "qa-response",
+            3,
+            4,
+            7,
         )
 
     def close(self):
         pass
 
 
-def queue(db, owner, rev):
+def queue(db, owner, rev, **options):
     config = SimpleNamespace(
         id=None,
         provider="openai_compatible_chat",
@@ -121,7 +133,7 @@ def queue(db, owner, rev):
         return_value=config,
     ), patch("app.api.v1.endpoints.engineering.dispatch_extraction_job") as dispatch:
         result = queue_drawing(
-            rev.id, DrawingAIRequest(mode="offline"), db, owner, None
+            rev.id, DrawingAIRequest(mode="offline", **options), db, owner, None
         )
         assert dispatch.call_count == 1
     return result["job"].id
@@ -154,6 +166,7 @@ def test_queued_drawing_survives_new_session_and_duplicate_delivery(
     assert run_job(sessions, job_id, provider, storage)["status"] == "completed"
     assert len(provider.requests) == 3
     assert all(request.images for request in provider.requests)
+    assert provider.requests[0].images == provider.requests[1].images
     db.expire_all()
     job = db.get(ExtractionJob, job_id)
     assert (job.status, job.total_tokens) == ("completed", 21)
@@ -457,11 +470,178 @@ def test_pqr_ocr_retry_reuses_good_pages_and_persists_fields(db, tmp_path):
         ),
         AIProviderResult({"unmapped_fields": []}, None, 1, 1, 2),
     ]
+    schema["field_bindings"].append(
+        {
+            "field_key": "missing_parameter",
+            "field_id": "missing",
+            "module_id": "core",
+            "extractable": True,
+        }
+    )
     next_job, next_entity, _ = service.run(
         document.id, schema, None, "offline", True, owner, context
     )
     assert next_job.status == "completed"
     assert next_entity.version == 2
+    missing = (
+        db.query(ExtractedField)
+        .filter_by(entity_id=next_entity.id, field_key="missing_parameter")
+        .one()
+    )
+    assert missing.normalized_value is None and missing.review_status == "pending"
+    from app.models.smart_import import FieldEvidence
+
+    assert db.query(FieldEvidence).filter_by(extracted_field_id=missing.id).count() == 0
+    from app.services.smart_import_review_service import SmartImportReviewService
+    from app.schemas.smart_import import FieldReviewRequest
+
+    SmartImportReviewService(db).review_field(
+        next_entity.id,
+        missing.id,
+        FieldReviewRequest(action="correct", value=12, reason="核对原件后补录"),
+        owner,
+        context,
+    )
+    db.refresh(missing)
+    assert missing.normalized_value == 12 and missing.review_status == "corrected"
     assert all(
         not call.args[0].images for call in provider.structured_response.call_args_list
+    )
+
+
+def test_failed_stage_retry_reuses_validated_checkpoints(db, sessions, tmp_path):
+    owner, context, rev, storage = drawing(db, tmp_path)
+    original = queue(db, owner, rev)
+    assert (
+        run_job(sessions, original, DrawingProvider(fail_stage=3), storage)["status"]
+        == "failed"
+    )
+    db.expire_all()
+    assert len(db.get(ExtractionJob, original).progress_detail["checkpoints"]) == 2
+    retry = queue(db, owner, rev, retry_job_id=original)
+    provider = DrawingProvider()
+    assert run_job(sessions, retry, provider, storage)["status"] == "completed"
+    assert [r.schema_name for r in provider.requests] == [
+        "engineering_drawing_welds_v2"
+    ]
+    db.expire_all()
+    assert db.get(ExtractionJob, retry).total_tokens == 7
+    assert len(db.get(ExtractionJob, retry).progress_detail["checkpoints"]) == 3
+    with pytest.raises(HTTPException, match="已变化"):
+        queue(db, owner, rev, retry_job_id=original)
+    db.rollback()
+
+
+def test_scoped_recognition_preserves_review_data_and_restores_evidence(
+    db, sessions, tmp_path
+):
+    owner, context, rev, storage = drawing(db, tmp_path)
+    service = EngineeringService(db)
+    service.parse_revision(
+        rev.id,
+        {"parts": [{"ref": "old", "name": "Keep", "quantity": None}]},
+        None,
+        "manual",
+        None,
+        owner,
+        context,
+        storage,
+    )
+    original = db.query(Part).filter_by(revision_id=rev.id).one()
+    assert original.quantity is None
+    version, metadata = rev.data_version, deepcopy(rev.drawing_metadata)
+    job_id = queue(
+        db,
+        owner,
+        rev,
+        page_numbers=[1],
+        region=[0.2, 0.3, 0.8, 0.9],
+        page_rotations={1: 180},
+    )
+
+    class RegionProvider(DrawingProvider):
+        def structured_response(self, request):
+            result = super().structured_response(request)
+            for item in result.data.get("parts", []):
+                item["evidence"] = {"page": 1, "bbox": [0, 0, 1, 1]}
+            return result
+
+    assert run_job(sessions, job_id, RegionProvider(), storage)["status"] == "completed"
+    db.expire_all()
+    job = db.get(ExtractionJob, job_id)
+    assert job.progress_detail["proposal_only"]
+    assert job.progress_detail["proposal"]["parts"][0]["evidence"][
+        "bbox"
+    ] == pytest.approx([0.2, 0.3, 0.8, 0.9], abs=0.002)
+    assert db.get(ProductRevision, rev.id).data_version == version
+    assert db.get(ProductRevision, rev.id).drawing_metadata == metadata
+    assert db.query(Part).filter_by(revision_id=rev.id).one().id == original.id
+    assert db.query(Part).filter_by(revision_id=rev.id).one().quantity is None
+
+
+def test_cancel_running_drawing_releases_revision_and_late_result_preserves_new_job(
+    db, sessions, tmp_path
+):
+    from app.services.ai_extraction_queue_service import AIExtractionQueueService
+
+    owner, context, rev, storage = drawing(db, tmp_path)
+    old_id = queue(db, owner, rev)
+    replacement = []
+
+    class CancellingProvider(DrawingProvider):
+        def structured_response(self, request):
+            if not replacement:
+                db.expire_all()
+                AIExtractionQueueService(db).cancel_job(db.get(ExtractionJob, old_id))
+                db.refresh(rev)
+                assert rev.parse_status == "failed"
+                replacement.append(queue(db, owner, rev))
+            return super().structured_response(request)
+
+    assert (
+        run_job(sessions, old_id, CancellingProvider(), storage)["status"]
+        == "cancelled"
+    )
+    db.expire_all()
+    assert db.get(ProductRevision, rev.id).parse_status == "processing"
+    assert db.get(ExtractionJob, replacement[0]).status == "queued"
+    assert (
+        run_job(sessions, replacement[0], DrawingProvider(), storage)["status"]
+        == "completed"
+    )
+
+
+def test_title_fallback_restores_both_full_page_and_crop_regions(
+    db, sessions, tmp_path
+):
+    owner, context, rev, storage = drawing(db, tmp_path)
+    job_id = queue(db, owner, rev, page_rotations={1: 180})
+
+    class FallbackProvider(DrawingProvider):
+        def structured_response(self, request):
+            result = super().structured_response(request)
+            if request.schema_name == "engineering_drawing_title_v2":
+                result.data["product"] = {}
+                result.data["unresolved_regions"] = [
+                    {
+                        "message": "full",
+                        "evidence": {"page": 1, "bbox": [0, 0.1, 0.2, 0.2]},
+                    }
+                ]
+            elif request.schema_name == "engineering_drawing_title_full_v2":
+                result.data["unresolved_regions"] = [
+                    {"message": "crop", "evidence": {"page": 1, "bbox": [0, 0, 1, 1]}}
+                ]
+            return result
+
+    assert (
+        run_job(sessions, job_id, FallbackProvider(), storage)["status"] == "completed"
+    )
+    db.expire_all()
+    regions = db.get(ProductRevision, rev.id).drawing_metadata["recognition_coverage"][
+        "unresolved_regions"
+    ]
+    assert regions[0]["evidence"]["bbox"] == pytest.approx([0.8, 0.8, 1, 0.9])
+    assert regions[1]["evidence"]["bbox"] == pytest.approx(
+        [0, 0, 0.44, 0.54], abs=0.002
     )

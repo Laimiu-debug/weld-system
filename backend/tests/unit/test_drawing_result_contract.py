@@ -1,3 +1,4 @@
+from datetime import datetime
 from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -157,6 +158,9 @@ def test_text_provider_result_is_validated_before_identity_reads_or_replacing_sa
     queries[ProductRevision].filter.return_value.first.return_value = revision
     queries[DrawingParseRun].filter.return_value.first.return_value = None
     queries[ExtractionJob].filter.return_value.first.return_value = None
+    queries[ProductRevision].filter.return_value.with_for_update.return_value.first.return_value = revision
+    queries[ExtractionJob.id] = queries[ExtractionJob]
+    db.add.side_effect = lambda row: setattr(row, "created_at", datetime(2026, 9, 5)) if isinstance(row, ExtractionJob) else None
     db.query.side_effect = lambda model: queries[model]
     service = EngineeringService(db)
     service._get = Mock(return_value=revision)

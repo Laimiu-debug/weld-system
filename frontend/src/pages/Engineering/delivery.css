@@ -1,0 +1,54 @@
+.delivery-page {
+  padding: 20px;
+  max-width: 1400px;
+  margin: auto;
+}
+.delivery-report {
+  background: white;
+  color: #18212f;
+  padding: 20px;
+}
+.delivery-task {
+  margin: 18px 0;
+  break-inside: avoid;
+}
+.delivery-task-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.delivery-task-head a {
+  word-break: break-all;
+}
+.delivery-report .ant-descriptions-item-content {
+  overflow-wrap: anywhere;
+}
+@media print {
+  body:has(.delivery-report) * {
+    visibility: hidden;
+  }
+  .delivery-report,
+  .delivery-report * {
+    visibility: visible !important;
+  }
+  .delivery-report {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+  }
+  .delivery-no-print,
+  .delivery-no-print * {
+    display: none !important;
+  }
+  .delivery-task {
+    box-shadow: none;
+  }
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+}

@@ -1160,7 +1160,12 @@ def cancel_extraction_job(
     context = resolve_workspace(db, current_user, workspace_id)
     service = AIExtractionQueueService(db)
     job = service.cancel_job(service.get_job(job_id, current_user, context))
-    celery_app.control.revoke(job.id, terminate=False)
+    AIQuotaService(db).refund(job.id, current_user, context, "用户取消后台任务")
+    try:
+        celery_app.control.revoke(job.id, terminate=False)
+    except Exception:
+        # Persisted cancelled status already prevents execution or final writes.
+        logger.warning("Could not deliver optional revoke for cancelled job %s", job.id)
     document = SmartImportService(db).get_document(
         job.document_id, current_user, context
     )

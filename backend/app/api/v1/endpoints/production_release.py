@@ -181,3 +181,13 @@ def apply_sequence_change(
             request_id, data.proposed_sequence_revision_id, current_user, context
         )
     )
+
+
+@router.get("/sequences/{sequence_id}/delivery")
+def delivery(sequence_id: str, db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID")):
+    context = resolve_workspace(db, current_user, workspace_id)
+    _permission(db, current_user, context)
+    from app.services.sequence_delivery_service import delivery_package
+    return delivery_package(db, sequence_id, current_user, context)

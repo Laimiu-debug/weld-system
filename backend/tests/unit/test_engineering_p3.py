@@ -8,7 +8,8 @@ from app.models.engineering import (
     WeldJoint,
     WeldRequirement,
 )
-from app.models.smart_import import ImportBatch, SourceDocument
+from datetime import datetime
+from app.models.smart_import import ImportBatch, SourceDocument, ExtractionJob
 from app.services.engineering_service import (
     DRAWING_SCHEMA,
     clean_evidence,
@@ -228,6 +229,7 @@ def test_drawing_provider_rejection_becomes_user_facing_run_error() -> None:
         revision_query,
         run_query,
         job_query,
+        job_query,
     ]
     revision = SimpleNamespace(
         id="revision-1",
@@ -242,6 +244,8 @@ def test_drawing_provider_rejection_becomes_user_facing_run_error() -> None:
         company_id=None,
         factory_id=None,
     )
+    db.add.side_effect = lambda row: setattr(row, "created_at", datetime(2026, 9, 5)) if isinstance(row, ExtractionJob) else None
+    revision_query.filter.return_value.with_for_update.return_value.first.return_value = revision
     revision_query.filter.return_value.first.return_value = revision
     run_query.filter.return_value.first.return_value = None
     job_query.filter.return_value.first.return_value = None

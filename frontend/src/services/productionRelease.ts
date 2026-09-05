@@ -8,9 +8,13 @@ export interface ReleasedTask {
   status: string;
   assigned_welder_id: number | null;
   assigned_equipment_id: number | null;
-  source_step_snapshot: { order_index?: number };
+  source_step_snapshot: {
+    order_index?: number;
+    process_parameters?: { wps?: Record<string, unknown> };
+  };
 }
 export interface ReleaseDetail {
+  source_impact?: import("@/pages/Engineering/SourceImpactAlert").SourceImpact;
   release: { id: string; status: string; consumable_issue_list_id?: string };
   tasks: ReleasedTask[];
   authorizations: ResourceAuthorization[];
@@ -52,6 +56,11 @@ export interface ResourceAuthorization {
 }
 const root = "/production-release";
 export const productionReleaseService = {
+  async delivery(sequenceId: string): Promise<Record<string, any>> {
+    return (
+      await api.get(`/production-release/sequences/${sequenceId}/delivery`)
+    ).data;
+  },
   async forSequence(id: string): Promise<ReleaseDetail | null> {
     return (await api.get(`${root}/sequences/${id}/release`)).data;
   },

@@ -138,17 +138,17 @@
 
 - [x] SQ19 **P1｜批次 4 新发现并修复：人工修正零件关联及版本映射。** 新增/修改焊缝及修改装配父级时，拒绝跨版本、已删除、不存在或格式无效的零件引用；禁止父子循环。已批准图纸修改生成新版本时，提交的旧零件 ID 映射到新版本零件。[工程服务](F:/code/weldsystem/backend/app/services/engineering_service.py)、[关联回归测试](F:/code/weldsystem/backend/tests/unit/test_engineering_part_links.py)。
 
-- [ ] SQ08 **P1｜已复现、改动待验收：图纸方向不能按线条密度猜。** 合成的正常横向 PDF 被旧预处理旋转 180°，裁剪后模型看不到图签。验收：横图、竖图、倒置扫描、非右下角图签均能保留完整输入和正确证据坐标。[预处理](F:/code/weldsystem/backend/app/services/drawing_preprocessing_service.py:27)
+- [x] SQ08 **P1｜批次 15 已完成本地回归：完整页图签与方向证据。** 移除密度猜测；全页查找图签，支持指定页旋转及区域识别，横/竖/倒置输入和原页证据坐标通过回归。真实模型准确率另见 AI06。 [验收说明](F:/code/weldsystem/docs/SQ08_SQ15_OPERATIONS.md)
 - [x] SQ09 **P1｜批次 8 已完成本地回归：大幅面 PDF 渲染先限制分辨率。** 在栅格分配前限制最长边和像素数；非法尺寸、页码和倍率返回明确错误，越界及编码失败释放原生 PDF 资源。A0/A1、混合页幅、极宽页面及模拟损坏尺寸已验证；真实图纸与模型端验收仍属 AI06。[渲染器](F:/code/weldsystem/backend/app/services/document_page_renderer.py)
-- [ ] SQ10 **P1｜已确认：识别需要真正的后台任务与恢复能力。** 目前图纸仍是同步 `/parse` 调用，延长超时只是临时措施。验收：显示当前页/阶段、刷新后继续查看、取消、失败阶段重试；重复点击不重复扣费。[图纸接口](F:/code/weldsystem/backend/app/api/v1/endpoints/engineering.py:271)
-- [ ] SQ11 **P1｜已确认、改动待验收：模型输出与入库之间补稳定的数据契约。** 真实调用出现证据为 null、零件 ref 为空等结果；未知参数不能被默认为确定值。验收：保留可用部分、标记待补项，类型错误不变成 500，失败不覆盖上次有效结果。[工程服务](F:/code/weldsystem/backend/app/services/engineering_service.py)
-- [ ] SQ12 **P1｜完善建议：图纸审核增加可核对的完整性报告。** 明确识别页数、焊缝总数、疑似漏项、重复编号、连接零件未解析、关键参数无证据；支持对单页/局部区域重识别，避免每次整份重跑。[图纸审核页](F:/code/weldsystem/frontend/src/pages/Engineering/DrawingReview.tsx)
-- [ ] SQ13 **P1｜已确认、改动待验收：PQR 扫描判断、失败页重试、空字段处理联动。** 有文字页眉的扫描页和纯矢量轮廓页可能漏 OCR；旧重试只处理 pending 页。验收：文本、扫描、混合、多页 PQR 均生成待审核字段，证据来自原页；缺少字段可补录后继续。[解析器](F:/code/weldsystem/backend/app/services/document_parser_service.py)、[AI 提取](F:/code/weldsystem/backend/app/services/ai_extraction_service.py)
+- [x] SQ10 **P1｜批次 15 已完成本地回归：后台任务恢复与阶段重试。** Celery 持久化任务、刷新恢复、渲染页/阶段进度、取消和成功阶段检查点已接通；重试校验图纸版本、范围和模型路线，复用成功阶段，重复投递不重复处理。 [验收说明](F:/code/weldsystem/docs/SQ08_SQ15_OPERATIONS.md)
+- [x] SQ11 **P1｜批次 15 已完成本地回归：稳定的模型入库契约。** 空证据、缺失引用及未知参数可保留；未知数量为 NULL，无效类型返回提取错误，失败不覆盖有效审核数据；数量迁移验证通过。 [验收说明](F:/code/weldsystem/docs/SQ08_SQ15_OPERATIONS.md)
+- [x] SQ12 **P1｜批次 15 已完成本地回归：完整性报告与局部重识别。** 展示覆盖页、记录数量、重复编号、未解析连接、缺失证据、未知数量及疑似遗漏区域；单页/区域结果存为待核对建议，不覆盖现有审核数据，支持定位和人工修正。 [验收说明](F:/code/weldsystem/docs/SQ08_SQ15_OPERATIONS.md)
+- [x] SQ13 **P1｜批次 15 已完成本地回归：扫描判断、OCR 重试和空字段补录。** 覆盖可搜索页眉扫描、嵌套图片和矢量轮廓；失败/空页重试、成功页复用，缺失字段生成无证据的待审核项，补录和草稿更新验证通过。 [验收说明](F:/code/weldsystem/docs/SQ08_SQ15_OPERATIONS.md)
 - [x] SQ14 **P1｜已确认：对称策略可能没有改变实际焊接顺序。** 本轮用 4 条同类纵缝运行纯算法，开/关 symmetric 均得到 `WELD-1,2,3,4`；前面的交错排列被后面的优先级排序覆盖。验收：策略改变可观察的施工顺序，同时保留全部强制依赖。[策略](F:/code/weldsystem/backend/app/services/sequence_service.py:330)、[拓扑排序](F:/code/weldsystem/backend/app/services/sequence_service.py:135)
-- [ ] SQ15 **P1｜已确认：执行记录需要参数和质量状态校验。** `actual_parameters`、`quality_snapshot` 等作为字典保存，`completed` 可直接令任务进度变 100%；当前方法未比较实参与冻结工艺范围。验收：超范围、缺必检项、返修未闭合时必须阻止完成或走明确偏差审批。[执行服务](F:/code/weldsystem/backend/app/services/production_release_service.py:487)
-- [ ] SQ16 **P2｜完善建议：热处理/检测不要只生成统一模板节点。** 现有任一焊缝需 PWHT 即生成整体热处理节点；应支持局部/整体、检测在热处理前或后及多阶段处理，由审核后的工艺要求驱动。验收：不同要求得到不同节点与依赖，不依靠人工备注补业务约束。[模板](F:/code/weldsystem/backend/app/services/sequence_service.py:435)
-- [ ] SQ17 **P1｜待验证：来源变更到生产执行的影响提示。** 图纸、WPS、PQR、规则包、匹配冻结版本发生变化时，逐一验证旧焊序是否提示失效、已放行任务是否保留原快照、受影响焊缝是否可追踪。已有冻结/依赖机制，不应误报为“完全没有版本控制”。[匹配服务](F:/code/weldsystem/backend/app/services/matching_service.py)、[焊序服务](F:/code/weldsystem/backend/app/services/sequence_service.py)
-- [ ] SQ18 **P2｜完善建议：补可用的施工交付包。** 将焊缝位置、步骤编号、WPS/PQR 版本、检验点、领用材料和执行记录串成可导出/打印的文件；面向车间操作提供逐步确认与扫码定位。验收：从图纸任一焊缝能查到对应施工和检测记录。[焊序页面](F:/code/weldsystem/frontend/src/pages/Engineering/WeldSequencePlanning.tsx)
+- [x] SQ15 **P1｜批次 15 已完成本地回归：冻结参数和质量闭合门禁。** 完工检查冻结 WPS 范围、对应实测值、必检项和返修/复验；超范围、未知范围或未闭合均阻止完成。过程记录保存服务器校验结果，质量编辑可录入复验，确认人由服务端记录。 [验收说明](F:/code/weldsystem/docs/SQ08_SQ15_OPERATIONS.md)
+- [x] SQ16 **P2｜批次 16 已完成本地回归：多阶段热处理与检测。** 局部/整体、温度和保温时间、热前/热后检测由审核阶段计划生成节点及强制依赖；同批组参数冲突及旧数据缺少计划明确拦截。 [验收说明](F:/code/weldsystem/docs/SQ16_SQ21_OPERATIONS.md)
+- [x] SQ17 **P1｜批次 16 已完成本地回归：来源变更影响提示。** 五类来源逐项验证；旧焊序显示受影响焊缝并阻止新放行，已发布图纸/工艺/领用快照保留，可从提示定位焊缝。 [验收说明](F:/code/weldsystem/docs/SQ16_SQ21_OPERATIONS.md)
+- [x] SQ18 **P2｜批次 16 已完成本地回归：施工交付包。** 已放行焊序支持焊缝/步骤定位、检验与执行记录、材料批次、HTML/JSON 导出、打印和二维码；执行继续经过实时条件校验。 [验收说明](F:/code/weldsystem/docs/SQ16_SQ21_OPERATIONS.md)
 
 SQ01～SQ07 的历史复核补充（批次 14 的修复结果优先）：
 
@@ -311,3 +311,17 @@ SQ01～SQ07 的历史复核补充（批次 14 的修复结果优先）：
 - 依赖与 CI：加入前端交互测试及 PostgreSQL 回归门禁。审计发现现有 Tiptap 原型污染漏洞，统一升级 Tiptap 至 3.31.3 并验证 WPS 文本、格式、表格和图片回存；用户端官方 registry 审计为 0 漏洞。
 - 部署与边界：新增 [数据库迁移](F:/code/weldsystem/backend/alembic/versions/add_attachment_payment_integrity.py)，需要在上线前运行 `alembic upgrade head` 并同步更新 Nginx、worker/beat。本轮没有迁移生产库或部署；本机 Docker 引擎未运行，Nginx 容器运行验收未执行。旧附件不按文件名推测所有者，需从原业务记录重新上传，或在核对唯一归属后单独迁移元数据。
 - 验收环境：全部数据库写入只发生于随机生成的 `qa_foundation_*` schema，初始化前断言当前 schema，测试结束删除。测试用户使用不可登录密码，不创建可用账号、令牌或支付凭据。报告：[后端联合回归](F:/code/weldsystem/output/foundation-t01-t06/backend-tests.txt)、[支付最终复验](F:/code/weldsystem/output/foundation-t01-t06/payment-recheck.txt)。部署细节见 [基础修复运维说明](F:/code/weldsystem/docs/FOUNDATION_T01_T06_OPERATIONS.md)。
+
+## 批次 15：SQ08–SQ15 图纸审核与执行校验（2026-09-05）
+
+完成范围、操作说明、迁移及本地回归证据见 [SQ08–SQ15 验收记录](F:/code/weldsystem/docs/SQ08_SQ15_OPERATIONS.md)。SQ09、SQ14 原有实现继续回归通过；本批未部署线上，AI06 真实模型图纸准确率仍待验收。
+
+
+## 修复批次 16（2026-09-05，SQ16–SQ21 施工阶段、交付与并发）
+
+- SQ16：新增审核阶段计划；局部/整体热处理、热前/热后检测、多阶段与分段焊接依赖由结构化要求生成，缺失计划和参数冲突明确拦截。
+- SQ17：图纸、WPS、PQR、规则包、匹配冻结五类变更均有真实数据库验证；提示受影响焊缝，阻止旧来源新放行，已发布图纸/焊序/领用快照保持不变。
+- SQ18：交付包支持焊缝/任务定位、检验/执行/材料流水、二维码、HTML/JSON 导出及打印；记录完成后刷新。Edge 浏览器验证了实际导出、重新打开、单步定位和打印样式。
+- SQ19–SQ21：图纸和任务写入增加行锁及刷新，数据库验证并发父级修改、克隆关联、旧会话回写及特批与新派工竞争。修正匹配与执行焊位字段不一致，兼容旧快照。
+- 本地后端全量回归 825 项通过；最后焊位修正相关 57 项专项回归通过。前端 24 项通过，类型检查、构建和定向 ESLint 通过。保留既有弃用提示及大包构建警告。
+- 说明及数据库迁移要求见 [SQ16–SQ21 验收说明](F:/code/weldsystem/docs/SQ16_SQ21_OPERATIONS.md)。本批未提交推送、未部署、未升级现有业务数据库；页面使用合成数据检查，尚非真实企业账号/实体打印机验收。

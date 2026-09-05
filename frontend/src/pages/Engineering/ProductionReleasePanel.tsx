@@ -22,14 +22,17 @@ import weldersService from "@/services/welders";
 import equipmentService from "@/services/equipment";
 import SequenceChangePanel from "./SequenceChangePanel";
 import { Link } from "react-router-dom";
+import SourceImpactAlert from "./SourceImpactAlert";
 
 function errorText(error: any): string {
   const detail = error?.response?.data?.detail;
   if (typeof detail === "string") return detail;
   if (detail?.message)
-    return [detail.message, ...(detail.qualification?.reasons || [])].join(
-      "；",
-    );
+    return [
+      detail.message,
+      ...(detail.qualification?.reasons || []),
+      ...(detail.issues || []),
+    ].join("；");
   return error?.message || "操作失败，请重试";
 }
 
@@ -37,7 +40,11 @@ export default function ProductionReleasePanel({
   sequenceId,
   approved,
   onSequenceChange,
+  taskIds,
+  onRecordsChange,
 }: {
+  taskIds?: number[];
+  onRecordsChange?: () => void;
   sequenceId: string;
   approved: boolean;
   onSequenceChange?: (id: string) => void;
@@ -204,6 +211,7 @@ export default function ProductionReleasePanel({
       );
       setAction(null);
       await load();
+      onRecordsChange?.();
     } catch (e) {
       const status = (e as any)?.response?.status;
       if (
@@ -229,6 +237,14 @@ export default function ProductionReleasePanel({
         </Button>
       }
     >
+      <SourceImpactAlert impact={detail?.source_impact} />
+      {detail && (
+        <Link
+          to={`/engineering/sequences/${sequenceId}/delivery${window.location.search}`}
+        >
+          <Button>施工交付包 / 扫码定位</Button>
+        </Link>
+      )}
       {error ? (
         <Alert type="error" showIcon message={error} />
       ) : !detail ? (
@@ -278,11 +294,13 @@ export default function ProductionReleasePanel({
           rowKey="id"
           loading={loading}
           scroll={{ x: 700 }}
-          dataSource={[...detail.tasks].sort(
-            (a, b) =>
-              (a.source_step_snapshot?.order_index || 0) -
-              (b.source_step_snapshot?.order_index || 0),
-          )}
+          dataSource={detail.tasks
+            .filter((task) => !taskIds || taskIds.includes(task.id))
+            .sort(
+              (a, b) =>
+                (a.source_step_snapshot?.order_index || 0) -
+                (b.source_step_snapshot?.order_index || 0),
+            )}
           columns={[
             { title: "工序", dataIndex: "task_name" },
             {
@@ -541,10 +559,39 @@ export default function ProductionReleasePanel({
               </Form.Item>
               <Alert
                 type="info"
-                message="请确认工序实际完成。前置工序、检验结果和资源资格由系统检查；检查不通过时不会保存完工。"
+                message="请确认工序实际完成。冻结参数范围、前置工序、检验结果、返修闭合和资源资格由系统检查；检查不通过时不会保存完工。"
               />
               {action?.task.task_type === "welding" && (
                 <>
+                  <Alert
+                    type="info"
+                    message="冻结 WPS 参数（完工时须补齐对应实测值）"
+                    description={
+                      Object.entries(
+                        action.task.source_step_snapshot?.process_parameters
+                          ?.wps || {},
+                      )
+                        .filter(
+                          ([key, value]) =>
+                            [
+                              "current_range",
+                              "voltage_range",
+                              "travel_speed",
+                              "welding_speed",
+                              "heat_input_min",
+                              "heat_input_max",
+                              "preheat_temp_min",
+                              "preheat_temp_max",
+                              "interpass_temp_max",
+                            ].includes(key) &&
+                            value != null &&
+                            value !== "",
+                        )
+                        .map(([key, value]) => `${key}: ${value}`)
+                        .join("；") ||
+                      "缺少可校验范围，请完善工艺并重新冻结放行"
+                    }
+                  />
                   <Form.Item name="current" label="实际电流（A）">
                     <InputNumber min={0} disabled={pendingExecution} />
                   </Form.Item>

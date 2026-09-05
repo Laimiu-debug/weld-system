@@ -327,6 +327,7 @@ class ProductionService:
                 raise HTTPException(422, '请通过计划关联任务操作修改归属')
             if {'status', 'progress_percentage', 'completed_quantity', 'actual_end_date'} & task_data.keys():
                 self._guard_plan_execution(task)
+            self.db.refresh(task, with_for_update=True)
             if task.production_release_id:
                 editable = {"notes", "priority", "planned_start_date", "planned_end_date", "estimated_duration_hours"}
                 blocked = [key for key, value in task_data.items()
@@ -399,6 +400,7 @@ class ProductionService:
             
             if getattr(task, 'plan_id', None) is not None:
                 raise HTTPException(409, '请先在计划中解除任务关联再删除')
+            self.db.refresh(task, with_for_update=True)
             if task.production_release_id:
                 raise HTTPException(409, "已放行焊序任务不能直接删除，请通过焊序变更流程处理")
             # 软删除
@@ -572,6 +574,7 @@ class ProductionService:
             current_user, task, "EDIT", workspace_context
         )
 
+        self.db.refresh(task, with_for_update=True)
         if task.production_release_id:
             raise HTTPException(409, "已放行焊序任务必须通过执行记录更新进度")
         self._guard_plan_execution(task)
@@ -609,6 +612,7 @@ class ProductionService:
             current_user, task, "EDIT", workspace_context
         )
 
+        self.db.refresh(task, with_for_update=True)
         if task.production_release_id:
             raise HTTPException(409, "已放行焊序任务必须通过焊序执行入口登记，不能使用普通生产记录")
         payload = record_data.copy()

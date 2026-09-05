@@ -7,16 +7,24 @@ export interface RevisionDetail {
   parts: DataRow[];
   weld_joints: DataRow[];
   requirements: DataRow[];
-  validation: { can_approve: boolean; risks: DataRow[] };
+  validation: {
+    can_approve: boolean;
+    risks: DataRow[];
+    completeness?: DataRow;
+  };
   preview_url: string;
 }
 
 export const engineeringService = {
-  async drawingCapabilities(): Promise<{ extensions: string[]; cad_notice: string }> {
+  async drawingCapabilities(): Promise<{
+    extensions: string[];
+    cad_notice: string;
+  }> {
     return (await api.get("/engineering/drawing-capabilities")).data;
   },
   async parseJobs(revisionId: string): Promise<DataRow[]> {
-    return (await api.get(`/engineering/revisions/${revisionId}/parse-jobs`)).data;
+    return (await api.get(`/engineering/revisions/${revisionId}/parse-jobs`))
+      .data;
   },
   async projects(): Promise<DataRow[]> {
     return (await api.get("/engineering/projects")).data;
@@ -66,13 +74,17 @@ export const engineeringService = {
     revisionId: string,
     data: DataRow = { mode: "platform", run_ocr: true },
   ): Promise<DataRow> {
-    return (await api.post(`/engineering/revisions/${revisionId}/parse-async`, data))
-      .data;
+    return (
+      await api.post(`/engineering/revisions/${revisionId}/parse-async`, data)
+    ).data;
   },
   async patchPart(id: string, values: DataRow): Promise<DataRow> {
     return (await api.patch(`/engineering/parts/${id}`, { values })).data;
   },
-  async patchProductIdentity(revisionId: string, values: DataRow): Promise<DataRow> {
+  async patchProductIdentity(
+    revisionId: string,
+    values: DataRow,
+  ): Promise<DataRow> {
     return (
       await api.patch(`/engineering/revisions/${revisionId}/product-identity`, {
         values,

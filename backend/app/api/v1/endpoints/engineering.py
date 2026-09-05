@@ -141,12 +141,37 @@ def queue_drawing(
             context,
             request.outbound_consent_id,
         )
+    from copy import deepcopy
+    from app.services.drawing_review_service import PIPELINE_VERSION
+    route = routing_snapshot(config, "drawing_import", "advanced")
+    options = {"page_numbers": request.page_numbers, "region": request.region,
+               "page_rotations": {str(k): v for k, v in request.page_rotations.items()},
+               "pipeline_version": PIPELINE_VERSION}
+    checkpoints = {}
+    if request.retry_job_id:
+        old = db.query(ExtractionJob).filter(ExtractionJob.id == request.retry_job_id).first()
+        snapshot = old.schema_snapshot or {} if old else {}
+        if (not old or snapshot.get("drawing_revision_id") != revision.id
+            or old.status not in {"failed", "cancelled"}
+            or snapshot.get("source_data_version") != revision.data_version
+            or snapshot.get("x-weld-routing") != route or old.mode != request.mode
+            or old.provider_config_id != request.provider_config_id
+            or (snapshot.get("drawing_options") or {}).get("pipeline_version") != PIPELINE_VERSION):
+            raise HTTPException(409, "原任务、图纸版本或模型配置已变化，请重新识别")
+        options = deepcopy(snapshot["drawing_options"])
+        checkpoints = deepcopy((old.progress_detail or {}).get("checkpoints") or {})
+    if any(n > revision.drawing_page_count for n in (options.get("page_numbers") or [])) or any(int(n) > revision.drawing_page_count for n in options.get("page_rotations", {})):
+        raise HTTPException(422, "识别页码超过图纸页数")
+    prior_parse_status = revision.parse_status
     revision.parse_status = "processing"
     try:
         job = AIExtractionQueueService(db).create_job(
             document_id=document.id,
             schema_snapshot={
                 "schema_version": "drawing-v3",
+                "drawing_options": options,
+                "prior_parse_status": prior_parse_status,
+                "retry_job_id": request.retry_job_id,
                 "job_kind": "drawing",
                 "drawing_revision_id": revision.id,
                 "actor_user_id": current_user.id,
@@ -168,6 +193,10 @@ def queue_drawing(
     except Exception:
         db.rollback()
         raise
+    job.progress_detail = {**(job.progress_detail or {}), "job_kind": "drawing",
+        "scope": options, "checkpoints": checkpoints,
+        "pages": {"completed": 0, "total": len(options.get("page_numbers") or []) or revision.drawing_page_count}}
+    db.commit()
     try:
         dispatch_extraction_job(job)
     except HTTPException:
@@ -417,6 +446,8 @@ def parse_drawing(
 ):
     context = resolve_workspace(db, current_user, workspace_id)
     permitted(db, current_user, context, "create")
+    if request.page_numbers or request.region or request.page_rotations or request.retry_job_id:
+        raise HTTPException(422, "局部识别、方向设置和阶段重试请使用后台识别接口")
     provider = None
     config = None
     try:

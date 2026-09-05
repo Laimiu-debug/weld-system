@@ -132,7 +132,7 @@ class AIExtractionQueueService:
                 self.quota.enforce_task_limits(
                     user,
                     context,
-                    max(1, int(getattr(document, "page_count", 0) or 0)),
+                    len(((schema_snapshot or {}).get("drawing_options") or {}).get("page_numbers") or []) or max(1, int(getattr(document, "page_count", 0) or 0)),
                     float(
                         ((schema_snapshot or {}).get("x-weld-routing") or {}).get(
                             "point_multiplier", 1
@@ -291,9 +291,9 @@ class AIExtractionQueueService:
         self.db.refresh(job, with_for_update=True)
         if job.status in {"completed", "failed", "cancelled"}:
             raise HTTPException(status_code=409, detail="当前任务状态不能取消")
-        if job.status == "queued" and (job.schema_snapshot or {}).get("job_kind") == "drawing":
+        if (job.schema_snapshot or {}).get("job_kind") == "drawing":
             from app.models.engineering import ProductRevision
-            revision = self.db.query(ProductRevision).filter(ProductRevision.id == job.schema_snapshot["drawing_revision_id"]).first()
+            revision = self.db.query(ProductRevision).filter(ProductRevision.id == job.schema_snapshot["drawing_revision_id"]).populate_existing().with_for_update().first()
             if revision:
                 revision.parse_status = "failed"
         job.status = "cancelled"

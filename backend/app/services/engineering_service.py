@@ -909,6 +909,9 @@ class EngineeringService:
     ):
         revision = self._get(ProductRevision, revision_id, user, context, True)
         source_version = revision.data_version
+        options = (existing_job.schema_snapshot or {}).get("drawing_options") or {} if existing_job else {}
+        scoped = bool(options.get("page_numbers"))
+        prior_parse_status = (existing_job.schema_snapshot or {}).get("prior_parse_status", "pending") if existing_job else revision.parse_status
         if existing_job is not None and existing_job.schema_snapshot.get("source_data_version", source_version) != source_version:
             raise AIExtractionRunError("drawing_changed", "排队期间图纸已被修改，请重新提交", 409)
         if existing_job is None and revision.parse_status == "processing":
@@ -921,6 +924,11 @@ class EngineeringService:
             .order_by(DocumentPage.page_number)
             .all()
         )
+        if options.get("page_numbers"):
+            selected_pages = set(options["page_numbers"])
+            if not selected_pages.issubset({p.page_number for p in pages}):
+                raise HTTPException(422, "识别页码不存在")
+            pages = [p for p in pages if p.page_number in selected_pages]
         if not pages:
             raise HTTPException(409, "图纸尚未完成分页")
         if len(pages) > settings.AI_MAX_DOCUMENT_PAGES:
@@ -977,6 +985,8 @@ class EngineeringService:
                 self.db.commit()
                 if mode == "platform":
                     quota.reserve(job, user, context, len(pages))
+                from app.services.drawing_review_service import CheckpointProvider
+                provider = CheckpointProvider(provider, job, self.db, validate_drawing_payload)
                 prepared_pages: list[PreparedDrawingPage] = []
                 document = (
                     self.db.query(SourceDocument)
@@ -984,7 +994,9 @@ class EngineeringService:
                     .one()
                 )
                 if supports_visual_render(document.original_filename):
-                    for page in pages:
+                    for page_index, page in enumerate(pages):
+                        job.progress_detail = {**(job.progress_detail or {}), "current_page": page.page_number,
+                            "pages": {"completed": page_index, "total": len(pages)}}
                         self._drawing_progress(job, "rendering", 10)
                         rotation = 0
                         if Path(document.original_filename).suffix.lower() == ".pdf":
@@ -998,10 +1010,10 @@ class EngineeringService:
                                 scale=3.0,
                             )
                         prepared_pages.append(
-                            prepare_drawing_page(png, page.page_number, rotation_degrees=rotation)
+                            prepare_drawing_page(png, page.page_number, rotation_degrees=options.get("page_rotations", {}).get(str(page.page_number), rotation), region=options.get("region"))
                         )
                 text = "\n\n".join(
-                    f"--- 第 {p.page_number} 页 ---\n{p.text_content or ''}"
+                    f"--- 第 {p.page_number} 页 ---\n{p.text_content or '' if not options.get('region') else '仅使用所选区域图片'}"
                     for p in pages
                 )
                 if prepared_pages:
@@ -1016,27 +1028,27 @@ class EngineeringService:
                     self._drawing_progress(job, "title", 25)
                     title_result = provider.structured_response(
                         StructuredAIRequest(
-                            instructions=DRAWING_TITLE_INSTRUCTIONS + "\n本次输入为候选图签区域的局部放大图，bbox 相对于该局部图。若不含图签，返回 null，不得猜测。",
-                            input_text="逐字读取局部图中的图签，不得从零部件明细推测产品名称。",
+                            instructions=DRAWING_TITLE_INSTRUCTIONS,
+                            input_text="在完整输入图片中查找任意位置的图签，逐字读取，不得从零部件明细推测产品名称。",
                             json_schema=DRAWING_TITLE_SCHEMA,
-                            images=[AIImageInput("data:image/png;base64," + base64.b64encode(page.title_png).decode(), page.page_number) for page in prepared_pages],
+                            images=full_images,
                             schema_name="engineering_drawing_title_v2",
                         )
                     )
                     validate_drawing_payload(title_result.data, DRAWING_TITLE_SCHEMA)
-                    title_is_crop = True
+                    title_is_crop = False
                     title_results = [title_result]
-                    if not (title_result.data.get("product") or {}).get("drawing_number"):
+                    if not scoped and not (title_result.data.get("product") or {}).get("drawing_number"):
                         title_result = provider.structured_response(StructuredAIRequest(
-                            instructions=DRAWING_TITLE_INSTRUCTIONS,
-                            input_text="局部图未找到图签。请在完整页面查找并逐字抄录，不能猜测。",
-                            json_schema=DRAWING_TITLE_SCHEMA, images=full_images,
+                            instructions=DRAWING_TITLE_INSTRUCTIONS + "\n本次为候选图签裁剪区域，bbox 相对于局部图片。未找到时返回 null。",
+                            input_text="完整图未读出图号，尝试放大候选图签；不得猜测。",
+                            json_schema=DRAWING_TITLE_SCHEMA, images=[AIImageInput("data:image/png;base64," + base64.b64encode(page.title_png).decode(), page.page_number) for page in prepared_pages],
                             schema_name="engineering_drawing_title_full_v2",
                         ))
                         validate_drawing_payload(title_result.data, DRAWING_TITLE_SCHEMA)
                         title_results.append(title_result)
-                        title_is_crop = False
-                    if "识别图号与文件名编号不一致" in drawing_identity_problems(title_result.data, document.original_filename, len(pages)):
+                        title_is_crop = True
+                    if not scoped and "识别图号与文件名编号不一致" in drawing_identity_problems(title_result.data, document.original_filename, len(pages)):
                         raise AIExtractionRunError("drawing_identity_unverified", "识别图号与文件名编号不一致，请核对图纸方向与清晰度后重试", 422)
                     self._drawing_progress(job, "parts", 45)
                     parts_result = provider.structured_response(
@@ -1065,11 +1077,16 @@ class EngineeringService:
                     )
                     validate_drawing_payload(welds_result.data, DRAWING_WELDS_SCHEMA)
                     results = [*title_results, parts_result, welds_result]
-                    restore_payload_evidence(
-                        title_result.data,
-                        prepared_pages,
-                        title_crop_sections=frozenset({"product"}) if title_is_crop else frozenset(),
-                    )
+                    for title_stage in title_results:
+                        restore_payload_evidence(
+                            title_stage.data,
+                            prepared_pages,
+                            title_crop_sections=(
+                                frozenset({"product", "unresolved_regions"})
+                                if title_is_crop and title_stage is title_result
+                                else frozenset()
+                            ),
+                        )
                     restore_payload_evidence(parts_result.data, prepared_pages)
                     restore_payload_evidence(welds_result.data, prepared_pages)
                     payload = {
@@ -1114,7 +1131,7 @@ class EngineeringService:
                 self.access.check_access(user, revision, DataAccessAction.EDIT, context)
                 if revision.data_version != source_version or revision.status in {"approved", "superseded"}:
                     raise AIExtractionRunError("drawing_changed", "识别期间图纸已被修改或批准，请重新提交", 409)
-            if job:
+            if job and not scoped:
                 identity_problems = drawing_identity_problems(
                     payload, document.original_filename, len(pages)
                 )
@@ -1128,7 +1145,7 @@ class EngineeringService:
                 raise AIExtractionRunError(
                     "empty_drawing_extraction", "未识别出零部件或焊缝，请检查图纸清晰度及视觉模型配置", 422
                 )
-            risks = drawing_risks(payload, len(pages))
+            risks = drawing_risks(payload, revision.drawing_page_count)
             risks.extend(
                 {
                     "code": "drawing_identity_unverified",
@@ -1137,6 +1154,20 @@ class EngineeringService:
                 }
                 for problem in identity_problems
             )
+            if scoped:
+                run.output_snapshot = payload
+                run.risks, run.status, run.finished_at = risks, "completed", datetime.utcnow()
+                revision.parse_status = prior_parse_status if prior_parse_status != "processing" else "pending"
+                job.status, job.progress, job.completed_at = "completed", 100, datetime.utcnow()
+                job.progress_detail = {**(job.progress_detail or {}), "phase": "completed",
+                    "proposal": payload, "proposal_only": True, "source_data_version": source_version,
+                    "pages": {"completed": len(pages), "total": len(pages)}}
+                self.db.flush()
+                if mode != "offline":
+                    quota.settle(job, user, context, len(pages))
+                else:
+                    self.db.commit()
+                return run
             self._replace_extracted_data(revision, payload, user, context)
             product = dict(payload.get("product") or {})
             product["field_sources"] = {
@@ -1148,6 +1179,8 @@ class EngineeringService:
                 **(revision.drawing_metadata or {}),
                 "extracted_product": product,
                 "identity_problems": identity_problems,
+                "recognition_coverage": {"pages": [p.page_number for p in pages] if job else [],
+                    "unresolved_regions": payload.get("unresolved_regions") or []},
             }
             run.extraction_job_id = job.id if job else None
             run.output_snapshot = payload
@@ -1161,7 +1194,7 @@ class EngineeringService:
             if job:
                 job.status = "completed"
                 job.progress = 100
-                job.progress_detail = {"job_kind": "drawing", "phase": "completed"}
+                job.progress_detail = {**(job.progress_detail or {}), "job_kind": "drawing", "phase": "completed", "pages": {"completed": len(pages), "total": len(pages)}}
                 job.completed_at = datetime.utcnow()
                 # Flush the extracted rows before settling the reservation.
                 # A validation or database failure must remain refundable.
@@ -1185,6 +1218,7 @@ class EngineeringService:
             revision = (
                 self.db.query(ProductRevision)
                 .filter(ProductRevision.id == revision_id)
+                .with_for_update()
                 .first()
             )
             run = (
@@ -1192,8 +1226,12 @@ class EngineeringService:
                 .filter(DrawingParseRun.id == run.id)
                 .first()
             )
-            if revision:
-                revision.parse_status = "failed"
+            newer_job = self.db.query(ExtractionJob.id).filter(
+                ExtractionJob.document_id == job.document_id,
+                ExtractionJob.created_at > job.created_at,
+            ).first() if job else None
+            if revision and not newer_job and revision.data_version == source_version:
+                revision.parse_status = prior_parse_status if scoped and prior_parse_status != "processing" else "failed"
             if run:
                 run.status = "failed"
                 if error_code == "drawing_detail_required":
@@ -1231,7 +1269,9 @@ class EngineeringService:
         if status != "processing":
             raise AIExtractionRunError("task_cancelled", "任务已停止，请重新提交", 409)
         job.progress = progress
-        job.progress_detail = {"job_kind": "drawing", "phase": phase}
+        if phase != "rendering":
+            job.progress_detail = {k: v for k, v in (job.progress_detail or {}).items() if k != "current_page"}
+        job.progress_detail = {**(job.progress_detail or {}), "job_kind": "drawing", "phase": phase}
         self.db.commit()
 
     def _replace_extracted_data(
@@ -1265,7 +1305,7 @@ class EngineeringService:
                 material_spec=raw.get("material_spec"),
                 material_group=raw.get("material_group"),
                 thickness_mm=raw.get("thickness_mm"),
-                quantity=raw.get("quantity") or 1,
+                quantity=raw.get("quantity"),
                 assembly_path=raw.get("assembly_path"),
                 evidence=sourced_evidence(
                     raw.get("evidence"),
@@ -1506,6 +1546,7 @@ class EngineeringService:
                 filler_material_classification=old.filler_material_classification,
                 nde_methods=old.nde_methods or [],
                 nde_rate=old.nde_rate,
+                treatment_plan=deepcopy(old.treatment_plan),
                 pwht_required=old.pwht_required,
                 pwht_temperature=old.pwht_temperature,
                 pwht_duration=old.pwht_duration,
@@ -1582,6 +1623,7 @@ class EngineeringService:
                 ).first()
                 if part is None:
                     raise HTTPException(422, f"{key} 必须指向当前图纸版本中的有效零件")
+                self.db.refresh(part)
                 if key != "parent_part_id":
                     break
                 linked_id = part.parent_part_id
@@ -1597,6 +1639,8 @@ class EngineeringService:
     ):
         entity = self._get(model, entity_id, user, context, True)
         revision = self._get(ProductRevision, entity.revision_id, user, context, True)
+        self.db.refresh(revision, with_for_update=True)
+        self.db.refresh(entity)
         if revision.status == "superseded":
             raise HTTPException(409, "已替代版本不可修改")
         allowed = (
@@ -1638,6 +1682,7 @@ class EngineeringService:
                 "filler_material_classification",
                 "nde_methods",
                 "nde_rate",
+                "treatment_plan",
                 "pwht_required",
                 "pwht_temperature",
                 "pwht_duration",
@@ -1652,6 +1697,11 @@ class EngineeringService:
         if rejected:
             raise HTTPException(422, f"不可修改字段：{', '.join(sorted(rejected))}")
         values = dict(values)
+        if model is WeldRequirement and "treatment_plan" in values:
+            from app.services.sequence_treatment_service import validate_treatment_plan
+            values["treatment_plan"] = validate_treatment_plan(values["treatment_plan"])
+            if values["treatment_plan"] and not values.get("pwht_required", entity.pwht_required):
+                raise HTTPException(422, "保存热处理计划时须同时确认需要热处理")
         self._validate_part_links(
             revision.id, values, part_id=entity.id if model is Part else None
         )
@@ -1771,6 +1821,7 @@ class EngineeringService:
 
     def add_joint(self, revision_id: str, data: JointCreate, user, context):
         revision = self._get(ProductRevision, revision_id, user, context, True)
+        self.db.refresh(revision, with_for_update=True)
         if revision.status in {"approved", "superseded"}:
             raise HTTPException(409, "已批准版本不可修改")
         self._validate_part_links(revision.id, data.model_dump())
@@ -2059,7 +2110,11 @@ class EngineeringService:
                     "message": f"还有 {pending_parts} 个零部件尚未审核",
                 }
             )
+        from app.services.drawing_review_service import completeness_report
+        parts = self.db.query(Part).filter(Part.revision_id == revision.id, Part.is_deleted.is_(False)).all()
+        completeness = completeness_report(revision, parts, joints)
         return {
+            "completeness": completeness,
             "can_approve": not any(r["severity"] == "critical" for r in risks),
             "risks": risks,
         }

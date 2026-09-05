@@ -66,7 +66,7 @@ def _first_family():
     requirements = {
         "j1": _requirement(),
         "j2": _requirement(),
-        "j3": _requirement(pwht_required=True),
+        "j3": _requirement(pwht_required=True, treatment_plan=[{"code":"H1", "scope":"global", "group":"G1", "temperature_min":600, "temperature_max":620, "hold_minutes":60, "nde_before":["RT"]}]),
         "j4": _requirement(special_requirements="必须在封闭前完成内侧焊接"),
     }
     freezes = {item.id: _freeze(f"f-{item.id}", item.id) for item in joints}

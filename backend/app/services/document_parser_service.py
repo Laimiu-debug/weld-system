@@ -103,7 +103,8 @@ class DefaultDocumentParser:
             meaningful_chars = len("".join(text.split()))
             # Scans can contain a searchable header while the actual form is
             # an image; CAD exports can contain only vector outlines.
-            needs_ocr = has_images or meaningful_chars < MIN_MEANINGFUL_TEXT_CHARS
+            vector_candidate = meaningful_chars < 200 and _pdf_vector_outline_candidate(page)
+            needs_ocr = has_images or vector_candidate or meaningful_chars < MIN_MEANINGFUL_TEXT_CHARS
             pages.append(
                 ParsedPage(
                     page_number=number,
@@ -113,6 +114,7 @@ class DefaultDocumentParser:
                         "source_format": "pdf",
                         "text_chars": len(text),
                         "has_images": has_images,
+                        "vector_outline_candidate": vector_candidate,
                         "is_scanned_candidate": needs_ocr,
                         "width_points": _as_float(page.mediabox.width),
                         "height_points": _as_float(page.mediabox.height),
@@ -329,23 +331,40 @@ def _validate_xlsx_archive(stream: BinaryIO) -> None:
 
 
 def _pdf_page_has_images(page: Any) -> bool:
-    try:
-        resources = page.get("/Resources") or {}
-        resources = (
-            resources.get_object() if hasattr(resources, "get_object") else resources
-        )
-        xobjects = resources.get("/XObject") or {}
-        xobjects = (
-            xobjects.get_object() if hasattr(xobjects, "get_object") else xobjects
-        )
+    visited = set()
+    def inspect(resources, depth=0):
+        if depth > 12:
+            return True  # An uninspectable nested form needs visual review.
+        resources = resources.get_object() if hasattr(resources, "get_object") else resources
+        xobjects = (resources or {}).get("/XObject") or {}
+        xobjects = xobjects.get_object() if hasattr(xobjects, "get_object") else xobjects
         for value in xobjects.values():
             obj = value.get_object() if hasattr(value, "get_object") else value
+            if id(obj) in visited:
+                continue
+            visited.add(id(obj))
             if obj.get("/Subtype") == "/Image":
                 return True
-        # Some scanners encode the page as an inline image rather than an XObject.
+            if obj.get("/Subtype") == "/Form" and inspect(obj.get("/Resources"), depth+1):
+                return True
+        return False
+    try:
+        if inspect(page.get("/Resources")):
+            return True
         return len(page.images) > 0
     except Exception:
-        return False
+        return True
+
+
+def _pdf_vector_outline_candidate(page: Any) -> bool:
+    try:
+        content = page.get_contents()
+        if content is None:
+            return False
+        # Glyph outlines use many curves/path segments despite little searchable text.
+        return sum(op in {b"c", b"v", b"y", b"l"} for _, op in content.operations) >= 80
+    except Exception:
+        return True
 
 
 def _docx_paragraph_segments(paragraph: Any) -> list[str]:

@@ -22,6 +22,7 @@ def inputs():
             nde_methods=["RT"],
             nde_rate="100%",
             pwht_required=True,
+            treatment_plan=[{"code":"H1", "scope":"local", "temperature_min":600, "temperature_max":620, "hold_minutes":60, "nde_after":["RT"]}],
             special_requirements="封闭前内部焊接" if j.id == "2" else "",
         )
         for j in joints
@@ -58,14 +59,14 @@ def test_strategies_cover_length_once_and_cannot_move_detection_or_closure_earli
     assert validation["valid"]
     ranks = {s["step_code"]: s["order_index"] for s in steps}
     assert all(ranks[e["predecessor_code"]] < ranks[e["successor_code"]] for e in edges)
-    assert ranks["NDE-2"] < ranks["CLOSE-VESSEL"]
+    assert ranks["NDE-2-H1-after-RT"] < ranks["CLOSE-VESSEL"]
     for joint in joints:
         welds = [
             s
             for s in steps
             if s["step_type"] == "weld" and s["weld_joint_id"] == joint.id
         ]
-        assert all(s["order_index"] < ranks["NDE-" + joint.id] for s in welds)
+        assert all(s["order_index"] < ranks["NDE-" + joint.id + "-H1-after-RT"] for s in welds)
         if segmented or skip:
             segments = [s["process_parameters"]["segment"] for s in welds]
             assert sum(s["length_mm"] for s in segments) == 1250

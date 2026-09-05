@@ -552,6 +552,10 @@ class QualityService:
             elif "inspection_number" not in inspection_data:
                 inspection_data_dict.pop("inspection_number", None)
 
+            # A submitted reinspection is attributable to the authenticated reviewer.
+            inspection_data_dict.pop("reinspection_inspector_id", None)
+            if inspection_data_dict.get("reinspection_result"):
+                inspection_data_dict["reinspection_inspector_id"] = current_user.id
             # 只更新数据库中实际存在的字段
             for key, value in inspection_data_dict.items():
                 if hasattr(inspection, key) and value is not None:

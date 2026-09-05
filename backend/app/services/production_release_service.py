@@ -27,6 +27,7 @@ from app.models.production_release import (
     ProductionResourceAuthorization,
     ProductionSequenceChangeRequest,
 )
+from app.services.execution_validation_service import parameter_report, inspection_closed
 from app.models.quality import QualityInspection
 from app.models.sequence import WeldSequenceRevision, WeldSequenceStep
 from app.models.user import User
@@ -64,6 +65,11 @@ def _tokens(value: str | None) -> set[str]:
     except (TypeError, ValueError):
         values = value.replace(";", ",").split(",")
     return {str(item).strip().upper() for item in values if str(item).strip()}
+
+
+def released_welding_position(task):
+    requirement = ((task.source_step_snapshot or {}).get("process_parameters") or {}).get("requirement") or {}
+    return requirement.get("welding_position", requirement.get("weld_position"))
 
 
 def evaluate_welder_qualification(
@@ -210,6 +216,10 @@ class ProductionReleaseService:
             if existing.consumable_issue_list_id != issue_list_id:
                 raise HTTPException(409, "该焊序已下发且领用单已冻结，请刷新查看原批次")
             return existing, False
+        from app.services.sequence_source_service import source_impact
+        impact = source_impact(self.db, sequence)
+        if impact["stale"]:
+            raise HTTPException(409, {"message":"焊序来源已变化，不能新建生产放行", "source_impact":impact})
         active = (
             self.db.query(ProductionReleaseBatch)
             .filter(
@@ -231,6 +241,7 @@ class ProductionReleaseService:
         )
         if unapplied:
             raise HTTPException(409, "变更方案尚未应用，不能下发")
+        from app.services.sequence_delivery_service import capture_drawing, capture_issue
         scope = self._scope(sequence, user.id)
         batch = ProductionReleaseBatch(
             id=str(uuid4()),
@@ -241,6 +252,8 @@ class ProductionReleaseService:
             sequence_frozen_hash=sequence.frozen_hash,
             source_snapshot={
                 "sequence": sequence.frozen_snapshot,
+                "drawing": capture_drawing(self.db, product),
+                "issue": capture_issue(self.db, issue_list),
                 "issue_list_hash": getattr(issue_list, "snapshot_hash", None),
             },
             released_by=user.id,
@@ -374,7 +387,10 @@ class ProductionReleaseService:
             .order_by(ProductionTask.id)
             .all()
         )
+        from app.services.sequence_source_service import source_impact
+        source_sequence = self._get(WeldSequenceRevision, batch.sequence_revision_id, user, context)
         return {
+            "source_impact": source_impact(self.db, source_sequence),
             "release": self._row(batch),
             "tasks": [self._row(item) for item in tasks],
             "change_requests": [self._row(item) for item in changes],
@@ -471,11 +487,7 @@ class ProductionReleaseService:
             .filter(WelderCertification.welder_id == welder.id)
             .all()
         )
-        position = (
-            ((task.source_step_snapshot or {}).get("process_parameters") or {})
-            .get("requirement", {})
-            .get("weld_position")
-        )
+        position = released_welding_position(task)
         result = evaluate_welder_qualification(welder, certs, wps, position)
         batch = self._get(
             ProductionReleaseBatch, task.production_release_id, user, context
@@ -522,6 +534,10 @@ class ProductionReleaseService:
         item = self._get(
             ProductionResourceAuthorization, authorization_id, user, context, True
         )
+        if approve:
+            task_to_lock = self._get(ProductionTask, item.production_task_id, user, context, True)
+            self.db.refresh(task_to_lock, with_for_update=True)
+        self.db.refresh(item, with_for_update=True)
         if item.qualification_status != "pending_override":
             raise HTTPException(409, "当前资格记录无需授权")
         task = None
@@ -540,6 +556,7 @@ class ProductionReleaseService:
             batch = self._get(
                 ProductionReleaseBatch, task.production_release_id, user, context
             )
+            self.db.refresh(batch, with_for_update=True)
             if (
                 not task.is_active
                 or task.status in {"completed", "cancelled"}
@@ -612,6 +629,9 @@ class ProductionReleaseService:
             self._check_task_quality(task)
 
     def _check_task_quality(self, task):
+        inspections = self.db.query(QualityInspection).filter(QualityInspection.production_task_id == task.id).all()
+        if any(not inspection_closed(item) for item in inspections):
+            raise HTTPException(409, "工序关联的质量检验尚未合格或返修未闭合")
         if not task.quality_inspection_required:
             return
         nodes = (
@@ -634,8 +654,8 @@ class ProductionReleaseService:
                 )
                 .first()
             )
-            if not inspection or inspection.inspection_result != "pass":
-                raise HTTPException(409, "工序关联的质量检验尚未合格")
+            if not inspection_closed(inspection):
+                raise HTTPException(409, "工序关联的质量检验尚未合格或返修未闭合")
 
     def _recheck_execution_resources(self, task, authorization, user, context):
         if authorization.wps_id != task.wps_id:
@@ -665,12 +685,7 @@ class ProductionReleaseService:
             .filter(WelderCertification.welder_id == welder.id)
             .all()
         )
-        position = (
-            ((task.source_step_snapshot or {}).get("process_parameters") or {}).get(
-                "requirement"
-            )
-            or {}
-        ).get("weld_position")
+        position = released_welding_position(task)
         result = evaluate_welder_qualification(welder, certs, wps, position)
         previous = authorization.qualification_snapshot or {}
         if previous.get("certification_ids") and not certs:
@@ -748,6 +763,21 @@ class ProductionReleaseService:
         self._check_execution_dependencies(
             task, batch, payload.get("status") == "completed"
         )
+        completing = payload.get("status") == "completed"
+        report = parameter_report(
+            ((task.source_step_snapshot or {}).get("process_parameters") or {}).get("wps") or {},
+            payload.get("actual_parameters", {}),
+        ) if task.task_type == "welding" else {"passed": True, "issues": []}
+        inspections = self.db.query(QualityInspection).filter(
+            QualityInspection.production_task_id == task.id
+        ).all()
+        open_inspections = [item.id for item in inspections if not inspection_closed(item)]
+        if completing and (report["issues"] or open_inspections):
+            raise HTTPException(409, {"message": "执行条件未满足，不能完成工序", "issues": report["issues"] +
+                (["关联检验尚未合格或返修未闭合"] if open_inspections else [])})
+        inspection_snapshot = [{"id": item.id, "result": item.inspection_result,
+            "repair_required": item.repair_required, "reinspection_result": item.reinspection_result,
+            "closed": inspection_closed(item)} for item in inspections]
         event_ids = payload.get("consumable_usage_event_ids", [])
         events = (
             self.db.query(ConsumableActualUsageEvent)
@@ -774,8 +804,8 @@ class ProductionReleaseService:
             design_snapshot_hash=task.source_sequence_frozen_hash,
             actual_parameters=payload.get("actual_parameters", {}),
             consumable_usage_event_ids=event_ids,
-            repair_snapshot=payload.get("repair_snapshot", {}),
-            quality_snapshot=payload.get("quality_snapshot", {}),
+            repair_snapshot={"source": "quality_records", "inspections": inspection_snapshot},
+            quality_snapshot={"parameter_validation": report, "inspections": inspection_snapshot},
             idempotency_key=key,
             recorded_by=user.id,
             **self._scope(batch, user.id),

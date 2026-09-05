@@ -97,6 +97,7 @@ def detail(
     _permission(db, current_user, context)
     result = WeldSequenceService(db).detail(sequence_id, current_user, context)
     return {
+        "source_impact": result["source_impact"],
         "revision": row(result["revision"]),
         "steps": [row(item) for item in result["steps"]],
         "dependencies": [row(item) for item in result["dependencies"]],

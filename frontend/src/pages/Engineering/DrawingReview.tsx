@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Alert,
   Badge,
@@ -49,6 +55,8 @@ import {
   hasPersistentAIDataAuthorization,
 } from "@/utils/aiPrivacy";
 import "./engineering.css";
+import TreatmentPlanEditor from "./TreatmentPlanEditor";
+import { useSearchParams } from "react-router-dom";
 
 const { Title, Text } = Typography;
 
@@ -65,6 +73,7 @@ const sha256Hex = async (value: string) => {
 const DrawingReview: React.FC = () => {
   const { id = "" } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const preferences = usePreferencesStore((state) => state.preferences);
   const persistentOutboundAuthorization =
     hasPersistentAIDataAuthorization(preferences);
@@ -74,6 +83,9 @@ const DrawingReview: React.FC = () => {
   const [parseJob, setParseJob] = useState<DataRow | null>(null);
   const [pollFailed, setPollFailed] = useState(false);
   const parseSubmitting = useRef(false);
+  const pendingOptions = useRef<DataRow>({});
+  const [scopeOpen, setScopeOpen] = useState(false);
+  const [scopeForm] = Form.useForm();
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [privacyConfirmed, setPrivacyConfirmed] = useState(false);
   const [productOpen, setProductOpen] = useState(false);
@@ -109,35 +121,47 @@ const DrawingReview: React.FC = () => {
   useEffect(() => {
     void load();
     void smartImportService
-      .getAICapabilities({ task_type: "drawing_import", complexity: "advanced" })
+      .getAICapabilities({
+        task_type: "drawing_import",
+        complexity: "advanced",
+      })
       .then((value) => {
         setPlatformHost(value.platform_available ? value.platform_host : "");
         setPlatformRoute(value.platform_route || "");
-      }).catch(() => setPlatformHost(""));
+      })
+      .catch(() => setPlatformHost(""));
   }, [load]);
   useEffect(() => {
-    if (!parseJob || !["queued", "processing"].includes(parseJob.status)) return;
+    if (!parseJob || !["queued", "processing"].includes(parseJob.status))
+      return;
     let cancelled = false;
-    const timer = window.setTimeout(async () => {
-      try {
-        const jobs = await engineeringService.parseJobs(id);
-        if (cancelled) return;
-        setPollFailed(false);
-        const latest = jobs[0] || null;
-        setParseJob(latest);
-        if (!latest || !["queued", "processing"].includes(latest.status)) {
-          setParsing(false);
-          if (latest?.status === "completed") message.success("图纸解析完成，请逐项核对");
-          await load();
+    const timer = window.setTimeout(
+      async () => {
+        try {
+          const jobs = await engineeringService.parseJobs(id);
+          if (cancelled) return;
+          setPollFailed(false);
+          const latest = jobs[0] || null;
+          setParseJob(latest);
+          if (!latest || !["queued", "processing"].includes(latest.status)) {
+            setParsing(false);
+            if (latest?.status === "completed")
+              message.success("图纸解析完成，请逐项核对");
+            await load();
+          }
+        } catch {
+          if (!cancelled) {
+            setPollFailed(true);
+            setParseJob({ ...parseJob });
+          }
         }
-      } catch {
-        if (!cancelled) {
-          setPollFailed(true);
-          setParseJob({ ...parseJob });
-        }
-      }
-    }, pollFailed ? 10000 : 2500);
-    return () => { cancelled = true; window.clearTimeout(timer); };
+      },
+      pollFailed ? 10000 : 2500,
+    );
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, [id, load, parseJob, pollFailed]);
   useEffect(() => {
     let url = "";
@@ -152,6 +176,12 @@ const DrawingReview: React.FC = () => {
       if (url) URL.revokeObjectURL(url);
     };
   }, [id, page]);
+  useEffect(() => {
+    const joint = detail?.weld_joints.find(
+      (item) => item.id === searchParams.get("joint"),
+    );
+    if (joint) setFocus(joint);
+  }, [detail, searchParams]);
   const evidence = focus?.evidence || {};
   useEffect(() => {
     if (evidence.page && evidence.page !== page) setPage(evidence.page);
@@ -170,7 +200,8 @@ const DrawingReview: React.FC = () => {
   const readonly =
     detail?.revision.status === "approved" ||
     detail?.revision.status === "superseded";
-  const runAI = () => {
+  const runAI = (options: DataRow = {}) => {
+    pendingOptions.current = options;
     if (persistentOutboundAuthorization) {
       void confirmRunAI();
       return;
@@ -199,6 +230,7 @@ const DrawingReview: React.FC = () => {
       const result = await engineeringService.parse(id, {
         mode: "platform",
         run_ocr: true,
+        ...pendingOptions.current,
         outbound_consent_id: consent.id,
         expected_platform_route: platformRoute || undefined,
       });
@@ -257,7 +289,9 @@ const DrawingReview: React.FC = () => {
     setAcceptingId(row.id);
     try {
       await fn(row.id, { review_status: "accepted" });
-      message.success(`已接受${type === "joint" ? "焊缝" : type === "part" ? "零部件" : "焊接要求"}识别结果`);
+      message.success(
+        `已接受${type === "joint" ? "焊缝" : type === "part" ? "零部件" : "焊接要求"}识别结果`,
+      );
       await load();
     } catch {
       // API interceptor presents the server reason once; avoid a duplicate toast.
@@ -269,9 +303,14 @@ const DrawingReview: React.FC = () => {
     const itemEvidence = row.evidence || {};
     setFocus(row);
     if (itemEvidence.page) setPage(itemEvidence.page);
-    drawingPaneRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    drawingPaneRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
     if (!itemEvidence.page) {
-      message.info("该字段没有可用的证据页码；已显示证据原文，可使用“修正”人工确认");
+      message.info(
+        "该字段没有可用的证据页码；已显示证据原文，可使用“修正”人工确认",
+      );
     } else if (!itemEvidence.bbox?.length) {
       message.info(`已切换到第 ${itemEvidence.page} 页；模型未返回框选坐标`);
     }
@@ -349,11 +388,7 @@ const DrawingReview: React.FC = () => {
       width: 145,
       render: (_: unknown, r: DataRow) => (
         <Space>
-          <Button
-            type="link"
-            size="small"
-            onClick={() => locateEvidence(r)}
-          >
+          <Button type="link" size="small" onClick={() => locateEvidence(r)}>
             定位
           </Button>
           {!readonly && (
@@ -410,11 +445,7 @@ const DrawingReview: React.FC = () => {
       width: 220,
       render: (_: unknown, r: DataRow) => (
         <Space>
-          <Button
-            type="link"
-            size="small"
-            onClick={() => locateEvidence(r)}
-          >
+          <Button type="link" size="small" onClick={() => locateEvidence(r)}>
             定位
           </Button>
           {!readonly && (
@@ -523,14 +554,242 @@ const DrawingReview: React.FC = () => {
   return (
     <Spin spinning={loading}>
       <div className="drawing-review">
-        {parseJob && <Alert showIcon style={{ marginBottom: 16 }}
-          type={parseJob.status === "failed" || parseJob.status === "cancelled" ? "error" : "info"}
-          message={parseJob.status === "completed" ? "识别完成，结果须人工核对" :
-            parseJob.status === "failed" || parseJob.status === "cancelled" ? "识别未完成，可重新提交" :
-              `后台识别中 · ${parseJob.progress || 0}%`}
-          description={pollFailed ? "暂时无法获取进度，正在重试；后台任务仍会继续。" :
-            parseJob.error_message || ({ queued: "等待后台处理", rendering: "渲染页面", title: "识别图签", parts: "识别零件", welds: "识别焊缝", validating: "校验并保存" } as Record<string, string>)[parseJob.progress_detail?.phase] || "请逐项核对图签、零件、焊缝和证据位置。"}
-        />}
+        {parseJob && (
+          <Alert
+            showIcon
+            style={{ marginBottom: 16 }}
+            type={
+              parseJob.status === "failed" || parseJob.status === "cancelled"
+                ? "error"
+                : "info"
+            }
+            message={
+              parseJob.status === "completed"
+                ? "识别完成，结果须人工核对"
+                : parseJob.status === "failed" ||
+                    parseJob.status === "cancelled"
+                  ? "识别未完成，可重新提交"
+                  : `后台识别中 · ${parseJob.progress || 0}%`
+            }
+            description={
+              pollFailed
+                ? "暂时无法获取进度，正在重试；后台任务仍会继续。"
+                : parseJob.error_message ||
+                  (
+                    {
+                      queued: "等待后台处理",
+                      rendering: "渲染页面",
+                      title: "识别图签",
+                      parts: "识别零件",
+                      welds: "识别焊缝",
+                      validating: "校验并保存",
+                    } as Record<string, string>
+                  )[parseJob.progress_detail?.phase] ||
+                  "请逐项核对图签、零件、焊缝和证据位置。"
+            }
+          />
+        )}
+        {parseJob && (
+          <Space style={{ marginBottom: 12 }}>
+            {parsing && (
+              <Button
+                onClick={async () => {
+                  try {
+                    await smartImportService.cancelExtractionJob(parseJob.id);
+                    await load();
+                  } catch {
+                    message.error("取消失败，请刷新后重试");
+                  }
+                }}
+              >
+                取消识别
+              </Button>
+            )}
+            {!parsing &&
+              !readonly &&
+              ["failed", "cancelled"].includes(parseJob.status) && (
+                <Button onClick={() => runAI({ retry_job_id: parseJob.id })}>
+                  重试失败阶段
+                </Button>
+              )}
+            {parseJob.progress_detail?.current_page && (
+              <Text>
+                当前页 {parseJob.progress_detail.current_page} · 共{" "}
+                {parseJob.progress_detail.pages?.total} 页
+              </Text>
+            )}
+          </Space>
+        )}
+        {detail?.validation.completeness && (
+          <Card
+            size="small"
+            title="识别完整性报告"
+            style={{ marginBottom: 12 }}
+          >
+            <Space wrap>
+              <Text>
+                已识别 {detail.validation.completeness.recognized_pages.length}{" "}
+                / {detail.validation.completeness.total_pages} 页
+              </Text>
+              <Text>
+                零件 {detail.validation.completeness.part_count} · 焊缝{" "}
+                {detail.validation.completeness.weld_count}
+              </Text>
+              <Text>
+                重复编号：
+                {detail.validation.completeness.duplicate_weld_numbers.join(
+                  "、",
+                ) || "无"}
+              </Text>
+              <Text>
+                连接未解析：
+                {detail.validation.completeness.unresolved_connections.join(
+                  "、",
+                ) || "无"}
+              </Text>
+              <Text>
+                数量待补：
+                {detail.validation.completeness.unknown_quantities.join("、") ||
+                  "无"}
+              </Text>
+              <Text>
+                缺少页码/位置证据{" "}
+                {detail.validation.completeness.missing_evidence.length} 项
+              </Text>
+            </Space>
+            <div>
+              未覆盖页：
+              {detail.validation.completeness.unrecognized_pages.join("、") ||
+                "无"}
+              ；未解析区域{" "}
+              {detail.validation.completeness.unresolved_regions.length} 处
+            </div>
+            <Text type="secondary">
+              {detail.validation.completeness.notice}
+            </Text>
+            {detail.validation.completeness.unresolved_regions.map(
+              (item: DataRow, index: number) => (
+                <div key={index}>
+                  <Button type="link" onClick={() => setFocus(item)}>
+                    定位未解析区域 {index + 1}
+                  </Button>
+                  {item.message || item.reason || item.description}
+                </div>
+              ),
+            )}
+          </Card>
+        )}
+        {parseJob?.progress_detail?.proposal_only && (
+          <Card
+            size="small"
+            title="局部识别建议（尚未写入审核数据）"
+            style={{ marginBottom: 12 }}
+          >
+            <Alert
+              type="info"
+              message="请定位原图并核对建议；可修正已有项目，新增焊缝请使用人工录入。"
+            />
+            <Table
+              size="small"
+              pagination={{ pageSize: 5 }}
+              rowKey="key"
+              dataSource={[
+                ...(parseJob.progress_detail.proposal.parts || []).map(
+                  (item: DataRow, i: number) => ({
+                    ...item,
+                    key: `p${i}`,
+                    kind: "part",
+                    label: item.name,
+                  }),
+                ),
+                ...(parseJob.progress_detail.proposal.weld_joints || []).map(
+                  (item: DataRow, i: number) => ({
+                    ...item,
+                    key: `w${i}`,
+                    kind: "joint",
+                    label: item.weld_number,
+                  }),
+                ),
+              ]}
+              columns={[
+                { title: "项目", dataIndex: "label" },
+                {
+                  title: "建议",
+                  render: (_, item) => (
+                    <Text>
+                      {JSON.stringify(
+                        Object.fromEntries(
+                          Object.entries(item).filter(
+                            ([key]) =>
+                              !["evidence", "key", "kind", "label"].includes(
+                                key,
+                              ),
+                          ),
+                        ),
+                      )}
+                    </Text>
+                  ),
+                },
+                {
+                  title: "核对",
+                  render: (_, item) => (
+                    <Space>
+                      <Button type="link" onClick={() => setFocus(item)}>
+                        定位原图
+                      </Button>
+                      <Button
+                        type="link"
+                        disabled={
+                          readonly ||
+                          parseJob.progress_detail.source_data_version !==
+                            detail?.revision.data_version
+                        }
+                        onClick={() => {
+                          const matches =
+                            item.kind === "part"
+                              ? detail?.parts.filter(
+                                  (row) =>
+                                    item.part_number &&
+                                    row.part_number === item.part_number,
+                                )
+                              : detail?.weld_joints.filter(
+                                  (row) => row.weld_number === item.weld_number,
+                                );
+                          if (matches?.length !== 1) {
+                            message.info(
+                              "未找到唯一对应项目，请在审核表中人工录入或修正",
+                            );
+                            return;
+                          }
+                          openEdit(item.kind, {
+                            ...matches[0],
+                            ...Object.fromEntries(
+                              Object.entries(item).filter(
+                                ([key, value]) =>
+                                  value != null &&
+                                  ![
+                                    "key",
+                                    "kind",
+                                    "label",
+                                    "ref",
+                                    "part_a_ref",
+                                    "part_b_ref",
+                                    "id",
+                                  ].includes(key),
+                              ),
+                            ),
+                          });
+                        }}
+                      >
+                        核对修正
+                      </Button>
+                    </Space>
+                  ),
+                },
+              ]}
+            />
+          </Card>
+        )}
         <div className="review-header">
           <Space>
             <Button
@@ -577,6 +836,24 @@ const DrawingReview: React.FC = () => {
               AI 识别图纸
             </Button>
             <Button
+              disabled={readonly || parsing}
+              onClick={() => {
+                scopeForm.setFieldsValue({
+                  scope: "page",
+                  page,
+                  rotation: 0,
+                  region: false,
+                  x1: 0,
+                  y1: 0,
+                  x2: 100,
+                  y2: 100,
+                });
+                setScopeOpen(true);
+              }}
+            >
+              单页 / 区域识别
+            </Button>
+            <Button
               type="primary"
               icon={<CheckOutlined />}
               disabled={readonly || !detail?.validation.can_approve}
@@ -586,6 +863,86 @@ const DrawingReview: React.FC = () => {
             </Button>
           </Space>
         </div>
+        <Modal
+          title="单页 / 区域识别"
+          open={scopeOpen}
+          onCancel={() => setScopeOpen(false)}
+          onOk={async () => {
+            const values = await scopeForm.validateFields();
+            if (
+              values.region &&
+              !(values.x1 < values.x2 && values.y1 < values.y2)
+            ) {
+              message.error("区域右下角必须大于左上角");
+              return;
+            }
+            setScopeOpen(false);
+            runAI({
+              ...(values.scope === "page"
+                ? { page_numbers: [values.page] }
+                : {}),
+              page_rotations: { [values.page]: values.rotation },
+              ...(values.region && values.scope === "page"
+                ? {
+                    region: [values.x1, values.y1, values.x2, values.y2].map(
+                      (value) => value / 100,
+                    ),
+                  }
+                : {}),
+            });
+          }}
+          okText="识别所选范围"
+        >
+          <Alert
+            type="info"
+            message="坐标以原始预览左上角为 0%，右下角为 100%。旋转按逆时针执行；不确定方向时保留原图。"
+          />
+          <Form form={scopeForm} layout="vertical">
+            <Form.Item name="scope" label="识别范围">
+              <Select
+                options={[
+                  { value: "page", label: "指定页（生成待核对建议）" },
+                  { value: "full", label: "整份图纸（更新全部识别结果）" },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item name="page" label="页码" rules={[{ required: true }]}>
+              <InputNumber
+                min={1}
+                max={detail?.revision.drawing_page_count || 1}
+                precision={0}
+              />
+            </Form.Item>
+            <Form.Item name="rotation" label="旋转角度">
+              <Select
+                options={[0, 90, 180, 270].map((value) => ({
+                  value,
+                  label: `${value}°`,
+                }))}
+              />
+            </Form.Item>
+            <Form.Item name="region" valuePropName="checked">
+              <Checkbox>仅识别指定区域</Checkbox>
+            </Form.Item>
+            <Space>
+              {[
+                ["x1", "左 (%)"],
+                ["y1", "上 (%)"],
+                ["x2", "右 (%)"],
+                ["y2", "下 (%)"],
+              ].map(([name, label]) => (
+                <Form.Item
+                  key={name}
+                  name={name}
+                  label={label}
+                  rules={[{ required: true }]}
+                >
+                  <InputNumber min={0} max={100} />
+                </Form.Item>
+              ))}
+            </Space>
+          </Form>
+        </Modal>
         <Modal
           title="确认向外部模型发送图纸"
           open={privacyOpen}
@@ -599,9 +956,11 @@ const DrawingReview: React.FC = () => {
             type="warning"
             showIcon
             message={`数据接收方：${platformHost || "尚未配置"}`}
-              description={platformHost
+            description={
+              platformHost
                 ? aiDataOutboundNotice(platformHost)
-                : "管理员模型配置未提供可用服务域名。"}
+                : "管理员模型配置未提供可用服务域名。"
+            }
           />
           <Checkbox
             style={{ marginTop: 16 }}
@@ -620,6 +979,17 @@ const DrawingReview: React.FC = () => {
             message={`发现 ${riskCount} 项审核风险`}
             description="关键字段保持空白等待人工确认；完成修正后才可批准。"
           />
+        )}
+        {focus?.id && focus?.weld_number && (
+          <Button
+            onClick={() =>
+              navigate(
+                `/engineering/revisions/${id}/sequence?joint=${encodeURIComponent(focus.id)}`,
+              )
+            }
+          >
+            查看 {focus.weld_number} 的施工与检测记录
+          </Button>
         )}
         <div className="review-workbench">
           <section className="drawing-pane" ref={drawingPaneRef}>
@@ -691,19 +1061,49 @@ const DrawingReview: React.FC = () => {
             <Card
               size="small"
               title="图签信息"
-              extra={!readonly && <Button icon={<EditOutlined />} onClick={openProductIdentity}>人工补录</Button>}
+              extra={
+                !readonly && (
+                  <Button icon={<EditOutlined />} onClick={openProductIdentity}>
+                    人工补录
+                  </Button>
+                )
+              }
             >
               <Descriptions size="small" column={2}>
                 <Descriptions.Item label="图号">
-                  {detail?.revision.drawing_metadata?.extracted_product?.drawing_number || <Text type="danger">待补录</Text>}
-                  <Tag style={{ marginLeft: 8 }} color={detail?.revision.drawing_metadata?.extracted_product?.field_sources?.drawing_number === "manual_correction" ? "purple" : "cyan"}>
-                    {detail?.revision.drawing_metadata?.extracted_product?.field_sources?.drawing_number === "manual_correction" ? "人工修正" : "AI 图纸提取"}
+                  {detail?.revision.drawing_metadata?.extracted_product
+                    ?.drawing_number || <Text type="danger">待补录</Text>}
+                  <Tag
+                    style={{ marginLeft: 8 }}
+                    color={
+                      detail?.revision.drawing_metadata?.extracted_product
+                        ?.field_sources?.drawing_number === "manual_correction"
+                        ? "purple"
+                        : "cyan"
+                    }
+                  >
+                    {detail?.revision.drawing_metadata?.extracted_product
+                      ?.field_sources?.drawing_number === "manual_correction"
+                      ? "人工修正"
+                      : "AI 图纸提取"}
                   </Tag>
                 </Descriptions.Item>
                 <Descriptions.Item label="产品名称">
-                  {detail?.revision.drawing_metadata?.extracted_product?.product_name || <Text type="danger">待补录</Text>}
-                  <Tag style={{ marginLeft: 8 }} color={detail?.revision.drawing_metadata?.extracted_product?.field_sources?.product_name === "manual_correction" ? "purple" : "cyan"}>
-                    {detail?.revision.drawing_metadata?.extracted_product?.field_sources?.product_name === "manual_correction" ? "人工修正" : "AI 图纸提取"}
+                  {detail?.revision.drawing_metadata?.extracted_product
+                    ?.product_name || <Text type="danger">待补录</Text>}
+                  <Tag
+                    style={{ marginLeft: 8 }}
+                    color={
+                      detail?.revision.drawing_metadata?.extracted_product
+                        ?.field_sources?.product_name === "manual_correction"
+                        ? "purple"
+                        : "cyan"
+                    }
+                  >
+                    {detail?.revision.drawing_metadata?.extracted_product
+                      ?.field_sources?.product_name === "manual_correction"
+                      ? "人工修正"
+                      : "AI 图纸提取"}
                   </Tag>
                 </Descriptions.Item>
               </Descriptions>
@@ -873,7 +1273,11 @@ const DrawingReview: React.FC = () => {
                 <Form.Item name="joint_type" label="接头形式">
                   <Input />
                 </Form.Item>
-                <Form.Item name="part_a_id" label="连接零部件 A" rules={[{ required: true, message: "请选择零部件 A" }]}>
+                <Form.Item
+                  name="part_a_id"
+                  label="连接零部件 A"
+                  rules={[{ required: true, message: "请选择零部件 A" }]}
+                >
                   <Select
                     showSearch
                     optionFilterProp="label"
@@ -883,7 +1287,11 @@ const DrawingReview: React.FC = () => {
                     }))}
                   />
                 </Form.Item>
-                <Form.Item name="part_b_id" label="连接零部件 B" rules={[{ required: true, message: "请选择零部件 B" }]}>
+                <Form.Item
+                  name="part_b_id"
+                  label="连接零部件 B"
+                  rules={[{ required: true, message: "请选择零部件 B" }]}
+                >
                   <Select
                     showSearch
                     optionFilterProp="label"
@@ -949,6 +1357,7 @@ const DrawingReview: React.FC = () => {
                     ]}
                   />
                 </Form.Item>
+                <TreatmentPlanEditor />
                 <Form.Item name="impact_required" label="冲击试验">
                   <Select
                     options={[
@@ -979,10 +1388,18 @@ const DrawingReview: React.FC = () => {
             description="这里只补充图号和产品名称，不会重新调用模型或覆盖其他识别结果。"
           />
           <Form form={productForm} layout="vertical">
-            <Form.Item name="drawing_number" label="图号" rules={[{ required: true, message: "请输入图号" }]}>
+            <Form.Item
+              name="drawing_number"
+              label="图号"
+              rules={[{ required: true, message: "请输入图号" }]}
+            >
               <Input maxLength={120} />
             </Form.Item>
-            <Form.Item name="product_name" label="产品名称" rules={[{ required: true, message: "请输入产品名称" }]}>
+            <Form.Item
+              name="product_name"
+              label="产品名称"
+              rules={[{ required: true, message: "请输入产品名称" }]}
+            >
               <Input maxLength={200} />
             </Form.Item>
           </Form>

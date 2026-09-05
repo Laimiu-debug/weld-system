@@ -339,7 +339,7 @@ def build_pressure_vessel_blueprint(
     terminals = []
     closure_sensitive = []
     head_welds = []
-    any_pwht = False
+    shared_treatments = {}
     sorted_joints = sorted(
         joints, key=lambda item: (family_of(item)[1], item.weld_number)
     )
@@ -410,7 +410,10 @@ def build_pressure_vessel_blueprint(
         add_edge(asm, weld, "assembly", "组对尺寸检查合格后才能焊接")
         terminal = weld
         methods = list(getattr(requirement, "nde_methods", None) or [])
-        if methods:
+        needs_pwht = bool(getattr(requirement, "pwht_required", False))
+        if getattr(requirement, "treatment_plan", None) and not needs_pwht:
+            raise HTTPException(422, "热处理计划与是否需要热处理的要求冲突")
+        if methods and not needs_pwht:
             nde = f"NDE-{joint.id}"
             add_step(
                 nde,
@@ -428,6 +431,10 @@ def build_pressure_vessel_blueprint(
             )
             add_edge(weld, nde, "nde", "焊接完成后执行规定的无损检测")
             terminal = nde
+        if needs_pwht:
+            from app.services.sequence_treatment_service import add_treatment_steps
+            terminal = add_treatment_steps(joint, requirement, freeze, add_step, add_edge,
+                shared_treatments, [f"WELD-{item.id}" for item in joints])
         is_closing = (
             joint.id in structure.get("closure_joint_ids", [])
             if structure
@@ -438,7 +445,6 @@ def build_pressure_vessel_blueprint(
         terminals.append(terminal)
         if is_closing:
             head_welds.append(weld)
-        any_pwht = any_pwht or bool(getattr(requirement, "pwht_required", False))
 
     if head_welds:
         add_step(
@@ -456,19 +462,6 @@ def build_pressure_vessel_blueprint(
         for code in head_welds:
             add_edge("CLOSE-VESSEL", code, "accessibility", "封闭确认是最终封头焊接的前置条件")
     final_inputs = terminals
-    if any_pwht:
-        add_step(
-            "PWHT-GLOBAL",
-            "pwht",
-            "整体焊后热处理",
-            "热处理",
-            900,
-            is_locked=True,
-            explanation="所有需热处理焊缝及规定的前置检测完成后执行",
-        )
-        for code in terminals:
-            add_edge(code, "PWHT-GLOBAL", "pwht", "焊接和前置检测完成后才能热处理")
-        final_inputs = ["PWHT-GLOBAL"]
     add_step(
         "FINAL-INSPECTION",
         "inspection",
@@ -625,12 +618,14 @@ class WeldSequenceService:
         steps, dependencies, validation = build_pressure_vessel_blueprint(
             joints, requirements, parts, freezes, strategies, ai_step_codes, structure
         )
+        from app.services.sequence_source_service import rule_baseline
         source_matches = [
             {
                 "id": item.id,
                 "joint_id": item.weld_joint_id,
                 "frozen_hash": snapshot_hash(item.frozen_snapshot),
                 "snapshot": item.frozen_snapshot,
+                "rule_baseline": rule_baseline(self.db, item.frozen_snapshot),
             }
             for item in sorted(freezes.values(), key=lambda value: value.weld_joint_id)
         ]
@@ -651,14 +646,14 @@ class WeldSequenceService:
             template_code=TEMPLATE_CODE
             if structure["template"] == "pressure_vessel"
             else "GENERIC_WELDMENT_V1",
-            template_version="2.0.0",
+            template_version="3.0.0",
             strategy_snapshot={
                 **DEFAULT_STRATEGIES,
                 **strategies,
                 "_structure": structure,
             },
             source_match_snapshot=source_matches,
-            source_match_hash=snapshot_hash(source_matches),
+            source_match_hash=snapshot_hash([{k:v for k,v in item.items() if k != "rule_baseline"} for item in source_matches]),
             candidate_source="ai_assisted" if ai_step_codes else "deterministic",
             candidate_explanation=ai_explanation,
             validation_result=validation,
@@ -728,7 +723,8 @@ class WeldSequenceService:
             .filter(StepDependency.sequence_revision_id == sequence.id)
             .all()
         )
-        return {"revision": sequence, "steps": steps, "dependencies": dependencies}
+        from app.services.sequence_source_service import source_impact
+        return {"revision": sequence, "steps": steps, "dependencies": dependencies, "source_impact": source_impact(self.db, sequence)}
 
     def _blueprint(self, sequence_id: str):
         steps = (
@@ -970,6 +966,10 @@ class WeldSequenceService:
         ]
         if snapshot_hash(current_snapshot) != sequence.source_match_hash:
             raise HTTPException(409, "已批准 WPS/PQR 匹配已变化，请重新计算焊序")
+        from app.services.sequence_source_service import source_impact
+        impact = source_impact(self.db, sequence)
+        if impact["stale"]:
+            raise HTTPException(409, {"message":"焊序来源已变化，请重新匹配并计算", "source_impact":impact})
         _, _, steps, dependencies = self._blueprint(sequence.id)
         validation = validate_sequence(steps, dependencies)
         sequence.validation_result = validation
@@ -1070,7 +1070,11 @@ class WeldSequenceService:
                 product_revision.data_version,
             )
         )
+        from app.services.sequence_source_service import source_impact
+        impact = source_impact(self.db, approved) if approved else None
+        eligible = eligible and not (impact and impact["stale"])
         return {
+            "source_impact": impact,
             "eligible": eligible,
             "sequence_revision_id": approved.id if eligible else None,
             "frozen_hash": approved.frozen_hash if eligible else None,

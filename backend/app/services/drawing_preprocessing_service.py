@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from io import BytesIO
-from math import atan2, degrees
+from math import atan2, degrees, isfinite
 from typing import Any
 
 from PIL import Image
@@ -23,6 +23,7 @@ class PreparedDrawingPage:
     original_size: tuple[int, int]
     oriented_size: tuple[int, int]
     title_box: tuple[int, int, int, int]
+    source_region: tuple[float, float, float, float] = (0, 0, 1, 1)
 
 
 def pdf_text_rotation(stream, page_number: int) -> int:
@@ -53,7 +54,11 @@ def pdf_text_rotation(stream, page_number: int) -> int:
 
 
 def prepare_drawing_page(
-    png: bytes, page_number: int, *, rotation_degrees: int = 0
+    png: bytes,
+    page_number: int,
+    *,
+    rotation_degrees: int = 0,
+    region: list[float] | None = None,
 ) -> PreparedDrawingPage:
     """Orient a drawing and isolate the conventional bottom-right title region."""
     with Image.open(BytesIO(png)) as source:
@@ -63,7 +68,28 @@ def prepare_drawing_page(
     if rotation_degrees not in {0, 90, 180, 270}:
         raise ValueError("Invalid drawing rotation")
     rotation = rotation_degrees
-    oriented = original.rotate(rotation, expand=True)
+    source_region = (0, 0, 1, 1)
+    working = original
+    if region is not None:
+        if not _valid_bbox(region):
+            raise ValueError("Invalid drawing region")
+        width, height = original.size
+        box = (
+            int(region[0] * width),
+            int(region[1] * height),
+            int(region[2] * width),
+            int(region[3] * height),
+        )
+        if box[2] <= box[0] or box[3] <= box[1]:
+            raise ValueError("Drawing region is smaller than one pixel")
+        working = original.crop(box)
+        source_region = (
+            box[0] / width,
+            box[1] / height,
+            box[2] / width,
+            box[3] / height,
+        )
+    oriented = working.rotate(rotation, expand=True)
     if max(oriented.size) > MAX_AI_DRAWING_EDGE:
         oriented.thumbnail(
             (MAX_AI_DRAWING_EDGE, MAX_AI_DRAWING_EDGE), Image.Resampling.LANCZOS
@@ -84,6 +110,7 @@ def prepare_drawing_page(
         original_size=original.size,
         oriented_size=oriented.size,
         title_box=title_box,
+        source_region=source_region,
     )
 
 
@@ -110,45 +137,6 @@ def restore_payload_evidence(
     return payload
 
 
-def _best_orientation(image: Image.Image) -> tuple[int, Image.Image]:
-    candidates = [
-        (0, image),
-        (90, image.rotate(90, expand=True)),
-        (180, image.rotate(180, expand=True)),
-        (270, image.rotate(270, expand=True)),
-    ]
-    return max(candidates, key=lambda item: _orientation_score(item[1]))
-
-
-def _orientation_score(image: Image.Image) -> float:
-    sample = image.copy()
-    sample.thumbnail((600, 600))
-    width, height = sample.size
-    bottom_right = _ink_ratio(
-        sample.crop((int(width * 0.58), int(height * 0.52), width, height))
-    )
-    bottom = _ink_ratio(sample.crop((0, int(height * 0.78), width, height)))
-    right = _ink_ratio(sample.crop((int(width * 0.82), 0, width, height)))
-    top_left = _ink_ratio(sample.crop((0, 0, int(width * 0.42), int(height * 0.48))))
-    # Most fabrication drawings use a landscape sheet and a bottom-right title
-    # block. The density terms choose between the two landscape rotations.
-    landscape_bonus = 0.75 if width >= height else 0.0
-    return (
-        landscape_bonus
-        + 3.0 * bottom_right
-        + 1.2 * bottom
-        + 0.5 * right
-        - 0.35 * top_left
-    )
-
-
-def _ink_ratio(image: Image.Image) -> float:
-    grayscale = image.convert("L")
-    histogram = grayscale.histogram()
-    ink = sum(histogram[:220])
-    return ink / max(1, grayscale.width * grayscale.height)
-
-
 def _restore_evidence(
     evidence: Any,
     pages: dict[int, PreparedDrawingPage],
@@ -159,7 +147,11 @@ def _restore_evidence(
         return
     page = pages.get(evidence.get("page"))
     bbox = evidence.get("bbox")
-    if page is None or not _valid_bbox(bbox):
+    if page is None:
+        evidence["page"], evidence["bbox"] = None, None
+        return
+    if not _valid_bbox(bbox):
+        evidence["bbox"] = None
         return
     x1, y1, x2, y2 = (float(value) for value in bbox)
     if title_crop:
@@ -173,7 +165,14 @@ def _restore_evidence(
             (top + y1 * (bottom - top)) / height,
             (top + y2 * (bottom - top)) / height,
         )
-    evidence["bbox"] = _inverse_rotation_bbox([x1, y1, x2, y2], page.rotation_degrees)
+    restored = _inverse_rotation_bbox([x1, y1, x2, y2], page.rotation_degrees)
+    left, top, right, bottom = page.source_region
+    evidence["bbox"] = [
+        left + restored[0] * (right - left),
+        top + restored[1] * (bottom - top),
+        left + restored[2] * (right - left),
+        top + restored[3] * (bottom - top),
+    ]
 
 
 def _inverse_rotation_bbox(bbox: list[float], degrees: int) -> list[float]:
@@ -196,7 +195,14 @@ def _valid_bbox(value: Any) -> bool:
     return (
         isinstance(value, list)
         and len(value) == 4
-        and all(isinstance(item, (int, float)) for item in value)
+        and all(
+            isinstance(item, (int, float))
+            and not isinstance(item, bool)
+            and isfinite(item)
+            for item in value
+        )
+        and 0 <= value[0] < value[2] <= 1
+        and 0 <= value[1] < value[3] <= 1
     )
 
 

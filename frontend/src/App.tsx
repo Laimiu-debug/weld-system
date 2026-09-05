@@ -29,6 +29,7 @@ const CapabilityLibrary = React.lazy(() => import('@/pages/CapabilityLibrary'))
 const EngineeringProjects = React.lazy(() => import('@/pages/Engineering/Projects'))
 const DrawingReview = React.lazy(() => import('@/pages/Engineering/DrawingReview'))
 const WPSMatching = React.lazy(() => import('@/pages/Engineering/WPSMatching'))
+const SequenceDelivery = React.lazy(() => import('@/pages/Engineering/SequenceDelivery'))
 const WeldSequencePlanning = React.lazy(() => import('@/pages/Engineering/WeldSequencePlanning'))
 
 const WPSList = React.lazy(() => import('@/pages/WPS/WPSList'))
@@ -281,6 +282,7 @@ const App: React.FC = () => {
           <Route path="engineering" element={<ProtectedRoute><EngineeringProjects /></ProtectedRoute>} />
           <Route path="engineering/revisions/:id/review" element={<ProtectedRoute><DrawingReview /></ProtectedRoute>} />
           <Route path="engineering/revisions/:id/matching" element={<ProtectedRoute><WPSMatching /></ProtectedRoute>} />
+          <Route path="engineering/sequences/:sequenceId/delivery" element={<ProtectedRoute><SequenceDelivery /></ProtectedRoute>} />
           <Route path="engineering/revisions/:id/sequence" element={<ProtectedRoute><WeldSequencePlanning /></ProtectedRoute>} />
           {/* 模块管理 */}
           <Route

@@ -2,6 +2,7 @@ import api from "./api";
 
 export type SequenceRow = Record<string, any>;
 export interface SequenceDetail {
+  source_impact?: import("@/pages/Engineering/SourceImpactAlert").SourceImpact;
   revision: SequenceRow;
   steps: SequenceRow[];
   dependencies: SequenceRow[];

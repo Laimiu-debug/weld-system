@@ -1,7 +1,7 @@
 """API contracts for P3 engineering drawings and review."""
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, StrictInt, model_validator
 
 from app.schemas.smart_import import AIExtractionRequest
 
@@ -23,6 +23,37 @@ class ProductCreate(BaseModel):
 class DrawingAIRequest(AIExtractionRequest):
     # Kept optional for deterministic integrations/tests and manual-only customers.
     extracted_payload: dict[str, Any] | None = None
+    page_numbers: list[StrictInt] | None = Field(None, min_length=1, max_length=500)
+    region: list[float] | None = Field(None, min_length=4, max_length=4)
+    page_rotations: dict[int, Literal[0, 90, 180, 270]] = Field(default_factory=dict)
+    retry_job_id: str | None = Field(None, max_length=36)
+
+    @model_validator(mode="after")
+    def validate_scope(self):
+        if self.page_numbers and (
+            min(self.page_numbers) < 1
+            or len(set(self.page_numbers)) != len(self.page_numbers)
+        ):
+            raise ValueError("页码必须为不重复的正整数")
+        if any(page < 1 for page in self.page_rotations):
+            raise ValueError("旋转页码必须为正整数")
+        if self.region is not None:
+            x1, y1, x2, y2 = self.region
+            if (
+                not self.page_numbers
+                or len(self.page_numbers) != 1
+                or not (0 <= x1 < x2 <= 1 and 0 <= y1 < y2 <= 1)
+            ):
+                raise ValueError("局部识别须指定单页及有效的归一化区域坐标")
+        if self.retry_job_id and (
+            self.page_numbers or self.region or self.page_rotations
+        ):
+            raise ValueError("阶段重试沿用原任务范围和方向，不能同时修改")
+        if self.extracted_payload is not None and (
+            self.page_numbers or self.region or self.page_rotations or self.retry_job_id
+        ):
+            raise ValueError("手工结果不能与局部识别或重试参数混用")
+        return self
 
 
 class EntityPatch(BaseModel):

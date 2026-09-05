@@ -14,6 +14,7 @@ from test_ai_input_integrity import drawing
 from app.models.engineering import Part, WeldJoint, WeldRequirement
 from app.models.matching import WPSMatchRun, WPSMatchCandidate, WPSMatchFreeze
 from app.models.qualification import WPSPQRSupportLink
+from app.services.qualification_service import _record_snapshot
 from app.models.wps import WPS
 from app.models.pqr import PQR
 from app.models.welder import Welder, WelderCertification
@@ -74,6 +75,7 @@ def seed_workflow(db, tmp_path):
         wps_number=uuid4().hex,
         title="QA",
         welding_process="GTAW",
+        current_range="90-130 A",
         status="approved",
         **scope,
     )
@@ -120,7 +122,10 @@ def seed_workflow(db, tmp_path):
         wps_snapshot_hash="x",
         pqr_snapshot_hash="x",
         rule_snapshot_hash="x",
-        frozen_snapshot={"wps": {"id": wps.id}, "pqr": {"id": pqr.id}},
+        frozen_snapshot={
+            "wps": _record_snapshot(wps),
+            "pqr": _record_snapshot(pqr),
+        },
         **scope,
     )
     welder = Welder(
@@ -499,3 +504,97 @@ def test_concurrent_execution_uses_one_trace(db, sessions, tmp_path):
         db.query(ProductionExecutionTrace).filter_by(production_task_id=task_id).count()
         == 1
     )
+
+
+def test_frozen_parameters_and_repair_records_gate_completion(db, tmp_path):
+    owner, ctx, revision, sequence, welder, cert = seed_workflow(db, tmp_path)
+    svc = ProductionReleaseService(db)
+    batch, _ = svc.release(sequence.id, None, owner, ctx)
+    tasks = sorted(
+        svc.detail(batch.id, owner, ctx)["tasks"],
+        key=lambda t: t["source_step_snapshot"]["order_index"],
+    )
+    for task in tasks:
+        if task["task_type"] != "welding":
+            svc.record_execution(
+                task["id"],
+                {"idempotency_key": "setup", "status": "completed"},
+                owner,
+                ctx,
+            )
+            continue
+        svc.assign(task["id"], welder.id, None, None, owner, ctx)
+        # Changing today's WPS cannot widen the released range.
+        db.get(WPS, task["wps_id"]).current_range = "1-999 A"
+        db.commit()
+        for values in ({}, {"current": 200}):
+            with pytest.raises(HTTPException, match="执行条件"):
+                svc.record_execution(
+                    task["id"],
+                    {
+                        "idempotency_key": "invalid",
+                        "status": "completed",
+                        "actual_parameters": values,
+                    },
+                    owner,
+                    ctx,
+                )
+            db.rollback()
+        trace, _ = svc.record_execution(
+            task["id"],
+            {"idempotency_key": "observation", "actual_parameters": {"current": 200}},
+            owner,
+            ctx,
+        )
+        assert not trace.quality_snapshot["parameter_validation"]["passed"]
+        inspection = QualityInspection(
+            owner_id=owner.id,
+            inspection_number=str(uuid4()),
+            production_task_id=task["id"],
+            inspection_result="pass",
+            repair_required=True,
+        )
+        db.add(inspection)
+        db.commit()
+        with pytest.raises(HTTPException, match="返修未闭合"):
+            svc.record_execution(
+                task["id"],
+                {
+                    "idempotency_key": "repair-open",
+                    "status": "completed",
+                    "actual_parameters": {"current": 100},
+                    "repair_snapshot": {"closed": True},
+                },
+                owner,
+                ctx,
+            )
+        db.rollback()
+        from app.services.quality_service import QualityService
+
+        QualityService(db).update_quality_inspection(
+            inspection.id,
+            owner,
+            {
+                "repair_description": "按批准工艺完成返修",
+                "reinspection_date": date.today(),
+                "reinspection_result": "pass",
+                "reinspection_notes": "复验合格",
+                "reinspection_inspector_id": 999999,
+            },
+            ctx,
+        )
+        db.refresh(inspection)
+        assert inspection.reinspection_inspector_id == owner.id
+        trace, _ = svc.record_execution(
+            task["id"],
+            {
+                "idempotency_key": "valid",
+                "status": "completed",
+                "actual_parameters": {"current": 100},
+            },
+            owner,
+            ctx,
+        )
+        assert trace.quality_snapshot["parameter_validation"]["passed"]
+        assert trace.repair_snapshot["inspections"][0]["closed"]
+        break
