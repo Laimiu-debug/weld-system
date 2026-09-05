@@ -61,6 +61,7 @@ import {
   sequenceService,
 } from "@/services/sequence";
 import "./sequence.css";
+import ProductionReleasePanel from "./ProductionReleasePanel";
 
 const { Title, Text, Paragraph } = Typography;
 const statusMeta: Record<string, { label: string; color: string }> = {
@@ -436,6 +437,7 @@ const WeldSequencePlanning: React.FC = () => {
           description={release?.reason}
         />
 
+        {detail && <ProductionReleasePanel key={detail.revision.id} sequenceId={detail.revision.id} approved={detail.revision.status === "approved"} />}
         <Card className="sequence-toolbar">
           <Space wrap>
             <Text strong>焊序版本</Text>

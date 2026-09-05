@@ -711,7 +711,7 @@ const App: React.FC = () => {
           <Route
             path="employees"
             element={
-              <ProtectedRoute requiredPermission="employees.read">
+              <ProtectedRoute>
                 <EmployeeManagement />
               </ProtectedRoute>
             }

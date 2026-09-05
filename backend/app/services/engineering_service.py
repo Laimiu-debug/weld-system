@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import base64
+from copy import deepcopy
+import json
+import logging
+import math
 from datetime import datetime
 from pathlib import Path
 import re
@@ -12,6 +16,7 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from jsonschema import Draft202012Validator
 
 from app.core.config import settings
 from app.core.data_access import (
@@ -59,6 +64,8 @@ from app.services.drawing_preprocessing_service import (
 )
 from app.services.smart_import_service import SmartImportService
 
+logger = logging.getLogger(__name__)
+
 
 DRAWING_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -70,9 +77,9 @@ DRAWING_SCHEMA: dict[str, Any] = {
                 "product_name": {"type": ["string", "null"]},
                 "drawing_revision": {"type": ["string", "null"]},
                 "design_code": {"type": ["string", "null"]},
-                "confidence": {"type": ["number", "null"]},
+                "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
                 "evidence": {
-                    "type": "object",
+                    "type": ["object", "null"],
                     "properties": {
                         "drawing_number": {"$ref": "#/$defs/evidence"},
                         "product_name": {"$ref": "#/$defs/evidence"},
@@ -106,13 +113,13 @@ DRAWING_SCHEMA: dict[str, Any] = {
                     "ref": {"type": "string"},
                     "parent_ref": {"type": ["string", "null"]},
                     "part_number": {"type": ["string", "null"]},
-                    "name": {"type": "string"},
+                    "name": {"type": ["string", "null"]},
                     "material_spec": {"type": ["string", "null"]},
                     "material_group": {"type": ["string", "null"]},
-                    "thickness_mm": {"type": ["number", "null"]},
-                    "quantity": {"type": ["integer", "null"]},
+                    "thickness_mm": {"type": ["number", "null"], "exclusiveMinimum": 0},
+                    "quantity": {"type": ["integer", "null"], "minimum": 1, "maximum": 2147483647},
                     "assembly_path": {"type": ["string", "null"]},
-                    "confidence": {"type": ["number", "null"]},
+                    "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
                     "evidence": {"$ref": "#/$defs/evidence"},
                 },
                 "required": [
@@ -136,21 +143,21 @@ DRAWING_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "weld_number": {"type": "string"},
+                    "weld_number": {"type": ["string", "null"]},
                     "part_a_ref": {"type": ["string", "null"]},
                     "part_b_ref": {"type": ["string", "null"]},
                     "joint_type": {"type": ["string", "null"]},
                     "groove_type": {"type": ["string", "null"]},
-                    "groove_angle": {"type": ["number", "null"]},
-                    "root_gap": {"type": ["number", "null"]},
-                    "root_face": {"type": ["number", "null"]},
-                    "weld_size": {"type": ["number", "null"]},
-                    "length_mm": {"type": ["number", "null"]},
+                    "groove_angle": {"type": ["number", "null"], "minimum": 0},
+                    "root_gap": {"type": ["number", "null"], "minimum": 0},
+                    "root_face": {"type": ["number", "null"], "minimum": 0},
+                    "weld_size": {"type": ["number", "null"], "exclusiveMinimum": 0},
+                    "length_mm": {"type": ["number", "null"], "exclusiveMinimum": 0},
                     "weld_position": {"type": ["string", "null"]},
                     "welding_process": {"type": ["string", "null"]},
                     "material_group": {"type": ["string", "null"]},
                     "diameter_applicable": {"type": ["boolean", "null"]},
-                    "diameter_mm": {"type": ["number", "null"]},
+                    "diameter_mm": {"type": ["number", "null"], "exclusiveMinimum": 0},
                     "filler_material_spec": {"type": ["string", "null"]},
                     "filler_material_classification": {"type": ["string", "null"]},
                     "nde_methods": {"type": "array", "items": {"type": "string"}},
@@ -161,7 +168,7 @@ DRAWING_SCHEMA: dict[str, Any] = {
                     "impact_required": {"type": ["boolean", "null"]},
                     "impact_temperature": {"type": ["string", "null"]},
                     "special_requirements": {"type": ["string", "null"]},
-                    "confidence": {"type": ["number", "null"]},
+                    "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
                     "evidence": {"$ref": "#/$defs/evidence"},
                 },
                 "required": [
@@ -215,11 +222,11 @@ DRAWING_SCHEMA: dict[str, Any] = {
     },
     "$defs": {
         "evidence": {
-            "type": "object",
+            "type": ["object", "null"],
             "properties": {
                 "page": {"type": ["integer", "null"]},
                 "bbox": {
-                    "type": "array",
+                    "type": ["array", "null"],
                     "items": {"type": "number"},
                     "minItems": 4,
                     "maxItems": 4,
@@ -238,16 +245,16 @@ DRAWING_INSTRUCTIONS = """你是承压设备焊接图纸结构化助手。输入
 按图签、明细栏、技术要求、焊缝符号和剖视图提取产品、零部件、材料、厚度、装配关系、焊缝及 NDE/PWHT/冲击要求。
 不得猜测关键焊接变量；不确定时返回 null 并写入 unresolved_regions。每条记录必须给出页码和归一化 bbox=[x1,y1,x2,y2]（0~1）以便人工定位。"""
 
-DRAWING_TITLE_INSTRUCTIONS = """你是承压设备图纸图签抄录助手。输入图片已旋转为正常阅读方向，并裁剪到每页右下角图签区域。
+DRAWING_TITLE_INSTRUCTIONS = """你是承压设备图纸图签抄录助手。输入图片是完整图纸，请根据文字判断阅读方向，在整页查找图签，图签不一定在右下角。
 只逐字读取图号、产品名称、版本和完整设计标准；不得从常识、文件名或相似图纸猜测。看不清时返回 null。
-每个字段的 evidence.text 必须是图片中可见原文，bbox 是相对于对应裁剪图片的归一化坐标。confidence 为 0~1。"""
+每个字段的 evidence.text 必须是图片中可见原文，bbox 是相对于输入整页图片的归一化坐标。confidence 为 0~1。"""
 
 DRAWING_PARTS_INSTRUCTIONS = """识别承压设备图纸中的零部件、材料、厚度、数量和装配关系。
-图片已旋转到正常阅读方向。只输出图中有明确标注的记录，不得把尺寸、管口编号或推测结构虚构成零部件。
+请根据文字判断阅读方向。只输出图中有明确标注的记录，不得把尺寸、管口编号或推测结构虚构成零部件。
 每条记录必须包含对应页码、可见原文和相对于整页图片的归一化 bbox；不确定内容写入 unresolved_regions。"""
 
 DRAWING_WELDS_INSTRUCTIONS = """识别承压设备图纸中的焊缝编号、连接零件、接头/坡口、焊接尺寸以及 NDE、PWHT、冲击要求。
-图片已旋转到正常阅读方向。技术要求中的全局要求不得臆造为某条焊缝的专属参数。
+请根据文字判断阅读方向。技术要求中的全局要求不得臆造为某条焊缝的专属参数。
 每条记录必须包含对应页码、可见原文和相对于整页图片的归一化 bbox；没有明确证据时返回 null 并写入 unresolved_regions。"""
 
 
@@ -267,6 +274,106 @@ DRAWING_PARTS_SCHEMA = _drawing_stage_schema("parts", "unresolved_regions")
 DRAWING_WELDS_SCHEMA = _drawing_stage_schema("weld_joints", "unresolved_regions")
 
 
+def _finite_number(value: Any) -> bool:
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def validate_drawing_payload(payload: dict, schema: dict = DRAWING_SCHEMA) -> None:
+    """Accept partial findings, but reject malformed model output before writes."""
+    # Python JSON decoders can accept NaN/Infinity; neither JSONB nor geometric
+    # calculations can safely consume them. Check before JSON Schema evaluation.
+    pending = [(payload, "根节点")]
+    while pending:
+        value, path = pending.pop()
+        if type(value) in (int, float) and not _finite_number(value):
+            raise AIExtractionRunError(
+                "invalid_drawing_result", f"图纸识别结果包含无效数值（{path}），请重试或更换模型", 422
+            )
+        if isinstance(value, dict):
+            pending.extend((item, f"{path}.{key}") for key, item in value.items())
+        elif isinstance(value, list):
+            pending.extend((item, f"{path}.{index}") for index, item in enumerate(value))
+    # Normalize association identifiers consistently across all extraction stages.
+    if isinstance(payload, dict):
+        for section, keys in (("parts", ("ref", "parent_ref")),
+                              ("weld_joints", ("part_a_ref", "part_b_ref"))):
+            for item in payload.get(section, []) if isinstance(payload.get(section), list) else []:
+                if isinstance(item, dict):
+                    for key in keys:
+                        value = item.get(key)
+                        if isinstance(value, (str, int)) and not isinstance(value, bool):
+                            item[key] = str(value).strip() or None
+    # ref is an internal association ID, not an engineering fact. Providers
+    # often leave it null when no part number is printed on the drawing.
+    if isinstance(payload, dict) and isinstance(payload.get("parts"), list):
+        existing_refs = {
+            str(part["ref"]) for part in payload["parts"]
+            if isinstance(part, dict) and part.get("ref") is not None
+        }
+        for index, part in enumerate(payload["parts"], 1):
+            if not isinstance(part, dict):
+                continue
+            ref = part.get("ref")
+            if ref is None or ref == "":
+                ref = f"part-{index}"
+                while ref in existing_refs:
+                    ref += "-new"
+                part["ref"] = ref
+                existing_refs.add(ref)
+            elif isinstance(ref, (str, int)) and not isinstance(ref, bool):
+                part["ref"] = str(ref)
+    shape = deepcopy(schema)
+
+    def allow_missing(node):
+        if isinstance(node, dict):
+            node.pop("required", None)
+            for value in node.values():
+                allow_missing(value)
+        elif isinstance(node, list):
+            for value in node:
+                allow_missing(value)
+
+    allow_missing(shape)
+    # Align model text limits with persisted columns, so oversized output fails
+    # as a correctable extraction error instead of a database/server error.
+    for section, models in (("parts", (Part,)), ("weld_joints", (WeldJoint, WeldRequirement))):
+        properties = shape.get("properties", {}).get(section, {}).get("items", {}).get("properties", {})
+        for model in models:
+            for column in model.__table__.columns:
+                length = getattr(column.type, "length", None)
+                if length and column.name in properties:
+                    properties[column.name]["maxLength"] = length
+    error = next(Draft202012Validator(shape).iter_errors(payload), None)
+    if error:
+        path = ".".join(map(str, error.absolute_path)) or "根节点"
+        raise AIExtractionRunError(
+            "invalid_drawing_result", f"图纸识别结果格式不正确（{path}），请重试或更换模型", 422
+        )
+    refs = [part["ref"] for part in payload.get("parts", [])]
+    if len(refs) != len(set(refs)):
+        raise AIExtractionRunError(
+            "duplicate_part_reference", "图纸识别返回重复的零件引用，无法可靠关联焊缝，请重试或更换模型", 422
+        )
+    parents = {part["ref"]: part.get("parent_ref") for part in payload.get("parts", [])}
+    checked: set[str] = set()
+    for ref in parents:
+        path: set[str] = set()
+        current = ref
+        while current in parents and current not in checked:
+            if current in path:
+                raise AIExtractionRunError(
+                    "cyclic_part_reference", "图纸识别返回循环装配关系，请修正零件父级或重新识别", 422
+                )
+            path.add(current)
+            current = parents[current]
+        checked.update(path)
+
+
 def workspace_values(
     user: User, context: WorkspaceContext, access_level: str
 ) -> dict[str, Any]:
@@ -284,12 +391,12 @@ def workspace_values(
 def clean_evidence(value: Any, page_count: int) -> dict[str, Any]:
     raw = value if isinstance(value, dict) else {}
     page = raw.get("page")
-    page = page if isinstance(page, int) and 1 <= page <= page_count else None
+    page = page if type(page) is int and 1 <= page <= page_count else None
     bbox = raw.get("bbox")
     if (
         not isinstance(bbox, list)
         or len(bbox) != 4
-        or any(not isinstance(x, (int, float)) for x in bbox)
+        or any(not _finite_number(x) for x in bbox)
     ):
         bbox = []
     else:
@@ -344,6 +451,15 @@ def drawing_risks(payload: dict[str, Any], page_count: int) -> list[dict[str, An
     refs = {
         str(item.get("ref")) for item in payload.get("parts", []) if item.get("ref")
     }
+    for item in payload.get("parts", []):
+        parent_ref = item.get("parent_ref")
+        if parent_ref and parent_ref not in refs:
+            risks.append({
+                "code": "unresolved_parent_part",
+                "severity": "critical",
+                "message": f"零件 {item['ref']} 引用未识别父级零件 {parent_ref}",
+                "evidence": clean_evidence(item.get("evidence"), page_count),
+            })
     for item in payload.get("weld_joints", []):
         number = str(item.get("weld_number") or "").strip()
         if not number:
@@ -882,23 +998,16 @@ class EngineeringService:
                         )
                         for page in prepared_pages
                     ]
-                    title_images = [
-                        AIImageInput(
-                            data_url="data:image/png;base64,"
-                            + base64.b64encode(page.title_png).decode(),
-                            page_number=page.page_number,
-                        )
-                        for page in prepared_pages
-                    ]
                     title_result = provider.structured_response(
                         StructuredAIRequest(
                             instructions=DRAWING_TITLE_INSTRUCTIONS,
-                            input_text="逐页读取裁剪后的图签。",
+                            input_text="逐页查找并读取图签，不得从零部件明细推测产品名称。",
                             json_schema=DRAWING_TITLE_SCHEMA,
-                            images=title_images,
+                            images=full_images,
                             schema_name="engineering_drawing_title_v2",
                         )
                     )
+                    validate_drawing_payload(title_result.data, DRAWING_TITLE_SCHEMA)
                     parts_result = provider.structured_response(
                         StructuredAIRequest(
                             instructions=DRAWING_PARTS_INSTRUCTIONS,
@@ -908,22 +1017,26 @@ class EngineeringService:
                             schema_name="engineering_drawing_parts_v2",
                         )
                     )
+                    validate_drawing_payload(parts_result.data, DRAWING_PARTS_SCHEMA)
                     welds_result = provider.structured_response(
                         StructuredAIRequest(
                             instructions=DRAWING_WELDS_INSTRUCTIONS,
-                            input_text=text[: settings.AI_MAX_INPUT_CHARS],
+                            input_text=(
+                                text[: settings.AI_MAX_INPUT_CHARS]
+                                + "\n以下是前一步识别的零件引用，仅作关联候选，须以图片为准：\n"
+                                + json.dumps(parts_result.data.get("parts") or [], ensure_ascii=False)
+                            ),
                             json_schema=DRAWING_WELDS_SCHEMA,
                             images=full_images,
                             schema_name="engineering_drawing_welds_v2",
                         )
                     )
+                    validate_drawing_payload(welds_result.data, DRAWING_WELDS_SCHEMA)
                     results = [title_result, parts_result, welds_result]
                     restore_payload_evidence(
                         title_result.data,
                         prepared_pages,
-                        title_crop_sections=frozenset(
-                            {"product", "unresolved_regions"}
-                        ),
+                        title_crop_sections=frozenset(),
                     )
                     restore_payload_evidence(parts_result.data, prepared_pages)
                     restore_payload_evidence(welds_result.data, prepared_pages)
@@ -955,15 +1068,16 @@ class EngineeringService:
                     (result.response_id for result in results if result.response_id),
                     None,
                 )
+            assert payload is not None
+            validate_drawing_payload(payload)
+            if job:
                 identity_problems = drawing_identity_problems(
                     payload, document.original_filename, len(pages)
                 )
-                job.status = "completed"
-                job.progress = 100
-                job.completed_at = datetime.utcnow()
-                self.db.commit()
-                quota.settle(job, user, context, len(pages))
-            assert payload is not None
+            if not payload.get("parts") and not payload.get("weld_joints"):
+                raise AIExtractionRunError(
+                    "empty_drawing_extraction", "未识别出零部件或焊缝，请检查图纸清晰度及视觉模型配置", 422
+                )
             risks = drawing_risks(payload, len(pages))
             risks.extend(
                 {
@@ -994,9 +1108,19 @@ class EngineeringService:
             revision.status = "review"
             revision.data_version += 1
             self._invalidate(revision, [], "图纸解析结果已更新", all_scope=True)
-            self.db.commit()
+            if job:
+                job.status = "completed"
+                job.progress = 100
+                job.completed_at = datetime.utcnow()
+                # Flush the extracted rows before settling the reservation.
+                # A validation or database failure must remain refundable.
+                self.db.flush()
+                quota.settle(job, user, context, len(pages))
+            else:
+                self.db.commit()
             return run
         except Exception as exc:
+            logger.exception("Drawing extraction failed for revision %s", revision_id)
             self.db.rollback()
             revision = (
                 self.db.query(ProductRevision)
@@ -1029,6 +1153,8 @@ class EngineeringService:
             if isinstance(exc, AIProviderError):
                 status_code = 503 if exc.retryable else 422
                 raise AIExtractionRunError(exc.code, str(exc), status_code) from exc
+            if isinstance(exc, DocumentParseError):
+                raise AIExtractionRunError("drawing_render_failed", str(exc), 422) from exc
             raise
 
     def _replace_extracted_data(
@@ -1359,6 +1485,30 @@ class EngineeringService:
                 )
             )
 
+    def _validate_part_links(self, revision_id, values, *, part_id=None):
+        """All assembly and weld references must stay inside one live revision."""
+        for key in ("part_a_id", "part_b_id", "parent_part_id"):
+            linked_id = values.get(key)
+            if linked_id is None:
+                continue
+            if not isinstance(linked_id, str) or not linked_id.strip():
+                raise HTTPException(422, f"{key} 必须是有效零件 ID 或 null")
+            visited = {part_id} if part_id else set()
+            while linked_id is not None:
+                if linked_id in visited:
+                    raise HTTPException(422, "零件装配关系不能形成循环")
+                visited.add(linked_id)
+                part = self.db.query(Part).filter(
+                    Part.id == linked_id,
+                    Part.revision_id == revision_id,
+                    Part.is_deleted.is_(False),
+                ).first()
+                if part is None:
+                    raise HTTPException(422, f"{key} 必须指向当前图纸版本中的有效零件")
+                if key != "parent_part_id":
+                    break
+                linked_id = part.parent_part_id
+
     def patch_entity(
         self,
         model,
@@ -1372,11 +1522,6 @@ class EngineeringService:
         revision = self._get(ProductRevision, entity.revision_id, user, context, True)
         if revision.status == "superseded":
             raise HTTPException(409, "已替代版本不可修改")
-        if revision.status == "approved":
-            revision, maps = self._clone_revision(
-                revision, user, context, reason or f"修改 {model.__name__} 关键字段"
-            )
-            entity = maps[model][entity.id]
         allowed = (
             {
                 "part_number",
@@ -1429,6 +1574,18 @@ class EngineeringService:
         rejected = set(values) - allowed
         if rejected:
             raise HTTPException(422, f"不可修改字段：{', '.join(sorted(rejected))}")
+        values = dict(values)
+        self._validate_part_links(
+            revision.id, values, part_id=entity.id if model is Part else None
+        )
+        if revision.status == "approved":
+            revision, maps = self._clone_revision(
+                revision, user, context, reason or f"修改 {model.__name__} 关键字段"
+            )
+            entity = maps[model][entity.id]
+            for key in ("part_a_id", "part_b_id", "parent_part_id"):
+                if values.get(key) is not None:
+                    values[key] = maps[Part][values[key]].id
         previous = {key: getattr(entity, key) for key in values}
         if "evidence" in values:
             values["evidence"] = sourced_evidence(
@@ -1539,6 +1696,7 @@ class EngineeringService:
         revision = self._get(ProductRevision, revision_id, user, context, True)
         if revision.status in {"approved", "superseded"}:
             raise HTTPException(409, "已批准版本不可修改")
+        self._validate_part_links(revision.id, data.model_dump())
         joint = WeldJoint(
             id=str(uuid4()),
             revision_id=revision.id,

@@ -8,6 +8,8 @@ import { ApiResponse } from '@/types'
 // ==================== 类型定义 ====================
 
 export interface QualityInspection {
+  standard_id?: number
+  standard_snapshot?: Record<string, any>
   id: number
   inspection_number: string
   inspection_type: string
@@ -106,6 +108,7 @@ export interface QualityInspection {
 }
 
 export interface QualityInspectionCreate {
+  standard_id?: number
   inspection_number?: string
   inspection_type: string
   inspection_date: string
@@ -165,6 +168,7 @@ export interface QualityInspectionCreate {
 }
 
 export interface QualityInspectionUpdate {
+  standard_id?: number
   inspection_type?: string
   inspection_date?: string
   project_name?: string

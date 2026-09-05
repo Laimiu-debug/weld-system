@@ -16,9 +16,29 @@ from app.services.engineering_service import (
     drawing_risks,
     EngineeringService,
     validate_drawing_identity,
+    validate_drawing_payload,
 )
 from app.services.ai_extraction_service import AIExtractionRunError
 from app.services.ai_provider_service import AIProviderError
+
+
+def test_malformed_drawing_result_is_rejected_before_database_write():
+    with pytest.raises(AIExtractionRunError, match="parts.0.thickness_mm"):
+        validate_drawing_payload({"parts": [{"name": "plate", "thickness_mm": "12 mm"}]})
+    with pytest.raises(AIExtractionRunError, match="weld_joints.0"):
+        validate_drawing_payload({"weld_joints": [None]})
+
+
+def test_partial_drawing_accepts_unknown_evidence_box():
+    validate_drawing_payload({"parts": [{"name": "plate", "evidence": {"page": 1, "bbox": None, "text": None}}]})
+    validate_drawing_payload({"product": {"evidence": {"drawing_number": None}}})
+
+
+def test_missing_part_reference_gets_an_internal_id_without_inventing_part_number():
+    payload = {"parts": [{"ref": None, "name": "plate", "part_number": None}, {"ref": "part-1", "name": "head"}]}
+    validate_drawing_payload(payload)
+    assert payload["parts"][0]["ref"] == "part-1-new"
+    assert payload["parts"][0]["part_number"] is None
 
 
 def test_engineering_models_include_workspace_and_version_isolation() -> None:

@@ -66,6 +66,8 @@ class MaterialTransactionUpdate(BaseModel):
 
 class MaterialTransactionResponse(MaterialTransactionBase):
     """出入库记录响应Schema"""
+    total_price: Optional[float] = None
+    total_amount: Optional[float] = Field(None, validation_alias='total_price')
     id: int
     user_id: int
     workspace_type: str

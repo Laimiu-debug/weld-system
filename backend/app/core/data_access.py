@@ -96,6 +96,7 @@ class DataAccessMiddleware:
             HTTPException: 如果没有权限
         """
         # 检查资源是否有必需的数据隔离字段
+        action = action.lower()
         if not hasattr(resource, 'workspace_type'):
             raise ValueError(f"资源 {type(resource).__name__} 缺少 workspace_type 字段")
 
@@ -119,16 +120,20 @@ class DataAccessMiddleware:
         
         # 1. 个人工作区数据：仅创建者可访问
         if resource.workspace_type == WorkspaceType.PERSONAL:
-            return self._check_personal_access(user, resource, action)
+            allowed = self._check_personal_access(user, resource, action)
         
         # 2. 企业工作区数据：检查企业成员身份和权限
-        if resource.workspace_type == WorkspaceType.ENTERPRISE:
-            return self._check_enterprise_access(user, resource, action)
-
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="权限不足：无法识别该资源的工作区类型",
-        )
+        elif resource.workspace_type == WorkspaceType.ENTERPRISE:
+            allowed = self._check_enterprise_access(user, resource, action)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="权限不足：无法识别该资源的工作区类型",
+            )
+        # Callers rely on exceptions to stop writes; never return a silent denial.
+        if not allowed:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="权限不足：您无权执行此操作")
+        return True
     
     def _check_personal_access(
         self,
@@ -283,6 +288,10 @@ class DataAccessMiddleware:
             "welder": "welders_management",
             "productionrecord": "production_management",
             "productiontask": "production_management",
+            "productionplan": "production_management",
+            "qualitystandard": "quality_management",
+            "employeeperformance": "employee_management",
+            "reporttemplate": "reports_management",
             "qualityinspection": "quality_management",
             "nonconformancerecord": "quality_management",
             "wps": "wps_management",

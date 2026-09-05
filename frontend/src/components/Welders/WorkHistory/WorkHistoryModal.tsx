@@ -2,7 +2,7 @@
  * 焊工工作履历添加/编辑模态框
  */
 import React, { useEffect, useState } from 'react'
-import { Modal, Form, Input, DatePicker, Row, Col, message } from 'antd'
+import { Modal, Form, Input, DatePicker, Row, Col, Checkbox, message } from 'antd'
 import dayjs from 'dayjs'
 import { workHistoryService, type WelderWorkHistory } from '../../../services/welderRecords'
 import { workspaceService } from '../../../services/workspace'
@@ -27,6 +27,7 @@ const WorkHistoryModal: React.FC<WorkHistoryModalProps> = ({
 }) => {
   const currentWorkspace = workspaceService.getCurrentWorkspaceFromStorage()
   const [form] = Form.useForm()
+  const isCurrent = Form.useWatch('is_current', form)
   const [loading, setLoading] = useState(false)
   const isEdit = !!editing
 
@@ -41,6 +42,7 @@ const WorkHistoryModal: React.FC<WorkHistoryModalProps> = ({
         job_description: editing.job_description,
         achievements: editing.achievements,
         leaving_reason: editing.leaving_reason,
+        is_current: !editing.end_date,
         work_period: [
           editing.start_date ? dayjs(editing.start_date) : undefined,
           editing.end_date ? dayjs(editing.end_date) : undefined,
@@ -70,9 +72,9 @@ const WorkHistoryModal: React.FC<WorkHistoryModalProps> = ({
         start_date: values.work_period?.[0]
           ? values.work_period[0].format('YYYY-MM-DD')
           : undefined,
-        end_date: values.work_period?.[1]
+        end_date: !values.is_current && values.work_period?.[1]
           ? values.work_period[1].format('YYYY-MM-DD')
-          : undefined,
+          : null,
       }
       const params = {
         workspace_type: currentWorkspace.type,
@@ -105,14 +107,18 @@ const WorkHistoryModal: React.FC<WorkHistoryModalProps> = ({
       open={visible}
       onOk={handleOk}
       onCancel={() => {
+        if (loading) return
         form.resetFields()
         onCancel()
       }}
       confirmLoading={loading}
+      cancelButtonProps={{ disabled: loading }}
+      closable={!loading}
+      maskClosable={!loading}
       width={800}
       destroyOnClose
     >
-      <Form form={form} layout="vertical">
+      <Form form={form} layout="vertical" disabled={loading}>
         <Row gutter={16}>
           <Col span={12}>
             <Form.Item
@@ -144,6 +150,7 @@ const WorkHistoryModal: React.FC<WorkHistoryModalProps> = ({
                 style={{ width: '100%' }}
                 placeholder={['开始日期', '结束日期（可不填）']}
                 allowEmpty={[false, true]}
+                disabled={[false, !!isCurrent]}
               />
             </Form.Item>
           </Col>
@@ -153,6 +160,13 @@ const WorkHistoryModal: React.FC<WorkHistoryModalProps> = ({
             </Form.Item>
           </Col>
         </Row>
+        <Form.Item name="is_current" valuePropName="checked">
+          <Checkbox onChange={event => {
+            if (event.target.checked) {
+              form.setFieldValue('work_period', [form.getFieldValue('work_period')?.[0], null])
+            }
+          }}>仍在职（不填写结束日期）</Checkbox>
+        </Form.Item>
         <Form.Item label="工作地点" name="location">
           <Input placeholder="请输入工作地点" />
         </Form.Item>

@@ -16,6 +16,8 @@ from app.services.workspace_entity_service import (
     standard_service,
 )
 
+from app.schemas.business_workflows import PlanTasksInput
+
 router = APIRouter()
 
 
@@ -38,6 +40,52 @@ def _workspace(
     return ctx
 
 
+@router.get("/reports/field-catalog")
+def report_field_catalog(current_user: Any = Depends(deps.get_current_active_user)):
+    from app.services.report_template_runner import catalog
+    return {"success": True, "data": catalog()}
+
+
+@router.get("/employees/performance-options")
+def performance_employee_options(workspace_type: str = Query(...), company_id: Optional[int] = None,
+                                 factory_id: Optional[int] = None, db: Session = Depends(deps.get_db),
+                                 current_user: Any = Depends(deps.get_current_active_user)):
+    from app.services.business_workflow_service import employee_options
+    ctx = _workspace(current_user, workspace_type, company_id, factory_id)
+    return {"success": True, "data": employee_options(db, current_user, ctx)}
+
+
+@router.get("/production/plan-task-options")
+def plan_task_options(workspace_type: str = Query(...), company_id: Optional[int] = None,
+                      factory_id: Optional[int] = None, plan_id: Optional[int] = None,
+                      search: Optional[str] = None, db: Session = Depends(deps.get_db),
+                      current_user: Any = Depends(deps.get_current_active_user)):
+    from app.models.production import ProductionTask
+    from app.core.data_access import DataAccessMiddleware
+    from sqlalchemy import or_
+    ctx = _workspace(current_user, workspace_type, company_id, factory_id)
+    access = DataAccessMiddleware(db)
+    query = access.apply_workspace_filter(db.query(ProductionTask), ProductionTask, current_user, ctx)
+    query = query.filter(ProductionTask.is_active == True)
+    # Always include current assignments, even when searching or limiting candidates.
+    # Otherwise saving the selector can silently drop tasks outside the first page.
+    assigned = query.filter(ProductionTask.plan_id == plan_id).order_by(ProductionTask.id).all() if plan_id else []
+    query = query.filter(ProductionTask.plan_id == None)
+    if search:
+        query = query.filter(or_(ProductionTask.task_name.ilike(f"%{search}%"), ProductionTask.task_number.ilike(f"%{search}%")))
+    rows = assigned + query.order_by(ProductionTask.id).limit(200).all()
+    return {"success": True, "data": [{"id": row.id, "task_name": row.task_name, "task_number": row.task_number,
+            "plan_id": row.plan_id, "status": row.status, "progress_percentage": row.progress_percentage} for row in rows]}
+
+
+@router.put("/production/plans/{plan_id}/tasks")
+def link_plan_tasks(plan_id: int, payload: PlanTasksInput, workspace_type: str = Query(...),
+                    company_id: Optional[int] = None, factory_id: Optional[int] = None,
+                    db: Session = Depends(deps.get_db), current_user: Any = Depends(deps.get_current_active_user)):
+    ctx = _workspace(current_user, workspace_type, company_id, factory_id)
+    return {"success": True, "data": plan_service(db).set_tasks(plan_id, payload.task_ids, current_user, ctx)}
+
+
 # -------------------- Production plans --------------------
 
 @router.get("/production/plans")
@@ -49,6 +97,7 @@ def list_production_plans(
     limit: int = Query(20, ge=1, le=200),
     search: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    overdue: Optional[bool] = Query(None),
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(deps.get_current_active_user),
 ) -> Any:
@@ -61,6 +110,7 @@ def list_production_plans(
         search=search,
         status=status,
         search_fields=["plan_number", "plan_name", "plan_type", "assigned_team"],
+        overdue=overdue,
     )
     return {"success": True, "data": paginated_payload(items, total, skip, limit)}
 

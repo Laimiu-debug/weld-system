@@ -51,6 +51,18 @@ def release_sequence(
     return {"created": created, "release": _row(item)}
 
 
+@router.get("/sequences/{sequence_id}/release")
+def sequence_release_detail(
+    sequence_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+):
+    context = resolve_workspace(db, current_user, workspace_id)
+    _permission(db, current_user, context)
+    return ProductionReleaseService(db).for_sequence(sequence_id, current_user, context)
+
+
 @router.get("/releases/{release_id}")
 def release_detail(
     release_id: str,

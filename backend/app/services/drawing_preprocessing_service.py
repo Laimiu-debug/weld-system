@@ -26,7 +26,9 @@ def prepare_drawing_page(png: bytes, page_number: int) -> PreparedDrawingPage:
     """Orient a drawing and isolate the conventional bottom-right title region."""
     with Image.open(BytesIO(png)) as source:
         original = source.convert("RGB")
-    rotation, oriented = _best_orientation(original)
+    # Ink density is not evidence of reading direction: a dense upper-left
+    # assembly used to turn a correctly oriented sheet upside down.
+    rotation, oriented = 0, original.copy()
     if max(oriented.size) > MAX_AI_DRAWING_EDGE:
         oriented.thumbnail(
             (MAX_AI_DRAWING_EDGE, MAX_AI_DRAWING_EDGE), Image.Resampling.LANCZOS

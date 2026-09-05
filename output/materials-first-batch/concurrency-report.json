@@ -1,0 +1,9 @@
+{
+  "statuses": [
+    200,
+    400
+  ],
+  "final_stock": 3.0,
+  "transactions": 2,
+  "result": "passed"
+}

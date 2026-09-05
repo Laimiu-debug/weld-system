@@ -21,6 +21,7 @@ import { SaveOutlined, ArrowLeftOutlined, PlusOutlined, DeleteOutlined } from '@
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import dayjs from 'dayjs'
 import qualityService from '@/services/quality'
+import QualityStandardField from '@/components/QualityStandardField'
 import workspaceService from '@/services/workspace'
 import { useAuthStore } from '@/store/authStore'
 
@@ -51,6 +52,7 @@ const QualityCreate: React.FC = () => {
   const { user } = useAuthStore()
 
   const handleSubmit = async (values: Record<string, unknown>) => {
+    if (step < 2) { await goNext(); return }
     setLoading(true)
     try {
       const currentWorkspace = workspaceService.getCurrentWorkspaceFromStorage()
@@ -74,6 +76,7 @@ const QualityCreate: React.FC = () => {
 
       await qualityService.createQualityInspection(
         {
+          standard_id: values.standard_id as number | undefined,
           production_task_id:
             (values.production_task_id as number | undefined) ||
             (taskIdFromQuery ? Number(taskIdFromQuery) : undefined),
@@ -291,6 +294,7 @@ const QualityCreate: React.FC = () => {
             production_task_id: taskIdFromQuery ? Number(taskIdFromQuery) : undefined,
           }}
         >
+          <QualityStandardField form={form} />
           <div style={{ display: step === 0 ? 'block' : 'none' }}>
             <Alert
               type="info"
@@ -441,12 +445,13 @@ const QualityCreate: React.FC = () => {
             </Button>
             <Space>
               {step < 2 ? (
-                <Button type="primary" onClick={() => void goNext()}>
+                <Button key="next" htmlType="button" type="primary" onClick={() => void goNext()}>
                   下一步
                 </Button>
               ) : (
                 <Button
                   type="primary"
+                  key="save"
                   htmlType="submit"
                   loading={loading}
                   icon={<SaveOutlined />}

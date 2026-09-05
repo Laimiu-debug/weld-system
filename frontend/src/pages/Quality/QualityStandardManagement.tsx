@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import {
   Button,
   Card,
@@ -47,8 +47,10 @@ const QualityStandardManagement: React.FC = () => {
   const [editing, setEditing] = useState<any | null>(null)
   const [form] = Form.useForm()
   const ws = readWorkspaceQuery()
+  const requestVersion = useRef(0)
 
   const load = async () => {
+    const version = ++requestVersion.current
     try {
       setLoading(true)
       const data = await qualityStandardApi.list({
@@ -57,18 +59,23 @@ const QualityStandardManagement: React.FC = () => {
         limit: pageSize,
         search: search || undefined,
       })
+      if (version !== requestVersion.current) return
       setItems(data.items || [])
       setTotal(data.total || 0)
     } catch (err) {
+      if (version !== requestVersion.current) return
+      setItems([])
+      setTotal(0)
       message.error(err instanceof Error ? err.message : '加载质量标准失败')
     } finally {
-      setLoading(false)
+      if (version === requestVersion.current) setLoading(false)
     }
   }
 
   useEffect(() => {
     void load()
-  }, [page, pageSize])
+    return () => { requestVersion.current += 1 }
+  }, [page, pageSize, search])
 
   const openCreate = () => {
     setEditing(null)
@@ -95,8 +102,8 @@ const QualityStandardManagement: React.FC = () => {
       ...values,
       test_methods: JSON.stringify(values.test_methods || []),
       acceptance_criteria: JSON.stringify(values.acceptance_criteria || []),
-      effective_date: values.effective_date?.format('YYYY-MM-DD'),
-      expiry_date: values.expiry_date?.format('YYYY-MM-DD'),
+      effective_date: values.effective_date?.format('YYYY-MM-DD') || null,
+      expiry_date: values.expiry_date?.format('YYYY-MM-DD') || null,
     }
     try {
       if (editing) {
@@ -132,9 +139,9 @@ const QualityStandardManagement: React.FC = () => {
             placeholder="搜索编号/名称"
             allowClear
             onSearch={(v) => {
-              setSearch(v)
-              setPage(1)
-              void load()
+              const value = v.trim()
+              if (value === search && page === 1) void load()
+              else { setSearch(value); setPage(1) }
             }}
             style={{ width: 220 }}
           />
@@ -205,7 +212,7 @@ const QualityStandardManagement: React.FC = () => {
             <Form.Item name="category" label="类别">
               <Input style={{ width: 180 }} />
             </Form.Item>
-            <Form.Item name="version" label="版本">
+            <Form.Item name="version" label="版本" rules={[{ required: true }]} extra="修改检验方法或验收项时必须更新版本；已有检验快照保持不变。">
               <Input style={{ width: 120 }} />
             </Form.Item>
             <Form.Item name="level" label="等级">
@@ -226,7 +233,7 @@ const QualityStandardManagement: React.FC = () => {
             <Form.Item name="effective_date" label="生效日期">
               <DatePicker />
             </Form.Item>
-            <Form.Item name="expiry_date" label="失效日期">
+            <Form.Item name="expiry_date" label="失效日期" dependencies={['effective_date']} rules={[({ getFieldValue }) => ({ validator(_, value) { return !value || !getFieldValue('effective_date') || !value.isBefore(getFieldValue('effective_date'), 'day') ? Promise.resolve() : Promise.reject(new Error('失效日期不能早于生效日期')) } })]}>
               <DatePicker />
             </Form.Item>
           </Space>

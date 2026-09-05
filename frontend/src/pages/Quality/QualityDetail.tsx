@@ -35,6 +35,7 @@ import {
 } from '@ant-design/icons'
 import type { QualityInspection } from '@/services/quality'
 import qualityService from '@/services/quality'
+import { StandardSnapshot } from '@/components/QualityStandardField'
 import workspaceService from '@/services/workspace'
 import { apiService } from '@/services/api'
 import dayjs from 'dayjs'
@@ -178,7 +179,7 @@ const QualityDetail: React.FC = () => {
     {
       id: 'standard',
       name: '检验标准',
-      standard: inspectionData?.inspection_standard || inspectionData?.acceptance_criteria || '-',
+      standard: inspectionData?.standard_snapshot ? `${inspectionData.standard_snapshot.standard_code} / ${inspectionData.standard_snapshot.version}: ${inspectionData.standard_snapshot.acceptance_criteria}` : inspectionData?.inspection_standard || inspectionData?.acceptance_criteria || '-',
       result: inspectionData?.is_qualified ? '合格' : '待确认',
       notes: inspectionData?.inspection_method || inspectionData?.ndt_method || '',
     },
@@ -330,6 +331,7 @@ const QualityDetail: React.FC = () => {
 
   return (
     <div className="page-container">
+      <StandardSnapshot snapshot={inspectionData?.standard_snapshot} />
       <div className="page-header">
         <div className="flex justify-between items-center">
           <Space>

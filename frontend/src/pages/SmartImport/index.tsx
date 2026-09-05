@@ -228,6 +228,7 @@ const SmartImportPage: React.FC = () => {
   const [extracting, setExtracting] = useState(false)
   const [activeDocument, setActiveDocument] = useState<SourceDocument | null>(null)
   const [capabilities, setCapabilities] = useState<AICapabilities | null>(null)
+  const [platformHosts, setPlatformHosts] = useState<Record<string, string>>({})
   const [quota, setQuota] = useState<AIQuotaStatus | null>(null)
   const [aiUsage, setAIUsage] = useState<AIUsageReport | null>(null)
   const [templates, setTemplates] = useState<WPSTemplateSummary[]>([])
@@ -296,8 +297,8 @@ const SmartImportPage: React.FC = () => {
       try { return new URL(extractionBaseUrl || '').hostname }
       catch { return '' }
     }
-    return capabilities?.platform_host || ''
-  }, [extractionMode, extractionProviderConfigId, extractionBaseUrl, providerConfigs, capabilities?.platform_host])
+    return [...new Set(Object.values(platformHosts).filter(Boolean))].join('、')
+  }, [extractionMode, extractionProviderConfigId, extractionBaseUrl, providerConfigs, platformHosts])
   const loadProviderSettings = useCallback(async () => {
     const configs = await smartImportService.listAIProviderConfigs()
     setProviderConfigs(configs)
@@ -598,8 +599,24 @@ const SmartImportPage: React.FC = () => {
     }
   }
 
-  const prepareExtraction = async (document: SourceDocument) => {
+  const prepareExtraction = async (document: SourceDocument, documents: SourceDocument[] = [document]) => {
     if (!batch) return
+    let routedCapabilities: AICapabilities
+    try {
+      const routes = new Map<string, Promise<AICapabilities>>()
+      const resolved = await Promise.all(documents.map(async item => {
+        const pages = Math.max(1, item.page_count || 1)
+        const route = { task_type: `${item.document_type}_import`, complexity: pages > 12 ? 'advanced' : pages <= 3 ? 'simple' : 'standard' }
+        const key = `${route.task_type}:${route.complexity}`
+        if (!routes.has(key)) routes.set(key, smartImportService.getAICapabilities(route))
+        return { id: item.id, capabilities: await routes.get(key)! }
+      }))
+      setPlatformHosts(Object.fromEntries(resolved.map(item => [item.id, item.capabilities.platform_host])))
+      routedCapabilities = resolved[0].capabilities
+    } catch (error) {
+      message.error(errorMessage(error, '加载文档对应的模型配置失败'))
+      return false
+    }
     setActiveDocument(document)
     setBatchExtractionMode(false)
     setTemplateRecommendation(null)
@@ -607,7 +624,7 @@ const SmartImportPage: React.FC = () => {
     smartImportService.getAIQuota(document.page_count || 1).then(setQuota).catch(() => undefined)
     extractForm.resetFields()
     extractForm.setFieldsValue({
-      mode: capabilities?.platform_available ? 'platform' : 'byok',
+      mode: routedCapabilities.platform_available ? 'platform' : 'byok',
       provider_preset: 'openai',
       provider: 'openai_responses',
       base_url: 'https://api.openai.com/v1',
@@ -643,6 +660,7 @@ const SmartImportPage: React.FC = () => {
     } catch (error) {
       message.error(errorMessage(error, '加载模板和模块失败'))
     }
+    return true
   }
 
   const prepareBatchExtraction = async () => {
@@ -650,7 +668,7 @@ const SmartImportPage: React.FC = () => {
       message.warning('请先上传文件')
       return
     }
-    await prepareExtraction(batch.documents[0])
+    if (!await prepareExtraction(batch.documents[0], batch.documents)) return
     setBatchExtractionMode(true)
     let remembered: { mode?: 'platform' | 'saved'; provider_config_id?: string; run_ocr?: boolean } = {}
     try {
@@ -935,17 +953,19 @@ const SmartImportPage: React.FC = () => {
       let outboundConsentIds: Record<string, string> | undefined
       if (batch.target_entity_type === 'pqr') {
         if (!extractionProviderHost) throw new Error('无法识别外部模型服务域名，请检查模型配置')
-        const notice = aiDataOutboundNotice(extractionProviderHost)
-        const privacyNoticeHash = await sha256Hex(notice)
         const documents = batchExtractionMode ? batch.documents : [activeDocument!]
-        const consents = await Promise.all(documents.map(document => smartImportService.createOutboundConsent({
+        const consents = await Promise.all(documents.map(async document => {
+          const host = values.mode === 'platform' ? platformHosts[document.id] : extractionProviderHost
+          if (!host) throw new Error('文档对应的外部模型服务尚未配置')
+          return smartImportService.createOutboundConsent({
           document_id: document.id,
-          provider_host: extractionProviderHost,
+          provider_host: host,
           purpose: `提取 ${document.original_filename} 的 PQR 结构化字段`,
           privacy_notice_version: AI_DATA_OUTBOUND_NOTICE_VERSION,
-          privacy_notice_hash: privacyNoticeHash,
+          privacy_notice_hash: await sha256Hex(aiDataOutboundNotice(host)),
           authorized: true,
-        })))
+          })
+        }))
         if (batchExtractionMode) {
           outboundConsentIds = Object.fromEntries(documents.map((document, index) => [document.id, consents[index].id]))
         } else {

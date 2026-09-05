@@ -90,21 +90,21 @@ def evaluate_welder_qualification(
     requested_position = str(position or "").strip().upper()
     process_ok = (
         not process
-        or process in _tokens(welder.qualified_processes)
+        or (not certifications and process in _tokens(welder.qualified_processes))
         or any(process in _tokens(item.qualified_process) for item in valid)
     )
     position_ok = (
         not requested_position
-        or requested_position in _tokens(welder.qualified_positions)
+        or (not certifications and requested_position in _tokens(welder.qualified_positions))
         or any(requested_position in _tokens(item.qualified_position) for item in valid)
     )
     if not process_ok:
         reasons.append(f"缺少 {process or '指定'} 焊接方法资格")
     if not position_ok:
         reasons.append(f"缺少 {requested_position} 焊位资格")
-    if not valid and not (
+    if not valid and (certifications or not (
         _tokens(welder.qualified_processes) or _tokens(welder.qualified_positions)
-    ):
+    )):
         reasons.append("没有可验证的有效资格范围")
     return {
         "qualified": not reasons,
@@ -301,6 +301,13 @@ class ProductionReleaseService:
         self.db.refresh(batch)
         return batch, True
 
+    def for_sequence(self, sequence_id: str, user: User, context: WorkspaceContext):
+        self._get(WeldSequenceRevision, sequence_id, user, context)
+        batch = self.db.query(ProductionReleaseBatch).filter(
+            ProductionReleaseBatch.sequence_revision_id == sequence_id
+        ).first()
+        return self.detail(batch.id, user, context) if batch else None
+
     def detail(self, release_id: str, user: User, context: WorkspaceContext) -> dict:
         batch = self._get(ProductionReleaseBatch, release_id, user, context)
         tasks = (
@@ -312,6 +319,11 @@ class ProductionReleaseService:
         return {
             "release": self._row(batch),
             "tasks": [self._row(item) for item in tasks],
+            "authorizations": [self._row(item) for item in self.db.query(
+                ProductionResourceAuthorization
+            ).filter(ProductionResourceAuthorization.production_task_id.in_(
+                [task.id for task in tasks]
+            )).order_by(ProductionResourceAuthorization.created_at.desc()).all()] if tasks else [],
         }
 
     @staticmethod
@@ -415,15 +427,33 @@ class ProductionReleaseService:
         )
         if item.qualification_status != "pending_override":
             raise HTTPException(409, "当前资格记录无需授权")
+        task = None
+        if approve:
+            task = self._get(ProductionTask, item.production_task_id, user, context, True)
+            latest = self.db.query(ProductionResourceAuthorization).filter(
+                ProductionResourceAuthorization.production_task_id == task.id
+            ).order_by(ProductionResourceAuthorization.created_at.desc()).first()
+            if not latest or latest.id != item.id:
+                raise HTTPException(409, "已有更新的派工申请，请处理最新申请")
+            batch = self._get(ProductionReleaseBatch, task.production_release_id, user, context)
+            if not task.is_active or task.status in {"completed", "cancelled"} or batch.status != "released":
+                raise HTTPException(409, "任务或发布批次已失效，不能批准派工特批")
+            from types import SimpleNamespace
+            proposed_task = SimpleNamespace(
+                wps_id=task.wps_id, assigned_welder_id=item.welder_id,
+                assigned_equipment_id=item.equipment_id,
+                source_step_snapshot=task.source_step_snapshot,
+            )
+            proposed_authorization = SimpleNamespace(
+                wps_id=item.wps_id, qualification_status="authorized",
+                qualification_snapshot=item.qualification_snapshot,
+                authorized_by=user.id, authorized_at=datetime.utcnow(),
+            )
+            self._recheck_execution_resources(proposed_task, proposed_authorization, user, context)
         item.qualification_status = "authorized" if approve else "rejected"
         item.authorized_by = user.id
         item.authorized_at = datetime.utcnow()
         if approve:
-            task = (
-                self.db.query(ProductionTask)
-                .filter(ProductionTask.id == item.production_task_id)
-                .one()
-            )
             task.assigned_welder_id, task.assigned_equipment_id = (
                 item.welder_id,
                 item.equipment_id,
@@ -431,6 +461,84 @@ class ProductionReleaseService:
         self.db.commit()
         self.db.refresh(item)
         return item
+
+    def _check_execution_dependencies(self, task, batch, completing: bool):
+        """Use the released graph, not a subsequently edited design revision."""
+        if batch.status != "released" or not task.is_active:
+            raise HTTPException(409, "发布批次或生产任务已失效，不能继续执行")
+        snapshot = (batch.source_snapshot or {}).get("sequence") or {}
+        code = (task.source_step_snapshot or {}).get("step_code")
+        if not code or "dependencies" not in snapshot or not any(
+            step.get("step_code") == code for step in snapshot.get("steps", [])
+        ):
+            raise HTTPException(409, "发布快照缺少工序依赖信息，不能确认执行条件")
+        required = {
+            edge["predecessor_code"] for edge in snapshot["dependencies"]
+            if edge.get("successor_code") == code
+            and edge.get("is_mandatory", True)
+        }
+        tasks = self.db.query(ProductionTask).filter(
+            ProductionTask.production_release_id == batch.id
+        ).all()
+        by_code = {(item.source_step_snapshot or {}).get("step_code"): item for item in tasks}
+        for predecessor in required:
+            previous = by_code.get(predecessor)
+            if not previous or not previous.is_active or previous.status != "completed":
+                raise HTTPException(409, f"前置工序 {predecessor} 尚未完成")
+            self._check_task_quality(previous)
+        if completing:
+            self._check_task_quality(task)
+
+    def _check_task_quality(self, task):
+        if not task.quality_inspection_required:
+            return
+        nodes = self.db.query(ProductionQualityNode).filter(
+            ProductionQualityNode.production_release_id == task.production_release_id,
+            ProductionQualityNode.production_task_id == task.id,
+        ).all()
+        if not nodes:
+            raise HTTPException(409, "工序缺少关联的质量检验节点")
+        for node in nodes:
+            inspection = self.db.query(QualityInspection).filter(
+                QualityInspection.id == node.quality_inspection_id,
+                QualityInspection.production_task_id == task.id,
+            ).first()
+            if not inspection or inspection.inspection_result != "pass":
+                raise HTTPException(409, "工序关联的质量检验尚未合格")
+
+    def _recheck_execution_resources(self, task, authorization, user, context):
+        if authorization.wps_id != task.wps_id:
+            raise HTTPException(409, "任务 WPS 与资格授权记录不一致，请重新派工")
+        wps = self._get(WPS, task.wps_id, user, context)
+        welder = self._get(Welder, task.assigned_welder_id, user, context)
+        if wps.status != "approved" or not welder.is_active or welder.status != "active":
+            raise HTTPException(409, "WPS 或焊工当前状态不可用")
+        if task.assigned_equipment_id:
+            equipment = self._get(Equipment, task.assigned_equipment_id, user, context)
+            if not equipment.is_active or equipment.status not in {"operational", "idle"}:
+                raise HTTPException(409, "设备当前不可用")
+            if equipment.calibration_due_date and equipment.calibration_due_date < date.today():
+                raise HTTPException(409, "设备校准已过期")
+        certs = self.db.query(WelderCertification).filter(
+            WelderCertification.welder_id == welder.id
+        ).all()
+        position = (((task.source_step_snapshot or {}).get("process_parameters") or {})
+                    .get("requirement") or {}).get("weld_position")
+        result = evaluate_welder_qualification(welder, certs, wps, position)
+        previous = authorization.qualification_snapshot or {}
+        if previous.get("certification_ids") and not certs:
+            raise HTTPException(409, "派工时的证书记录已不存在，请重新核验资格")
+        # Overrides cover the reviewed exception only, not subsequent scope/expiry changes.
+        unchanged_override = (
+            authorization.qualification_status == "authorized"
+            and authorization.authorized_by is not None
+            and authorization.authorized_at is not None
+            and all(result.get(key) == previous.get(key) for key in (
+                "reasons", "certification_ids", "welding_process", "welding_position", "wps_id", "welder_id"
+            ))
+        )
+        if not result["qualified"] and not unchanged_override:
+            raise HTTPException(409, {"message": "焊工资格已不满足，请重新派工或申请授权", "qualification": result})
 
     def record_execution(
         self, task_id: int, payload: dict, user: User, context: WorkspaceContext
@@ -472,6 +580,9 @@ class ProductionReleaseService:
                 raise HTTPException(409, "焊接任务缺少有效的焊工资格授权")
             if authorization.equipment_id != task.assigned_equipment_id:
                 raise HTTPException(409, "任务设备与焊工资格授权记录不一致")
+            self._recheck_execution_resources(task, authorization, user, context)
+        batch = self._get(ProductionReleaseBatch, task.production_release_id, user, context)
+        self._check_execution_dependencies(task, batch, payload.get("status") == "completed")
         event_ids = payload.get("consumable_usage_event_ids", [])
         events = (
             self.db.query(ConsumableActualUsageEvent)
@@ -502,12 +613,7 @@ class ProductionReleaseService:
             quality_snapshot=payload.get("quality_snapshot", {}),
             idempotency_key=key,
             recorded_by=user.id,
-            **self._scope(
-                self._get(
-                    ProductionReleaseBatch, task.production_release_id, user, context
-                ),
-                user.id,
-            ),
+            **self._scope(batch, user.id),
         )
         self.db.add(trace)
         if trace.status == "completed":

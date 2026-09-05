@@ -14,6 +14,12 @@ from app.models.pqr import PQR
 from app.models.user import User
 from app.core.data_access import WorkspaceContext, DataAccessMiddleware
 from app.services.quota_service import QuotaService
+from app.schemas.ppqr import PPQRUpdate
+
+
+PPQR_EDITABLE_FIELDS = frozenset(PPQRUpdate.model_fields) - {
+    "reviewed_by", "approved_by", "convert_to_pqr",
+}
 
 
 PPQR_TO_PQR_FIELD_MAP = {
@@ -336,13 +342,26 @@ class PPQRService:
         if not ppqr:
             return None
 
+        self.data_access.check_access(current_user, ppqr, "edit", workspace_context)
+        update_data = dict(ppqr_data)
+        if "modules_data" in update_data:
+            if "module_data" in update_data and update_data["module_data"] != update_data["modules_data"]:
+                raise HTTPException(422, "module_data 与 modules_data 不能提供不同内容")
+            update_data["module_data"] = update_data.pop("modules_data")
+        forbidden = set(update_data) - PPQR_EDITABLE_FIELDS
+        if forbidden:
+            raise HTTPException(422, "包含不可编辑字段：" + ", ".join(sorted(forbidden)))
+        target_status = update_data.get("status")
+        if target_status is not None and target_status != ppqr.status and target_status not in {"draft", "testing", "completed"}:
+            raise HTTPException(409, "转换状态必须通过转换为 PQR 操作产生")
+
         # 字段名映射（前端使用 modules_data，数据库使用 module_data）
         field_mapping = {
             'modules_data': 'module_data'
         }
 
         # 更新字段
-        for key, value in ppqr_data.items():
+        for key, value in update_data.items():
             # 转换字段名
             db_field_name = field_mapping.get(key, key)
 

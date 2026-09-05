@@ -19,6 +19,7 @@ from app.services.ai_extraction_service import (
     build_extraction_stages,
     relax_business_required_fields,
     validate_extraction_result,
+    _prune_nulls,
 )
 from app.services.ai_provider_service import AIProviderResult
 
@@ -242,6 +243,17 @@ def test_model_output_must_match_runtime_schema() -> None:
         )
 
 
+def test_unknown_optional_field_wrapper_does_not_fail_entire_pqr():
+    data = {
+        "pqr_number": {"value": "PQR-001", "confidence": 0.9, "evidence": []},
+        "notes": {"value": None, "confidence": 0, "evidence": []},
+    }
+    cleaned = _prune_nulls(data)
+    assert "notes" not in cleaned
+    assert cleaned["pqr_number"]["value"] == "PQR-001"
+    validate_extraction_result(relax_business_required_fields(SCHEMA_SNAPSHOT["json_schema"]), cleaned)
+
+
 def test_staged_schema_preserves_template_instance_paths_and_chunks_custom_fields() -> (
     None
 ):
@@ -277,7 +289,8 @@ def test_staged_schema_preserves_template_instance_paths_and_chunks_custom_field
     }
 
 
-def test_scanned_page_ocr_and_extraction_create_review_only_evidence() -> None:
+@pytest.mark.parametrize("ocr_status", ["pending", "failed", "processing", "completed"])
+def test_scanned_page_ocr_and_extraction_create_review_only_evidence(ocr_status) -> None:
     db = Mock()
     added = []
     db.add.side_effect = added.append
@@ -306,7 +319,7 @@ def test_scanned_page_ocr_and_extraction_create_review_only_evidence() -> None:
         document_id=document.id,
         page_number=1,
         text_content="",
-        ocr_status="pending",
+        ocr_status=ocr_status,
         page_metadata={},
         user_id=7,
         workspace_type="personal",
@@ -359,3 +372,28 @@ def test_scanned_page_ocr_and_extraction_create_review_only_evidence() -> None:
     assert evidence.evidence_type == "ocr"
     assert provider.calls == 5
     quota.settle.assert_called_once_with(job, SimpleNamespace(id=7), context, 1)
+
+
+@pytest.mark.parametrize("ocr_text", ["", " \n\t"])
+def test_empty_ocr_keeps_source_text_and_leaves_page_retryable(ocr_text):
+    from app.services.ai_extraction_service import AIExtractionRunError
+    db = Mock()
+    storage = Mock()
+    storage.open_stream.return_value = BytesIO(b"pdf")
+    provider = Mock(provider_name="vision", model_name="test")
+    provider.structured_response.return_value = AIProviderResult(
+        {"text": ocr_text, "confidence": 0.1}, "empty-ocr", 3, 1, 4
+    )
+    renderer = Mock()
+    renderer.render_png.return_value = b"png"
+    service = AIExtractionService(db, storage, provider, renderer, Mock())
+    service._ensure_active = Mock()
+    page = DocumentPage(id="p1", page_number=1, ocr_status="pending", text_content="原有页眉")
+    document = SimpleNamespace(id="d1", storage_key="private/pqr", original_filename="pqr.pdf",
+        user_id=7, workspace_type="personal", company_id=None)
+    with pytest.raises(AIExtractionRunError) as error:
+        service._run_ocr(document, [page], True, [0, 0, 0], [], SimpleNamespace(id="j1"))
+    assert error.value.code == "empty_ocr_result"
+    assert page.ocr_status == "failed"
+    assert page.text_content == "原有页眉"
+    assert "第 1 页" in str(error.value)

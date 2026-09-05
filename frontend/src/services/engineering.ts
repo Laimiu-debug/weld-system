@@ -60,7 +60,7 @@ export const engineeringService = {
     revisionId: string,
     data: DataRow = { mode: "platform", run_ocr: true },
   ): Promise<DataRow> {
-    return (await api.post(`/engineering/revisions/${revisionId}/parse`, data))
+    return (await api.post(`/engineering/revisions/${revisionId}/parse`, data, { timeout: 600000 }))
       .data;
   },
   async patchPart(id: string, values: DataRow): Promise<DataRow> {

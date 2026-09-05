@@ -13,10 +13,13 @@ from sqlalchemy import (
     Text,
 )
 
+from sqlalchemy.dialects.postgresql import JSONB
+
 from app.core.database import Base
+from app.models.workspace_entity_access import WorkspaceEntityAccessMixin
 
 
-class EmployeePerformance(Base):
+class EmployeePerformance(WorkspaceEntityAccessMixin, Base):
     """员工绩效评估记录"""
 
     __tablename__ = "employee_performances"
@@ -46,6 +49,8 @@ class EmployeePerformance(Base):
     goals = Column(Text, comment="目标(JSON或文本)")
     achievements = Column(Text, comment="业绩(JSON或文本)")
     areas_for_improvement = Column(Text)
+    adjustment_reason = Column(Text)
+    evidence_snapshot = Column(JSONB)
     reviewer_comment = Column(Text)
     reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     reviewed_at = Column(DateTime)
@@ -57,7 +62,7 @@ class EmployeePerformance(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
-class ReportTemplate(Base):
+class ReportTemplate(WorkspaceEntityAccessMixin, Base):
     """自定义报表模板"""
 
     __tablename__ = "report_templates"
@@ -74,6 +79,7 @@ class ReportTemplate(Base):
     data_sources = Column(Text, comment="数据源列表 JSON，如 [\"wps\",\"quality\"]")
     metrics = Column(Text, comment="指标配置 JSON")
     filters = Column(Text, comment="筛选配置 JSON")
+    group_by = Column(String(100))
     chart_type = Column(String(50), default="table", comment="table/bar/line/pie")
     time_range = Column(Text, comment="时间范围 JSON")
     is_public = Column(Boolean, default=False)

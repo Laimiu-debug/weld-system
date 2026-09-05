@@ -168,6 +168,25 @@ class QualityService:
 
         return data
 
+    def _bind_standard(self, data, user, ctx, inspection=None):
+        from app.services.business_workflow_service import standard_snapshot
+        if 'standard_snapshot' in data:
+            raise HTTPException(422, '标准快照由服务器生成，不能直接修改')
+        old_id = getattr(inspection, 'standard_id', None)
+        selected = data.get('standard_id', old_id)
+        if old_id is not None:
+            if selected != old_id:
+                raise HTTPException(409, '历史检验的标准不能替换，请新建检验记录')
+            snapshot = inspection.standard_snapshot or {}
+            when = data.get('inspection_date', inspection.inspection_date)
+            when = date.fromisoformat(when) if isinstance(when, str) else when
+            if not when or (snapshot.get('effective_date') and when < date.fromisoformat(snapshot['effective_date'])) or (snapshot.get('expiry_date') and when > date.fromisoformat(snapshot['expiry_date'])):
+                raise HTTPException(422, '检验日期必须在所存标准快照的有效期内')
+        elif selected is not None:
+            when = data.get('inspection_date') or getattr(inspection, 'inspection_date', None)
+            data['standard_snapshot'] = standard_snapshot(self.db, self.data_access, selected, when, user, ctx)
+        return data
+
     def _sync_production_task_quality(self, production_task_id: int) -> None:
         """把最新质检结果回写到生产任务，供生产模块直接调用."""
         from app.models.production import ProductionTask
@@ -280,7 +299,8 @@ class QualityService:
 
 
             # 创建检验对象，处理字段映射
-            inspection_data_dict = self._prepare_inspection_write_dict(inspection_data)
+            inspection_data_dict = self._prepare_inspection_write_dict(
+                self._bind_standard(inspection_data.copy(), current_user, workspace_context))
 
             inspection_number = inspection_data_dict.get("inspection_number")
             if inspection_number:
@@ -524,7 +544,8 @@ class QualityService:
             )
 
             # 更新字段，处理字段映射
-            inspection_data_dict = self._prepare_inspection_write_dict(inspection_data)
+            inspection_data_dict = self._prepare_inspection_write_dict(
+                self._bind_standard(inspection_data.copy(), current_user, workspace_context, inspection))
             # 更新时不要用空值覆盖编号
             if "inspection_number" in inspection_data and not inspection_data.get("inspection_number"):
                 inspection_data_dict.pop("inspection_number", None)

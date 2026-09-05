@@ -28,6 +28,15 @@ class ProductionService:
         self.data_access = DataAccessMiddleware(db)
         self.quota_service = QuotaService(db)
     
+    def _guard_plan_execution(self, task):
+        plan_id = getattr(task, 'plan_id', None)
+        if plan_id is None:
+            return
+        from app.models.production import ProductionPlan
+        plan = self.db.query(ProductionPlan).filter(ProductionPlan.id == plan_id).first()
+        if plan and plan.status in ('completed', 'cancelled'):
+            raise HTTPException(409, '所属计划已结束，不能改变任务执行结果')
+
     # ==================== 生产任务基础管理 ====================
     
     def create_production_task(
@@ -314,6 +323,17 @@ class ProductionService:
                 workspace_context
             )
             
+            if 'plan_id' in task_data:
+                raise HTTPException(422, '请通过计划关联任务操作修改归属')
+            if {'status', 'progress_percentage', 'completed_quantity', 'actual_end_date'} & task_data.keys():
+                self._guard_plan_execution(task)
+            if task.production_release_id:
+                editable = {"notes", "priority", "planned_start_date", "planned_end_date", "estimated_duration_hours"}
+                blocked = [key for key, value in task_data.items()
+                           if key not in editable and value is not None
+                           and value != getattr(task, key, None)]
+                if blocked:
+                    raise HTTPException(409, "已放行焊序任务的工艺、资源和执行状态必须通过焊序派工、执行或变更流程修改")
             # 更新字段
             for key, value in task_data.items():
                 if hasattr(task, key) and value is not None:
@@ -377,6 +397,10 @@ class ProductionService:
                 workspace_context
             )
             
+            if getattr(task, 'plan_id', None) is not None:
+                raise HTTPException(409, '请先在计划中解除任务关联再删除')
+            if task.production_release_id:
+                raise HTTPException(409, "已放行焊序任务不能直接删除，请通过焊序变更流程处理")
             # 软删除
             task.is_active = False
             task.updated_by = current_user.id
@@ -548,6 +572,9 @@ class ProductionService:
             current_user, task, "EDIT", workspace_context
         )
 
+        if task.production_release_id:
+            raise HTTPException(409, "已放行焊序任务必须通过执行记录更新进度")
+        self._guard_plan_execution(task)
         progress = max(0.0, min(100.0, float(progress_percentage)))
         task.progress_percentage = progress
 
@@ -582,6 +609,8 @@ class ProductionService:
             current_user, task, "EDIT", workspace_context
         )
 
+        if task.production_release_id:
+            raise HTTPException(409, "已放行焊序任务必须通过焊序执行入口登记，不能使用普通生产记录")
         payload = record_data.copy()
         progress_percentage = payload.pop("progress_percentage", None)
         payload.pop("task_id", None)

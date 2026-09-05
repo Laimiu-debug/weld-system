@@ -2,8 +2,8 @@
  * 焊材出入库记录组件
  */
 
-import React, { useState, useEffect } from 'react'
-import { Modal, Table, Tag, Select, message, Space } from 'antd'
+import React, { useState, useEffect, useRef } from 'react'
+import { Modal, Table, Tag, Select, Alert, Button, Space } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import type { Material, MaterialTransaction } from '../../services/materials'
 import materialsService from '../../services/materials'
@@ -27,25 +27,28 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [transactionType, setTransactionType] = useState<string | undefined>(undefined)
+  const [error, setError] = useState('')
+  const requestVersion = useRef(0)
 
   useEffect(() => {
     if (visible && material) {
       fetchTransactions()
     }
+    return () => { requestVersion.current += 1 }
   }, [visible, material, currentPage, pageSize, transactionType])
 
   const fetchTransactions = async () => {
     if (!material) return
+    const version = ++requestVersion.current
 
     try {
       setLoading(true)
+      setError('')
 
       // 获取当前工作区
       const currentWorkspace = workspaceService.getCurrentWorkspaceFromStorage()
       if (!currentWorkspace) {
-        message.warning('请先选择工作区')
-        setLoading(false)
-        return
+        throw new Error('请先选择工作区')
       }
 
       const workspaceType = currentWorkspace.type
@@ -62,22 +65,22 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
         limit: pageSize,
       })
 
-      if (response.success && response.data?.success) {
-        const items = response.data.data?.items || []
-        const totalCount = response.data.data?.total || 0
+      if (version !== requestVersion.current) return
+      if (response.success) {
+        const items = response.data?.items || []
+        const totalCount = response.data?.total || 0
         setTransactions(items)
         setTotal(totalCount)
       } else {
-        setTransactions([])
-        setTotal(0)
+        throw new Error('获取出入库记录失败')
       }
     } catch (error: any) {
-      console.error('获取出入库记录失败:', error)
-      message.error('获取出入库记录失败')
+      if (version !== requestVersion.current) return
+      setError('无法加载库存流水，请重试')
       setTransactions([])
       setTotal(0)
     } finally {
-      setLoading(false)
+      if (version === requestVersion.current) setLoading(false)
     }
   }
 
@@ -114,11 +117,12 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
       key: 'quantity',
       width: 120,
       render: (quantity: number, record: MaterialTransaction) => {
-        const prefix = record.transaction_type === 'in' ? '+' : '-'
-        const color = record.transaction_type === 'in' ? '#52c41a' : '#ff4d4f'
+        const change = record.stock_after - record.stock_before
+        const prefix = change > 0 ? '+' : change < 0 ? '-' : ''
+        const color = change >= 0 ? '#52c41a' : '#ff4d4f'
         return (
           <span style={{ color, fontWeight: 'bold' }}>
-            {prefix}{quantity} {record.unit}
+            {prefix}{Math.abs(quantity)} {record.unit}
           </span>
         )
       },
@@ -138,8 +142,8 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
       key: 'amount',
       width: 100,
       render: (_, record: MaterialTransaction) => {
-        if (record.total_price) {
-          return `¥${record.total_price.toFixed(2)}`
+        if (record.total_price != null) {
+          return `${record.total_price.toFixed(2)} ${record.currency || 'CNY'}`
         }
         return '-'
       },
@@ -254,11 +258,13 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
         </Space>
       </div>
 
+      {error && <Alert type="error" showIcon message={error} action={<Button onClick={fetchTransactions}>重试</Button>} style={{ marginBottom: 16 }} />}
       <Table
         columns={columns}
         dataSource={transactions}
         rowKey="id"
         loading={loading}
+        locale={{ emptyText: error ? '流水暂不可用' : '暂无库存流水' }}
         scroll={{ x: 1800 }}
         pagination={{
           current: currentPage,
@@ -278,4 +284,3 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({
 }
 
 export default TransactionHistory
-

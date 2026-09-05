@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import {
+  Alert,
   Button,
   Card,
   Form,
@@ -20,6 +21,7 @@ import {
   PlusOutlined,
   ReloadOutlined,
 } from '@ant-design/icons'
+import { downloadCsv } from '@/utils/csv'
 import { readWorkspaceQuery, reportTemplateApi } from '@/services/businessExtensions'
 
 const sourceOptions = [
@@ -51,14 +53,21 @@ const CustomReportBuilder: React.FC = () => {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [search, setSearch] = useState('')
+  const [catalog, setCatalog] = useState<any[]>([])
+  const [catalogError, setCatalogError] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [open, setOpen] = useState(false)
   const [runOpen, setRunOpen] = useState(false)
   const [runResult, setRunResult] = useState<any>(null)
   const [editing, setEditing] = useState<any | null>(null)
   const [form] = Form.useForm()
+  const sources = Form.useWatch('data_sources', form) || []
+  const groupFields = catalog.filter(c => sources.includes(c.source)).reduce((common: string[] | null, c: any) => common === null ? c.fields.map((f: any) => f.field) : common.filter(k => c.fields.some((f: any) => f.field === k)), null) || []
   const ws = readWorkspaceQuery()
+  const requestVersion = useRef(0)
 
   const load = async () => {
+    const version = ++requestVersion.current
     try {
       setLoading(true)
       const data = await reportTemplateApi.list({
@@ -67,19 +76,29 @@ const CustomReportBuilder: React.FC = () => {
         limit: pageSize,
         search: search || undefined,
       })
+      if (version !== requestVersion.current) return
       setItems(data.items || [])
       setTotal(data.total || 0)
     } catch (err) {
+      if (version !== requestVersion.current) return
+      setItems([])
+      setTotal(0)
       message.error(err instanceof Error ? err.message : '加载报表模板失败')
     } finally {
-      setLoading(false)
+      if (version === requestVersion.current) setLoading(false)
     }
   }
 
   useEffect(() => {
     void load()
-  }, [page, pageSize])
+    return () => { requestVersion.current += 1 }
+  }, [page, pageSize, search])
 
+  const loadCatalog = async () => {
+    try { setCatalog(await reportTemplateApi.catalog()); setCatalogError(false) }
+    catch { setCatalogError(true) }
+  }
+  useEffect(() => { void loadCatalog() }, [])
   const openCreate = () => {
     setEditing(null)
     form.resetFields()
@@ -104,8 +123,10 @@ const CustomReportBuilder: React.FC = () => {
       ...values,
       data_sources: JSON.stringify(values.data_sources || []),
       metrics: JSON.stringify(values.metrics || []),
+      group_by: values.group_by || null,
       filters: JSON.stringify(values.filters || []),
     }
+    setSaving(true)
     try {
       if (editing) {
         await reportTemplateApi.update(ws, editing.id, payload)
@@ -118,7 +139,7 @@ const CustomReportBuilder: React.FC = () => {
       void load()
     } catch (err) {
       message.error(err instanceof Error ? err.message : '保存失败')
-    }
+    } finally { setSaving(false) }
   }
 
   const remove = async (id: number) => {
@@ -132,6 +153,7 @@ const CustomReportBuilder: React.FC = () => {
   }
 
   const run = async (id: number) => {
+    setRunResult(null); setRunOpen(false)
     try {
       const result = await reportTemplateApi.run(ws, id)
       setRunResult(result)
@@ -150,9 +172,9 @@ const CustomReportBuilder: React.FC = () => {
             placeholder="搜索模板名称"
             allowClear
             onSearch={(v) => {
-              setSearch(v)
-              setPage(1)
-              void load()
+              const value = v.trim()
+              if (value === search && page === 1) void load()
+              else { setSearch(value); setPage(1) }
             }}
             style={{ width: 220 }}
           />
@@ -221,21 +243,23 @@ const CustomReportBuilder: React.FC = () => {
       <Modal
         title={editing ? '编辑报表模板' : '新建报表模板'}
         open={open}
-        onCancel={() => setOpen(false)}
+        confirmLoading={saving}
+        onCancel={() => { if (!saving) setOpen(false) }}
         onOk={() => void submit()}
         width={640}
         destroyOnHidden
         forceRender
       >
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="vertical" disabled={saving}>
+          {catalogError && <Alert type="error" message="报表字段加载失败" action={<Button onClick={() => void loadCatalog()}>重试</Button>} />}
           <Form.Item name="name" label="模板名称" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
           <Form.Item name="description" label="描述">
             <Input.TextArea rows={2} />
           </Form.Item>
-          <Form.Item name="data_sources" label="数据源" rules={[{ required: true }]}>
-            <Select mode="multiple" options={sourceOptions} />
+          <Form.Item name="data_sources" label="数据源" extra="切换数据源会清空旧筛选和分组，请重新选择。" rules={[{ required: true }]}>
+            <Select mode="multiple" options={sourceOptions} onChange={() => form.setFieldsValue({ filters: [], group_by: undefined })} />
           </Form.Item>
           <Form.Item name="chart_type" label="图表类型">
             <Select
@@ -250,22 +274,27 @@ const CustomReportBuilder: React.FC = () => {
           <Form.Item name="metrics" label="统计指标" rules={[{ required: true, message: '请选择统计指标' }]}>
             <Select mode="multiple" options={metricOptions} placeholder="选择要统计的指标" />
           </Form.Item>
+          <Form.Item name="group_by" label="分组字段" extra="仅显示所选数据源共同支持的字段；不选则汇总总数。"><Select allowClear options={groupFields.map((field: string) => ({ value: field, label: field }))} /></Form.Item>
           <Form.Item label="筛选条件" extra="不填写则统计所选数据源的全部记录">
             <Form.List name="filters">
               {(fields, { add, remove }) => (
                 <Space direction="vertical" style={{ width: '100%' }}>
                   {fields.map(field => (
                     <Space key={field.key} align="baseline" wrap>
-                      <Form.Item name={[field.name, 'field']} rules={[{ required: true, message: '请输入字段' }]}>
-                        <Input placeholder="字段，如 status" style={{ width: 150 }} />
+                      <Form.Item name={[field.name, 'source']} rules={[{ required: true, message: '请选择数据源' }]}>
+                        <Select placeholder="数据源" style={{ width: 130 }} options={sourceOptions.filter(s => sources.includes(s.value))} onChange={() => { form.setFieldValue(['filters', field.name, 'field'], undefined); form.setFieldValue(['filters', field.name, 'operator'], 'eq') }} />
                       </Form.Item>
-                      <Form.Item name={[field.name, 'operator']} initialValue="eq">
-                        <Select style={{ width: 110 }} options={[
-                          { value: 'eq', label: '等于' },
-                          { value: 'contains', label: '包含' },
-                          { value: 'gte', label: '大于等于' },
-                          { value: 'lte', label: '小于等于' },
-                        ]} />
+                      <Form.Item noStyle shouldUpdate>
+                        {({ getFieldValue }) => {
+                          const source = catalog.find(c => c.source === getFieldValue(['filters', field.name, 'source']))
+                          const spec = source?.fields.find((f: any) => f.field === getFieldValue(['filters', field.name, 'field']))
+                          return <>
+                            <Form.Item name={[field.name, 'field']} rules={[{ required: true, message: '请选择字段' }]}>
+                              <Select placeholder="筛选字段" style={{ width: 160 }} options={(source?.fields || []).map((f: any) => ({ value: f.field, label: `${f.field} (${f.type})` }))} onChange={() => form.setFieldValue(['filters', field.name, 'operator'], 'eq')} />
+                            </Form.Item>
+                            <Form.Item name={[field.name, 'operator']} initialValue="eq"><Select style={{ width: 110 }} options={(spec?.operators || ['eq']).map((op: string) => ({ value: op, label: ({ eq: '等于', contains: '包含', gte: '大于等于', lte: '小于等于' } as Record<string, string>)[op] }))} /></Form.Item>
+                          </>
+                        }}
                       </Form.Item>
                       <Form.Item name={[field.name, 'value']} rules={[{ required: true, message: '请输入值' }]}>
                         <Input placeholder="筛选值" style={{ width: 160 }} />
@@ -273,7 +302,7 @@ const CustomReportBuilder: React.FC = () => {
                       <Button type="text" danger icon={<MinusCircleOutlined />} onClick={() => remove(field.name)} aria-label="删除筛选条件" />
                     </Space>
                   ))}
-                  <Button type="dashed" icon={<PlusOutlined />} onClick={() => add({ operator: 'eq' })} block>添加筛选条件</Button>
+                  <Button type="dashed" icon={<PlusOutlined />} onClick={() => add({ source: sources[0], operator: 'eq' })} block>添加筛选条件</Button>
                 </Space>
               )}
             </Form.List>
@@ -285,18 +314,20 @@ const CustomReportBuilder: React.FC = () => {
         title="运行结果"
         open={runOpen}
         onCancel={() => setRunOpen(false)}
-        footer={<Button onClick={() => setRunOpen(false)}>关闭</Button>}
+        footer={<Space><Button disabled={!runResult} onClick={() => downloadCsv(runResult.name || '自定义报表', ['数据源', '分组', '记录数', '说明', '生成时间', '统计范围'], (runResult.results || []).map((r: any) => [r.source, r.group, r.total, r.note, runResult.generated_at, JSON.stringify(runResult.scope)]))}>导出 CSV</Button><Button onClick={() => setRunOpen(false)}>关闭</Button></Space>}
       >
         {runResult ? (
           <Space direction="vertical" style={{ width: '100%' }} size="middle">
+            <Alert type="info" message={runResult.definition} />
             <div><b>{runResult.name || '自定义报表'}</b></div>
             <Table<{ source: string; total: number; note?: string }>
-              rowKey={(record) => record.source}
+              rowKey={(record: any) => `${record.source}-${record.group}`}
               size="small"
               pagination={false}
               dataSource={(runResult.results || []) as { source: string; total: number; note?: string }[]}
               columns={[
                 { title: '数据源', dataIndex: 'source', render: (v: string) => sourceOptions.find(item => item.value === v)?.label || v },
+                { title: '分组', dataIndex: 'group' },
                 { title: '记录数量', dataIndex: 'total' },
                 { title: '说明', dataIndex: 'note', render: (v?: string) => v === 'unsupported' ? '暂不支持' : (v || '—') },
               ]}

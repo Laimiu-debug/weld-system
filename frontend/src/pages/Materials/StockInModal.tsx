@@ -54,20 +54,21 @@ const StockInModal: React.FC<StockInModalProps> = ({
       const companyId = currentWorkspace.type === 'enterprise' ? currentWorkspace.company_id : undefined
       const factoryId = currentWorkspace.factory_id
 
-      await materialsService.stockIn(workspaceType, companyId, factoryId, data)
+      const response = await materialsService.stockIn(workspaceType, companyId, factoryId, data)
+      if (!response.success) throw new Error(response.message || '入库未成功')
 
       message.success('入库成功')
       form.resetFields()
       onSuccess()
     } catch (error: any) {
-      console.error('入库失败:', error)
-      message.error(error.response?.data?.detail || '入库失败')
+      if (!error.errorFields) message.error('入库失败，请重试，已保留当前输入')
     } finally {
       setLoading(false)
     }
   }
 
   const handleCancel = () => {
+    if (loading) return
     form.resetFields()
     onCancel()
   }
@@ -79,6 +80,9 @@ const StockInModal: React.FC<StockInModalProps> = ({
       onOk={handleSubmit}
       onCancel={handleCancel}
       confirmLoading={loading}
+      cancelButtonProps={{ disabled: loading }}
+      closable={!loading}
+      maskClosable={!loading}
       width={600}
       destroyOnClose
     >
@@ -93,6 +97,7 @@ const StockInModal: React.FC<StockInModalProps> = ({
       <Form
         form={form}
         layout="vertical"
+        disabled={loading}
         initialValues={{
           unit_price: material?.unit_price,
           warehouse: material?.warehouse,
@@ -125,7 +130,7 @@ const StockInModal: React.FC<StockInModalProps> = ({
           <InputNumber
             style={{ width: '100%' }}
             placeholder="请输入单价"
-            addonAfter="元"
+            addonAfter={material?.currency || 'CNY'}
             precision={2}
           />
         </Form.Item>

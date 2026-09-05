@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Card,
   Table,
@@ -47,6 +48,7 @@ const { Option } = Select
 const { TextArea } = Input
 
 const MaterialsList: React.FC = () => {
+  const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [materials, setMaterials] = useState<Material[]>([])
   const [total, setTotal] = useState(0)
@@ -175,9 +177,7 @@ const MaterialsList: React.FC = () => {
 
   // 处理查看焊材
   const handleView = (material: Material) => {
-    setModalType('view')
-    setCurrentMaterial(material)
-    setIsModalVisible(true)
+    navigate(`/materials/${material.id}`)
   }
 
   // 处理删除焊材
@@ -303,9 +303,10 @@ const MaterialsList: React.FC = () => {
           message.error('创建失败')
         }
       } else if (modalType === 'edit' && currentMaterial) {
+        const { current_stock: _stock, unit: _unit, ...updates } = formData as MaterialCreate
         const response = await materialsService.updateMaterial(
           currentMaterial.id,
-          formData as MaterialUpdate,
+          updates,
           currentWorkspace.type,
           currentWorkspace.type === 'enterprise' ? currentWorkspace.company_id : undefined,
           currentWorkspace.factory_id
@@ -838,6 +839,7 @@ const MaterialsList: React.FC = () => {
                 >
                   <InputNumber
                     placeholder="请输入当前库存"
+                    disabled={modalType === 'edit'}
                     style={{ width: '100%' }}
                     min={0}
                   />
@@ -849,7 +851,7 @@ const MaterialsList: React.FC = () => {
                   label="单位"
                   rules={[{ required: true, message: '请输入单位' }]}
                 >
-                  <Input placeholder="如: kg, 支, 瓶" />
+                  <Input placeholder="如: kg, 支, 瓶" disabled={modalType === 'edit'} />
                 </Form.Item>
               </Col>
               <Col span={8}>

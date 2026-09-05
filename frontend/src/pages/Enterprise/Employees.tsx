@@ -40,6 +40,8 @@ import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 import enterpriseService, { CompanyRole } from '@/services/enterprise'
 import { useEnterpriseEmployees, useEmployeeQuota } from '@/hooks/useEnterprise'
+import EnterpriseWorkspaceGate from '@/components/EnterpriseWorkspaceGate'
+import { useNavigate } from 'react-router-dom'
 import ListPageHeader from '@/components/ListPageHeader'
 
 const { Title, Text } = Typography
@@ -72,6 +74,7 @@ interface EnterpriseEmployee {
 }
 
 const EnterpriseEmployees: React.FC = () => {
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('active')
   const [modalVisible, setModalVisible] = useState(false)
   const [createModalVisible, setCreateModalVisible] = useState(false)
@@ -460,6 +463,7 @@ const EnterpriseEmployees: React.FC = () => {
         description="管理企业员工信息、权限和状态"
       />
 
+      <Button type="primary" icon={<MailOutlined />} onClick={() => navigate('/enterprise/invitations')} style={{ marginBottom: 16 }}>邀请员工 / 查看邀请</Button>
       {/* 配额显示 */}
       {!quotaLoading && quota && (
         <Alert
@@ -1088,4 +1092,4 @@ const EnterpriseEmployees: React.FC = () => {
   )
 }
 
-export default EnterpriseEmployees
+export default function EnterpriseEntry() { return <EnterpriseWorkspaceGate><EnterpriseEmployees /></EnterpriseWorkspaceGate> }

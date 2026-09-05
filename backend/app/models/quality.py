@@ -8,9 +8,11 @@ import json
 
 from sqlalchemy import Column, Integer, String, Text, Float, Boolean, DateTime, Date, ForeignKey, Enum as SQLEnum, Index
 from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import JSONB
 import enum
 
 from app.core.database import Base
+from app.models.workspace_entity_access import WorkspaceEntityAccessMixin
 
 
 class InspectionType(str, enum.Enum):
@@ -73,6 +75,9 @@ class QualityInspection(Base):
     factory_id = Column(Integer, ForeignKey("factories.id", ondelete="SET NULL"), nullable=True, index=True, comment="工厂ID")
 
     # ==================== 基本信息 ====================
+    standard_id = Column(Integer, ForeignKey("quality_standards.id", ondelete="RESTRICT"), nullable=True, index=True)
+    standard_snapshot = Column(JSONB, nullable=True)
+
     inspection_number = Column(String(100), nullable=False, unique=True, index=True, comment="检验编号")
     inspection_type = Column(String(50), comment="检验类型：visual/radiographic/ultrasonic/...")
     inspection_result = Column(String(20), comment="检验结果")
@@ -422,7 +427,7 @@ class QualityMetric(Base):
     def __repr__(self):
         return f"<QualityMetric(id={self.id}, name={self.metric_name})>"
 
-class QualityStandard(Base):
+class QualityStandard(WorkspaceEntityAccessMixin, Base):
     """质量标准主数据"""
 
     __tablename__ = "quality_standards"

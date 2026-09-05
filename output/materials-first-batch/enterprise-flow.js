@@ -1,0 +1,35 @@
+async(page)=>{
+ const created=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().includes('/materials/?'));
+ await page.getByRole('button',{name:'save 添加焊材'}).click();
+ const payload=await (await created).json();
+ if(!payload.success||payload.data.workspace_type!=='enterprise'||payload.data.company_id!==1)throw new Error('Wrong workspace');
+ await page.waitForURL(/\/materials\/\d+$/);
+ await page.getByRole('button',{name:'edit 编辑焊材'}).click();
+ await page.getByRole('textbox',{name:'* 焊材名称',exact:true}).fill('企业修改后焊丝');
+ await page.getByRole('button',{name:'right 下一步'}).click();
+ if(!await page.getByRole('spinbutton',{name:'* 当前库存',exact:true}).isDisabled())throw new Error('Stock editable');
+ await page.getByRole('button',{name:'right 下一步'}).click();
+ await page.getByRole('button',{name:'right 下一步'}).click();
+ await page.getByRole('button',{name:'save 保存修改'}).click();
+ await page.waitForURL(/\/materials\/\d+$/);
+ await page.getByRole('cell',{name:'10 kg',exact:true}).waitFor();
+ await page.getByRole('button',{name:'入 库',exact:true}).click();
+ let modal=page.getByRole('dialog',{name:'焊材入库'});
+ await modal.getByRole('spinbutton',{name:'* 入库数量',exact:true}).fill('5');
+ await modal.getByRole('button',{name:/OK$/}).click();
+ await page.getByRole('cell',{name:'15 kg',exact:true}).waitFor();
+ await page.getByRole('button',{name:'出 库',exact:true}).click();
+ modal=page.getByRole('dialog',{name:'焊材出库'});
+ await modal.getByRole('spinbutton',{name:'* 出库数量',exact:true}).fill('3');
+ await modal.getByRole('textbox',{name:'* 去向',exact:true}).fill('企业测试车间');
+ await modal.getByRole('button',{name:/OK$/}).click();
+ await page.getByRole('cell',{name:'12 kg',exact:true}).waitFor();
+ await page.getByRole('button',{name:'库存流水',exact:true}).click();
+ await page.getByRole('cell',{name:'-3 kg',exact:true}).waitFor();
+ await page.getByText('共 3 条记录',{exact:true}).waitFor();
+ await page.screenshot({path:'output/playwright/f05-enterprise-history.png',fullPage:true});
+ await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click();
+ await page.getByRole('button',{name:'删除焊材',exact:true}).click();
+ await page.getByRole('dialog').getByRole('button',{name:/删 除$/}).click();
+ await page.waitForURL(/\/materials$/);
+}

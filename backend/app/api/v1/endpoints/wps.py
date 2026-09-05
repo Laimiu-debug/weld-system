@@ -459,6 +459,8 @@ def update_wps_status(
             db,
             wps_id=id,
             status=status_update.status,
+            current_user=current_user,
+            workspace_context=workspace_context,
             reviewed_by=status_update.reviewed_by,
             approved_by=status_update.approved_by
         )

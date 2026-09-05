@@ -83,6 +83,25 @@ def test_xobject_image_pdf_is_also_marked_for_later_ocr() -> None:
     assert parsed.pages[0].ocr_status == "pending"
 
 
+def test_scan_with_searchable_header_still_reads_image_form() -> None:
+    stream = BytesIO()
+    pdf = canvas.Canvas(stream)
+    pdf.drawString(72, 760, "Procedure Qualification Record PQR-001")
+    pdf.drawInlineImage(Image.new("RGB", (120, 80), "white"), 72, 650)
+    pdf.save()
+    stream.seek(0)
+    assert DefaultDocumentParser().parse(stream, "PQR.pdf").pages[0].ocr_status == "pending"
+
+
+def test_vector_outlines_without_text_require_vision_ocr() -> None:
+    stream = BytesIO()
+    pdf = canvas.Canvas(stream)
+    pdf.rect(72, 300, 300, 300)
+    pdf.save()
+    stream.seek(0)
+    assert DefaultDocumentParser().parse(stream, "CAD-export.pdf").pages[0].ocr_status == "pending"
+
+
 def test_docx_uses_explicit_page_breaks_and_keeps_table_text() -> None:
     stream = BytesIO()
     document = Document()

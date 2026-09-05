@@ -2,8 +2,8 @@
  * 焊工工作履历列表组件
  * 记录焊工在不同公司的工作经历
  */
-import React, { useState, useEffect } from 'react';
-import { Card, Button, Timeline, Empty, Space, Tag, Descriptions, Popconfirm, message } from 'antd';
+import React, { useState, useEffect, useRef } from 'react';
+import { Card, Button, Timeline, Empty, Space, Tag, Descriptions, Popconfirm, message, Alert, Spin } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, EnvironmentOutlined, CalendarOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import WorkHistoryModal from './WorkHistoryModal';
@@ -16,6 +16,9 @@ interface WorkHistoryListProps {
 
 const WorkHistoryList: React.FC<WorkHistoryListProps> = ({ welderId }) => {
   const currentWorkspace = workspaceService.getCurrentWorkspaceFromStorage();
+  const workspaceKey = JSON.stringify(currentWorkspace)
+  const requestVersion = useRef(0)
+  const [error, setError] = useState('')
   const [loading, setLoading] = useState(false);
   const [histories, setHistories] = useState<WelderWorkHistory[]>([]);
   const [modalVisible, setModalVisible] = useState(false)
@@ -23,7 +26,9 @@ const WorkHistoryList: React.FC<WorkHistoryListProps> = ({ welderId }) => {
 
   // 加载工作履历
   const loadHistories = async () => {
-    if (!currentWorkspace) return;
+    const version = ++requestVersion.current;
+    setError('');
+    if (!currentWorkspace) { setHistories([]); setError('请先选择工作区'); setLoading(false); return; }
 
     try {
       setLoading(true);
@@ -33,21 +38,21 @@ const WorkHistoryList: React.FC<WorkHistoryListProps> = ({ welderId }) => {
         factory_id: currentWorkspace.factory_id,
       };
       const data = await workHistoryService.getList(welderId, params);
-      setHistories(data.items || []);
+      if (version === requestVersion.current) setHistories(data.items || []);
     } catch (error: any) {
-      console.error('加载工作履历失败:', error);
-      // API 还未实现，暂时使用空数组
+      if (version !== requestVersion.current) return;
+      setError('工作履历加载失败，请重试');
       setHistories([]);
     } finally {
-      setLoading(false);
+      if (version === requestVersion.current) setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (welderId && currentWorkspace) {
-      loadHistories();
-    }
-  }, [welderId]);
+    setHistories([]); setEditing(null); setModalVisible(false)
+    void loadHistories()
+    return () => { requestVersion.current += 1 }
+  }, [welderId, workspaceKey]);
 
   const handleAddSuccess = () => {
     setModalVisible(false)
@@ -83,7 +88,7 @@ const WorkHistoryList: React.FC<WorkHistoryListProps> = ({ welderId }) => {
   };
 
   // 计算工作时长
-  const calculateDuration = (startDate: string, endDate?: string) => {
+  const calculateDuration = (startDate: string, endDate?: string | null) => {
     const start = dayjs(startDate);
     const end = endDate ? dayjs(endDate) : dayjs();
     const months = end.diff(start, 'month');
@@ -105,7 +110,7 @@ const WorkHistoryList: React.FC<WorkHistoryListProps> = ({ welderId }) => {
         </Button>
       }
     >
-      {histories.length === 0 && !loading ? (
+      {error ? <Alert type="error" showIcon message={error} action={<Button onClick={() => void loadHistories()}>重试</Button>} /> : loading ? <Spin /> : histories.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description="暂无工作履历记录"

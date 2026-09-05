@@ -92,10 +92,35 @@ def test_first_pressure_vessel_family_builds_complete_acyclic_sequence():
     }
     order = {item["step_code"]: item["order_index"] for item in steps}
     assert order["WELD-j4"] < order["CLOSE-VESSEL"] < order["WELD-j3"]
+    assert order["NDE-j4"] < order["CLOSE-VESSEL"]
     assert all(
         order[item["predecessor_code"]] < order[item["successor_code"]]
         for item in dependencies
     )
+
+
+def test_internal_nde_cannot_be_moved_after_closure_by_preferred_order():
+    steps, _, validation = build_pressure_vessel_blueprint(
+        *_first_family(), preferred_codes=["CLOSE-VESSEL", "WELD-j3", "NDE-j4"]
+    )
+    order = {step["step_code"]: step["order_index"] for step in steps}
+    assert validation["valid"]
+    assert order["NDE-j4"] < order["CLOSE-VESSEL"] < order["WELD-j3"]
+
+
+def test_symmetric_strategy_changes_same_family_weld_order():
+    parts = {"shell": _part("shell", "筒体")}
+    joints = [_joint(str(i), f"纵缝-{i}", "shell", "shell") for i in range(1, 5)]
+    requirements = {j.id: _requirement() for j in joints}
+    freezes = {j.id: _freeze("f" + j.id, j.id) for j in joints}
+    orders = []
+    for symmetric in [False, True]:
+        steps, edges, validation = build_pressure_vessel_blueprint(joints, requirements, parts, freezes, {"symmetric": symmetric})
+        assert validation["valid"]
+        rank = {s["step_code"]: s["order_index"] for s in steps}
+        assert all(rank[e["predecessor_code"]] < rank[e["successor_code"]] for e in edges)
+        orders.append([s["weld_joint_id"] for s in steps if s["step_type"] == "weld"])
+    assert orders == [["1", "2", "3", "4"], ["1", "4", "2", "3"]]
 
 
 def test_ai_preference_cannot_override_mandatory_dependency():

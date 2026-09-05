@@ -45,6 +45,8 @@ import dayjs from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 import enterpriseService from '@/services/enterprise'
 import { useEnterpriseInvitations, useEmployeeQuota } from '@/hooks/useEnterprise'
+import EnterpriseWorkspaceGate from '@/components/EnterpriseWorkspaceGate'
+import { useNavigate } from 'react-router-dom'
 import ListPageHeader from '@/components/ListPageHeader'
 
 const { Title, Text } = Typography
@@ -63,6 +65,7 @@ interface EmployeeInvitation {
   id: string
   email: string
   invitation_code: string
+  invite_url?: string
   role: 'admin' | 'employee'
   factory_id?: string
   factory_name?: string
@@ -89,6 +92,7 @@ interface Department {
 }
 
 const Invitations: React.FC = () => {
+  const navigate = useNavigate()
   const [modalVisible, setModalVisible] = useState(false)
   const [detailModalVisible, setDetailModalVisible] = useState(false)
   const [selectedInvitation, setSelectedInvitation] = useState<EmployeeInvitation | null>(null)
@@ -363,8 +367,10 @@ const Invitations: React.FC = () => {
         expires_at: values.expires_at,
       })
       const payload = response.data?.data || response.data
-      const emailSent = payload?.email_sent !== false
-      message.success(emailSent ? '邀请已发送，请对方查收邮件' : '邀请已创建，邮件未发出，请复制邀请码发给对方')
+      if (response.data?.success === false || !payload?.id) throw new Error('邀请未创建')
+      const emailSent = payload?.email_sent === true
+      if (emailSent) message.success('邀请已发送，请对方查收邮件')
+      else message.warning('邀请已创建，但邮件未发出；请在邀请详情复制链接交给对方')
       setModalVisible(false)
       form.resetFields()
       loadInvitations()
@@ -383,7 +389,7 @@ const Invitations: React.FC = () => {
       return
     }
     try {
-      await enterpriseService.inviteEmployee({
+      const response = await enterpriseService.inviteEmployee({
         email: expiredInvitation.email,
         role: expiredInvitation.role,
         factory_id: expiredInvitation.factory_id,
@@ -391,7 +397,10 @@ const Invitations: React.FC = () => {
         permissions: expiredInvitation.permissions || {},
         message: expiredInvitation.message,
       })
-      message.success('邀请已重新发送')
+      const payload = response.data?.data || response.data
+      if (response.data?.success === false || !payload?.id) throw new Error('邀请未创建')
+      if (payload.email_sent === true) message.success('邀请已重新发送')
+      else message.warning('邀请已更新，但邮件未发出；请在邀请详情复制链接交给对方')
       loadInvitations()
     } catch {
       message.error('重新邀请失败')
@@ -400,6 +409,7 @@ const Invitations: React.FC = () => {
 
   return (
     <div className="list-page">
+      <Button onClick={() => navigate('/enterprise/employees')} style={{ marginBottom: 16 }}>返回员工管理</Button>
       <ListPageHeader
         title="邀请管理"
         description="管理企业员工邀请，发送邀请码并跟踪邀请状态"
@@ -680,7 +690,7 @@ const Invitations: React.FC = () => {
                   <Avatar size={80} icon={<MailOutlined />} />
                   <div className="mt-2">
                     <Title level={4}>邀请详情</Title>
-                    <Tag color="blue">{selectedInvitation.invitation_code}</Tag>
+                    <Space direction="vertical"><Tag color="blue">{selectedInvitation.invitation_code}</Tag>{selectedInvitation.invite_url && <Text copyable={{ text: selectedInvitation.invite_url }}>注册链接：{selectedInvitation.invite_url}</Text>}</Space>
                   </div>
                 </div>
               </Col>
@@ -773,4 +783,4 @@ const Invitations: React.FC = () => {
   )
 }
 
-export default Invitations
+export default function EnterpriseEntry() { return <EnterpriseWorkspaceGate><Invitations /></EnterpriseWorkspaceGate> }

@@ -1,0 +1,11 @@
+{
+  "environment": "Local Edge + actual API + isolated PostgreSQL schema qa_business_f06_f11_20260905",
+  "F06": {"date_order_error": true, "create_plan": true, "link_actual_task": true, "completed_plan_readonly": true},
+  "F07": {"historic_standard_snapshot_unchanged": true, "current_standard_selected": true, "next_step_does_not_submit": true, "explicit_save_persists_standard_version": "2.0"},
+  "F08": {"actual_employee_selector": true, "invalid_period_error": true, "business_failure_preserves_form": true, "retry_saved_actual_review": true},
+  "F09": {"source_field_catalog": true, "save_and_run": true, "actual_grouped_csv_checked": "output/playwright/f09-report.csv"},
+  "F10": {"load_failure_distinct_from_empty": true, "retry_recovers": true, "create_edit_delete": true, "current_employment_clears_end_date": true, "switch_to_personal_hides_enterprise_history": true},
+  "F11": {"personal_entry_guidance": true, "enterprise_legacy_entry_redirect": true, "employee_to_invitation_navigation": true, "create_warning_email_not_sent": true, "detail_registration_link_available": true, "cancel_pending_invitation": true},
+  "mail_delivery": "Local sink only. No external email sent; actual provider delivery was not tested.",
+  "failure_injection": "HTTP 500 history load and HTTP 200 success=false performance save only; successful flows used real services."
+}

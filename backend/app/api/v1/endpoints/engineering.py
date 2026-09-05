@@ -32,6 +32,7 @@ from app.services.ai_credential_service import (
 )
 from app.services.ai_extraction_service import AIExtractionRunError, build_provider
 from app.services.document_page_renderer import DocumentPageRenderer
+from app.services.document_parser_service import DocumentParseError
 from app.services.document_storage_service import (
     DocumentStorage,
     DocumentUploadError,
@@ -252,10 +253,13 @@ def drawing_preview(
         .filter(SourceDocument.id == rev.drawing_document_id)
         .one()
     )
-    with storage.open_stream(document.storage_key) as stream:
-        data = DocumentPageRenderer().render_png(
-            stream, document.original_filename, page_number
-        )
+    try:
+        with storage.open_stream(document.storage_key) as stream:
+            data = DocumentPageRenderer().render_png(
+                stream, document.original_filename, page_number
+            )
+    except DocumentParseError as exc:
+        raise HTTPException(422, str(exc)) from exc
     return StreamingResponse(
         BytesIO(data),
         media_type="image/png",

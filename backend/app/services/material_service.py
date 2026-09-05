@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+from math import isfinite
 from fastapi import HTTPException, status
 
 from app.models.material import WeldingMaterial
@@ -84,6 +85,21 @@ class MaterialService:
             
             # 保存到数据库
             self.db.add(material)
+            self.db.flush()
+            if material.current_stock > 0:
+                from app.models.material import MaterialTransaction
+                self.db.add(MaterialTransaction(
+                    material_id=material.id, user_id=current_user.id,
+                    workspace_type=material.workspace_type, company_id=material.company_id,
+                    factory_id=material.factory_id, transaction_type='in',
+                    transaction_number=self._generate_transaction_number('in'),
+                    transaction_date=datetime.utcnow(), quantity=material.current_stock,
+                    unit=material.unit, stock_before=0, stock_after=material.current_stock,
+                    unit_price=material.unit_price,
+                    total_price=material.current_stock * material.unit_price if material.unit_price is not None else None,
+                    currency=material.currency, source='初始库存', operator=current_user.username,
+                    created_by=current_user.id, updated_by=current_user.id,
+                ))
             self.db.commit()
             self.db.refresh(material)
             
@@ -276,9 +292,15 @@ class MaterialService:
                 workspace_context
             )
             
-            # 更新字段
+            if {'current_stock', 'unit'} & material_data.keys():
+                raise HTTPException(422, '库存数量和单位不能通过编辑修改，请使用出入库操作')
+            code = material_data.get('material_code')
+            if code and code != material.material_code and self._check_material_code_exists(code, workspace_context):
+                raise HTTPException(400, f'焊材编号 {code} 已存在')
+
+            # 更新字段（允许清空可选资料，库存字段只能由专用操作维护）
             for key, value in material_data.items():
-                if hasattr(material, key) and value is not None:
+                if key in MaterialUpdate.model_fields:
                     setattr(material, key, value)
             
             material.updated_by = current_user.id
@@ -566,7 +588,12 @@ class MaterialService:
                 query, WeldingMaterial, current_user, workspace_context
             )
 
-            material = query.first()
+            if not isfinite(quantity) or quantity <= 0:
+                raise HTTPException(422, '入库数量必须为有限正数')
+            price = kwargs.get('unit_price')
+            if price is not None and (not isfinite(price) or price < 0):
+                raise HTTPException(422, '单价必须为非负有限数')
+            material = query.populate_existing().with_for_update().first()
 
             if not material:
                 raise HTTPException(
@@ -601,8 +628,8 @@ class MaterialService:
                 stock_before=stock_before,
                 stock_after=stock_after,
                 unit_price=kwargs.get("unit_price"),
-                total_price=kwargs.get("unit_price") * quantity if kwargs.get("unit_price") else None,
-                currency=kwargs.get("currency", "CNY"),
+                total_price=price * quantity if price is not None else None,
+                currency=material.currency,
                 source=kwargs.get("source"),
                 batch_number=kwargs.get("batch_number"),
                 production_date=kwargs.get("production_date"),
@@ -621,7 +648,7 @@ class MaterialService:
             material.updated_at = datetime.utcnow()
 
             # 更新最后采购信息
-            if kwargs.get("unit_price"):
+            if price is not None:
                 material.last_purchase_price = kwargs.get("unit_price")
                 material.last_purchase_date = datetime.utcnow()
 
@@ -684,7 +711,9 @@ class MaterialService:
                 query, WeldingMaterial, current_user, workspace_context
             )
 
-            material = query.first()
+            if not isfinite(quantity) or quantity <= 0:
+                raise HTTPException(422, '出库数量必须为有限正数')
+            material = query.populate_existing().with_for_update().first()
 
             if not material:
                 raise HTTPException(
@@ -795,6 +824,9 @@ class MaterialService:
             # 验证工作区上下文
             workspace_context.validate()
 
+            if material_id is not None:
+                self.get_material_by_id(material_id, current_user, workspace_context)
+
             # 构建基础查询
             query = self.db.query(MaterialTransaction).filter(
                 MaterialTransaction.is_active == True
@@ -819,15 +851,18 @@ class MaterialService:
             total = query.count()
 
             # 分页查询
-            items = query.order_by(MaterialTransaction.transaction_date.desc()).offset(skip).limit(limit).all()
+            items = query.order_by(MaterialTransaction.transaction_date.desc(), MaterialTransaction.id.desc()).offset(skip).limit(limit).all()
 
+            from app.schemas.material_transaction import MaterialTransactionResponse
             return {
-                "items": items,
+                "items": [MaterialTransactionResponse.model_validate(item) for item in items],
                 "total": total,
                 "skip": skip,
                 "limit": limit
             }
 
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

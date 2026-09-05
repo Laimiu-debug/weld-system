@@ -393,8 +393,11 @@ export const useEnterpriseInvitations = (params?: {
 
   const resendInvitation = useCallback(async (invitationId: string) => {
     try {
-      await enterpriseService.resendInvitation(invitationId)
-      message.success('邀请已重新发送')
+      const response = await enterpriseService.resendInvitation(invitationId)
+      const payload = response.data?.data || response.data
+      if (response.data?.success === false || !payload?.id) throw new Error('邀请未更新')
+      if (payload.email_sent === true) message.success('邀请已重新发送')
+      else message.warning('邀请已更新，但邮件未发出；请在邀请详情复制链接交给对方')
       loadInvitations()
       return true
     } catch (error) {

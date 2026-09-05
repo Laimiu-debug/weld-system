@@ -1013,6 +1013,9 @@ class ApprovalService:
             if document:
                 document.status = new_status
                 document.updated_at = datetime.utcnow()
+                if new_status == "approved":
+                    document.approved_by = instance.final_approver_id
+                    document.approved_date = instance.completed_at
 
         elif instance.document_type == DocumentType.PQR:
             from app.models.pqr import PQR

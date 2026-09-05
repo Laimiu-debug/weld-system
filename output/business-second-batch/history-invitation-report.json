@@ -1,0 +1,18 @@
+[
+  {
+    "workspace": "personal",
+    "welder_id": 1,
+    "F10": "passed"
+  },
+  {
+    "workspace": "enterprise",
+    "welder_id": 2,
+    "F10": "passed"
+  },
+  {
+    "F11": "passed",
+    "invitation_id": "1",
+    "email_delivery": "local sink returned false; no external mail sent",
+    "accepted_by_invited_test_account": true
+  }
+]

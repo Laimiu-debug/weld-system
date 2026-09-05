@@ -311,6 +311,7 @@ class InvitationService:
             "id": str(invitation.id),
             "email": invitation.email,
             "invitation_code": invitation.invitation_code,
+            "invite_url": f"{settings.FRONTEND_URL.rstrip('/')}/register?invite={invitation.token}" if getattr(invitation, "token", None) else None,
             "role": invitation.role,
             "factory_id": str(invitation.factory_id) if invitation.factory_id else None,
             "factory_name": factory_name,

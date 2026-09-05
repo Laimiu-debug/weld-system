@@ -841,8 +841,15 @@ class WelderCareerMixin:
                 workspace_context
             )
 
+            required = {'company_name', 'position', 'start_date'}
+            if any(history_data[key] is None or history_data[key] == '' for key in required & history_data.keys()):
+                raise HTTPException(422, '公司名称、职位和开始日期不能清空')
+            start = history_data.get('start_date', history.start_date)
+            end = history_data.get('end_date', history.end_date)
+            if start and end and end < start:
+                raise HTTPException(422, '结束日期不能早于开始日期')
             for key, value in history_data.items():
-                if value is not None and hasattr(history, key):
+                if hasattr(history, key):
                     setattr(history, key, value)
             history.updated_at = datetime.utcnow()
             if hasattr(history, "updated_by"):

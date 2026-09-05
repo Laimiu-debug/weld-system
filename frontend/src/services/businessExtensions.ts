@@ -11,6 +11,7 @@ export type WorkspaceQuery = {
   limit?: number
   search?: string
   status?: string
+  overdue?: boolean
 }
 
 function qs(params: Record<string, unknown>) {
@@ -27,8 +28,10 @@ function qs(params: Record<string, unknown>) {
 function unwrap<T>(response: any): T {
   // apiService interceptor wraps axios body as { success, data: body }
   let body = response
+  if (response?.success === false) throw new Error(response.message || '操作失败')
   if (response?.success !== undefined && response?.data !== undefined) {
     body = response.data
+    if (body?.success === false) throw new Error(body.message || '操作失败')
   }
   if (body?.success !== undefined && body?.data !== undefined) {
     return body.data as T
@@ -64,6 +67,8 @@ async function deleteResource(path: string, id: number, params: WorkspaceQuery) 
 }
 
 export const productionPlanApi = {
+  taskOptions: async (p: WorkspaceQuery, planId: number, search?: string) => unwrap<any[]>(await apiService.get(`/production/plan-task-options${qs({ ...p, plan_id: planId, search })}`)),
+  setTasks: async (p: WorkspaceQuery, id: number, task_ids: number[]) => unwrap<any>(await apiService.put(`/production/plans/${id}/tasks${qs(p)}`, { task_ids })),
   list: (p: WorkspaceQuery) => listResource<any>('/production/plans', p),
   create: (p: WorkspaceQuery, body: Record<string, unknown>) =>
     createResource<any>('/production/plans', p, body),
@@ -82,6 +87,7 @@ export const qualityStandardApi = {
 }
 
 export const performanceApi = {
+  employees: async (p: WorkspaceQuery) => unwrap<any[]>(await apiService.get(`/employees/performance-options${qs(p)}`)),
   list: (p: WorkspaceQuery) => listResource<any>('/employees/performances', p),
   create: (p: WorkspaceQuery, body: Record<string, unknown>) =>
     createResource<any>('/employees/performances', p, body),
@@ -91,6 +97,7 @@ export const performanceApi = {
 }
 
 export const reportTemplateApi = {
+  catalog: async () => unwrap<any[]>(await apiService.get('/reports/field-catalog')),
   list: (p: WorkspaceQuery) => listResource<any>('/reports/templates', p),
   create: (p: WorkspaceQuery, body: Record<string, unknown>) =>
     createResource<any>('/reports/templates', p, body),

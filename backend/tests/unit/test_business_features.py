@@ -59,6 +59,7 @@ def test_progress_clamped_by_update_task_progress():
     from app.services.production_service import ProductionService
 
     task = SimpleNamespace(
+        production_release_id=None,
         progress_percentage=0,
         status="pending",
         actual_start_date=None,

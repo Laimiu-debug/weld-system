@@ -369,8 +369,6 @@ def build_pressure_vessel_blueprint(
         tags = _strategy_tags(policy)
         if _is_internal(requirement):
             tags.append("closed_space")
-            if family != "head":
-                closure_sensitive.append(weld)
         frozen = getattr(freeze, "frozen_snapshot", {}) if freeze else {}
         add_step(
             weld,
@@ -412,6 +410,8 @@ def build_pressure_vessel_blueprint(
             )
             add_edge(weld, nde, "nde", "焊接完成后执行规定的无损检测")
             terminal = nde
+        if _is_internal(requirement) and family != "head":
+            closure_sensitive.append(terminal)
         terminals.append(terminal)
         if family == "head":
             head_welds.append(weld)
@@ -461,6 +461,11 @@ def build_pressure_vessel_blueprint(
 
     codes = [item["step_code"] for item in steps]
     valid_preferred = [code for code in (preferred_codes or []) if code in set(codes)]
+    if policy["symmetric"]:
+        # Keep the interleaved construction order as the fallback preference.
+        # Mandatory edges still win; explicit AI/user preferences remain first.
+        selected = set(valid_preferred)
+        valid_preferred.extend(code for code in codes if code not in selected)
     order, graph_errors = topological_order(
         codes,
         [(item["predecessor_code"], item["successor_code"]) for item in dependencies],

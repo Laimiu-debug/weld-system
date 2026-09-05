@@ -3,6 +3,7 @@ WPS (Welding Procedure Specification) service for the welding system backend.
 """
 from typing import Any, Dict, List, Optional
 from datetime import datetime
+from fastapi import HTTPException
 
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc
@@ -11,6 +12,27 @@ from app.models.wps import WPS, WPSRevision
 from app.models.user import User
 from app.schemas.wps import WPSCreate, WPSUpdate, WPSRevisionCreate
 from app.core.data_access import DataAccessMiddleware, WorkspaceContext, WorkspaceType
+
+
+def validate_direct_wps_write(data: dict, current_status: str | None = None) -> None:
+    """Approval identity and signed states belong to the approval workflow."""
+    if any(key in data for key in (
+        "reviewed_by", "approved_by", "reviewed_date", "approved_date",
+    )):
+        raise HTTPException(409, "审核人、批准人及签署日期只能由审批流程记录")
+    target = data.get("status")
+    if "status" in data and target is None:
+        raise HTTPException(422, "WPS 状态不能为空")
+    if "status" not in data or target == current_status:
+        return
+    if target not in {"draft", "obsolete"}:
+        raise HTTPException(409, "审核与批准状态必须通过审批流程变更")
+    if current_status is None and target != "draft":
+        raise HTTPException(409, "新建 WPS 必须为草稿")
+    if target == "draft" and current_status in {"approved", "obsolete"}:
+        raise HTTPException(409, "已批准或作废 WPS 不能直接改回草稿，请创建新版本")
+    if current_status is not None and current_status not in {"draft", "rejected", "approved", "obsolete"}:
+        raise HTTPException(409, "审核中的 WPS 必须通过审批流程撤回或处理")
 
 
 class WPSService:
@@ -190,6 +212,7 @@ class WPSService:
         # 同时保留对旧字段的支持（向后兼容）
 
         obj_data = obj_in.model_dump()
+        validate_direct_wps_write(obj_data)
 
         # 提取必要的基本字段
         basic_fields = {
@@ -278,6 +301,7 @@ class WPSService:
             raise ValueError("No permission to update this WPS")
 
         update_data = obj_in.model_dump(exclude_unset=True)
+        validate_direct_wps_write(update_data, db_obj.status)
 
         # Check if WPS number is being changed and if it already exists
         if "wps_number" in update_data and update_data["wps_number"] != db_obj.wps_number:
@@ -368,14 +392,22 @@ class WPSService:
         *,
         wps_id: int,
         status: str,
+        current_user: User,
+        workspace_context: WorkspaceContext,
         reviewed_by: Optional[int] = None,
         approved_by: Optional[int] = None
     ) -> WPS:
         """Update WPS status."""
-        wps = self.get(db, id=wps_id)
+        wps = self.get(db, id=wps_id, current_user=current_user, workspace_context=workspace_context)
         if not wps:
             raise ValueError("WPS not found")
 
+        self.data_access.check_access(current_user, wps, "edit", workspace_context)
+        validate_direct_wps_write({
+            key: value for key, value in {
+                "status": status, "reviewed_by": reviewed_by, "approved_by": approved_by,
+            }.items() if value is not None
+        }, wps.status)
         wps.status = status
 
         if reviewed_by:

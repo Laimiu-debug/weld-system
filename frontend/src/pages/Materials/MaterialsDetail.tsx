@@ -1,431 +1,117 @@
-import React, { useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import {
-  Card,
-  Typography,
-  Button,
-  Space,
-  Tag,
-  Descriptions,
-  Row,
-  Col,
-  Divider,
-  Tabs,
-  Table,
-  Timeline,
-  Badge,
-  Progress,
-  Alert,
-  Statistic,
-  Avatar,
-  Tooltip,
-  Modal,
-  message,
-} from 'antd'
-import {
-  ArrowLeftOutlined,
-  EditOutlined,
-  DownloadOutlined,
-  PlusOutlined,
-  DeleteOutlined,
-  ExclamationCircleOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  WarningOutlined,
-} from '@ant-design/icons'
-import { WeldingMaterial, MaterialType } from '@/types'
-import dayjs from 'dayjs'
+import { Alert, Button, Card, Descriptions, Modal, Space, Spin, Tag, Typography, message } from 'antd'
+import { ArrowLeftOutlined, EditOutlined, DownloadOutlined, ReloadOutlined } from '@ant-design/icons'
+import materialsService, { Material } from '@/services/materials'
+import { workspaceService } from '@/services/workspace'
+import { downloadCsv } from '@/utils/csv'
+import StockInModal from './StockInModal'
+import StockOutModal from './StockOutModal'
+import TransactionHistory from './TransactionHistory'
 
-const { Title, Text, Paragraph } = Typography
+const typeNames: Record<string, string> = { electrode: '焊条', wire: '焊丝', flux: '焊剂', gas: '保护气体' }
 
 const MaterialsDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState('info')
-  const [isModalVisible, setIsModalVisible] = useState(false)
+  const [workspace] = useState(() => workspaceService.getCurrentWorkspaceFromStorage())
+  const [material, setMaterial] = useState<Material | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [revision, setRevision] = useState(0)
+  const [action, setAction] = useState<'in' | 'out' | 'history' | null>(null)
+  const refresh = useCallback(() => setRevision(value => value + 1), [])
 
-  // 模拟获取焊材详情数据
-  const materialData: WeldingMaterial = {
-    id: id || '1',
-    material_code: 'MAT-2024-001',
-    material_name: 'E7018碳钢焊条',
-    material_type: 'electrode',
-    specification: '3.2mm',
-    manufacturer: '金桥焊材有限公司',
-    current_stock: 150,
-    unit: 'kg',
-    min_stock_level: 20,
-    storage_location: 'A-01-03',
-    unit_price: 15.5,
-    currency: 'CNY',
-    created_at: '2024-01-15T10:30:00Z',
-    updated_at: '2024-01-15T10:30:00Z',
-    user_id: 'user1',
-  }
-
-  // 模拟库存变动记录
-  const stockHistory = [
-    {
-      id: '1',
-      date: '2024-01-20',
-      type: '入库',
-      quantity: 50,
-      operator: '张三',
-      remark: '新采购入库',
-    },
-    {
-      id: '2',
-      date: '2024-01-18',
-      type: '出库',
-      quantity: 20,
-      operator: '李四',
-      remark: '生产领用',
-    },
-    {
-      id: '3',
-      date: '2024-01-15',
-      type: '入库',
-      quantity: 120,
-      operator: '王五',
-      remark: '初期库存',
-    },
-  ]
-
-  // 模拟使用记录
-  const usageRecords = [
-    {
-      id: '1',
-      date: '2024-01-20',
-      project: '压力容器项目',
-      quantity: 20,
-      operator: '李四',
-      status: '已完成',
-    },
-    {
-      id: '2',
-      date: '2024-01-18',
-      project: '管道焊接项目',
-      quantity: 15,
-      operator: '张三',
-      status: '进行中',
-    },
-  ]
-
-  // 获取焊材类型显示名称
-  const getMaterialTypeName = (type: MaterialType) => {
-    const typeNames: Record<MaterialType, string> = {
-      electrode: '焊条',
-      wire: '焊丝',
-      flux: '焊剂',
-      gas: '保护气体',
+  useEffect(() => {
+    let active = true
+    setMaterial(null)
+    setError('')
+    if (!workspace || !Number.isSafeInteger(Number(id)) || Number(id) <= 0) {
+      setError('请确认焊材编号并选择工作区')
+      setLoading(false)
+      return
     }
-    return typeNames[type] || type
-  }
+    setLoading(true)
+    materialsService.getMaterialById(Number(id), workspace.type,
+      workspace.type === 'enterprise' ? workspace.company_id : undefined, workspace.factory_id)
+      .then(response => {
+        if (!response.success || !response.data?.id) throw new Error('未返回焊材资料')
+        if (active) setMaterial(response.data)
+      })
+      .catch(() => { if (active) setError('无法加载焊材，记录可能已删除或您没有访问权限。请重试或返回列表。') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [id, workspace, revision])
 
-  // 获取库存状态
-  const getStockStatus = (currentStock: number, minStockLevel: number) => {
-    if (currentStock === 0) {
-      return { color: 'error', text: '缺货', icon: <ExclamationCircleOutlined /> }
-    } else if (currentStock <= minStockLevel) {
-      return { color: 'warning', text: '库存不足', icon: <WarningOutlined /> }
-    } else {
-      return { color: 'success', text: '有库存', icon: <CheckCircleOutlined /> }
-    }
-  }
-
-  const stockStatus = getStockStatus(materialData.current_stock, materialData.min_stock_level)
-  const stockPercentage = Math.min((materialData.current_stock / (materialData.min_stock_level * 3)) * 100, 100)
-
-  // 处理编辑
-  const handleEdit = () => {
-    navigate(`/materials/${id}/edit`)
-  }
-
-  // 处理删除
-  const handleDelete = () => {
+  const remove = () => {
+    if (!material || !workspace) return
     Modal.confirm({
-      title: '确定要删除这个焊材吗？',
-      icon: <ExclamationCircleOutlined />,
-      content: '删除后将无法恢复',
-      okText: '确定',
-      cancelText: '取消',
-      onOk() {
-        message.success('删除成功')
-        navigate('/materials')
+      title: `确认删除焊材“${material.material_name}”？`,
+      content: '删除后该焊材将从在用列表中移除。',
+      okText: '删除', cancelText: '取消', okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          const response = await materialsService.deleteMaterial(material.id, workspace.type,
+            workspace.type === 'enterprise' ? workspace.company_id : undefined, workspace.factory_id)
+          if (!response.success) throw new Error('删除失败')
+          message.success('焊材已删除')
+          navigate('/materials')
+        } catch (error) {
+          message.error('删除失败，请重试，焊材资料仍保留')
+          throw error
+        }
       },
     })
   }
 
-  // 处理添加库存
-  const handleAddStock = () => {
-    setIsModalVisible(true)
+  const exportInfo = () => {
+    if (!material) return
+    downloadCsv(`焊材-${material.id}`, ['编号', '名称', '类型', '规格', '制造商', '库存', '单位', '最低库存', '存储位置', '单价', '币种', '备注'], [[
+      material.material_code, material.material_name, typeNames[material.material_type] || material.material_type,
+      material.specification, material.manufacturer, material.current_stock, material.unit,
+      material.min_stock_level, material.storage_location, material.unit_price, material.currency, material.notes,
+    ]])
   }
 
-  // 库存变动记录表格列
-  const stockHistoryColumns = [
-    {
-      title: '日期',
-      dataIndex: 'date',
-      key: 'date',
-      render: (date: string) => dayjs(date).format('YYYY-MM-DD'),
-    },
-    {
-      title: '类型',
-      dataIndex: 'type',
-      key: 'type',
-      render: (type: string) => (
-        <Tag color={type === '入库' ? 'green' : 'red'}>
-          {type}
-        </Tag>
-      ),
-    },
-    {
-      title: '数量',
-      dataIndex: 'quantity',
-      key: 'quantity',
-      render: (quantity: number) => (
-        <Text strong>{quantity} {materialData.unit}</Text>
-      ),
-    },
-    {
-      title: '操作人',
-      dataIndex: 'operator',
-      key: 'operator',
-    },
-    {
-      title: '备注',
-      dataIndex: 'remark',
-      key: 'remark',
-    },
-  ]
+  const onStockSuccess = () => { setAction(null); refresh() }
+  const lowStock = material && material.min_stock_level != null && material.current_stock <= material.min_stock_level
 
-  // 使用记录表格列
-  const usageColumns = [
-    {
-      title: '日期',
-      dataIndex: 'date',
-      key: 'date',
-      render: (date: string) => dayjs(date).format('YYYY-MM-DD'),
-    },
-    {
-      title: '项目',
-      dataIndex: 'project',
-      key: 'project',
-    },
-    {
-      title: '使用量',
-      dataIndex: 'quantity',
-      key: 'quantity',
-      render: (quantity: number) => (
-        <Text strong>{quantity} {materialData.unit}</Text>
-      ),
-    },
-    {
-      title: '操作人',
-      dataIndex: 'operator',
-      key: 'operator',
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status: string) => (
-        <Tag color={status === '已完成' ? 'success' : 'processing'}>
-          {status}
-        </Tag>
-      ),
-    },
-  ]
-
-  return (
-    <div className="page-container">
-      <div className="page-header">
-        <Space>
-          <Button
-            icon={<ArrowLeftOutlined />}
-            onClick={() => navigate('/materials')}
-          >
-            返回列表
-          </Button>
-          <Title level={2}>焊材详情</Title>
+  return <div className="page-container">
+    <Space wrap style={{ marginBottom: 16 }}>
+      <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/materials')}>返回列表</Button>
+      <Typography.Title level={2} style={{ margin: 0 }}>焊材详情</Typography.Title>
+      <Button icon={<ReloadOutlined />} onClick={refresh} disabled={loading}>刷新</Button>
+    </Space>
+    {loading ? <Spin /> : error ? <Alert type="error" showIcon message={error} action={<Button onClick={refresh}>重试</Button>} /> : material && <>
+      {(lowStock || material.current_stock === 0) && <Alert type="warning" showIcon message={material.current_stock === 0 ? '当前库存为零，请及时补充' : '库存已达到最低库存水平，请及时补充'} style={{ marginBottom: 16 }} />}
+      <Card title={material.material_name} extra={<Tag>{typeNames[material.material_type] || material.material_type}</Tag>}>
+        <Descriptions bordered column={{ xs: 1, sm: 2 }} items={[
+          { key: 'code', label: '焊材编号', children: material.material_code },
+          { key: 'spec', label: '规格', children: material.specification || '—' },
+          { key: 'maker', label: '制造商', children: material.manufacturer || '—' },
+          { key: 'supplier', label: '供应商', children: material.supplier || '—' },
+          { key: 'stock', label: '当前库存', children: `${material.current_stock} ${material.unit}` },
+          { key: 'min', label: '最低库存', children: material.min_stock_level == null ? '未设置' : `${material.min_stock_level} ${material.unit}` },
+          { key: 'location', label: '存储位置', children: material.storage_location || '—' },
+          { key: 'batch', label: '批次号', children: material.batch_number || '—' },
+          { key: 'price', label: '单价', children: material.unit_price == null ? '未设置' : `${material.unit_price} ${material.currency || 'CNY'} / ${material.unit}` },
+          { key: 'value', label: '库存估值', children: material.unit_price == null ? '未设置单价' : `${(material.current_stock * material.unit_price).toFixed(2)} ${material.currency || 'CNY'}` },
+          { key: 'notes', label: '备注', children: material.notes || '—', span: 2 },
+        ]} />
+        <Space wrap style={{ marginTop: 20 }}>
+          <Button type="primary" icon={<EditOutlined />} onClick={() => navigate(`/materials/${material.id}/edit`)}>编辑焊材</Button>
+          <Button onClick={() => setAction('in')}>入库</Button>
+          <Button onClick={() => setAction('out')} disabled={material.current_stock <= 0}>出库</Button>
+          <Button onClick={() => setAction('history')}>库存流水</Button>
+          <Button icon={<DownloadOutlined />} onClick={exportInfo}>导出信息</Button>
+          <Button danger onClick={remove}>删除焊材</Button>
         </Space>
-      </div>
-
-      <Row gutter={[24, 24]}>
-        <Col xs={24} lg={16}>
-          <Card>
-            <Tabs
-              activeKey={activeTab}
-              onChange={setActiveTab}
-              items={[
-                {
-                  key: 'info',
-                  label: '基本信息',
-                  children: (
-                    <Descriptions bordered column={2}>
-                      <Descriptions.Item label="焊材编号">
-                        {materialData.material_code}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="焊材名称">
-                        {materialData.material_name}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="焊材类型">
-                        <Tag color="blue">{getMaterialTypeName(materialData.material_type)}</Tag>
-                      </Descriptions.Item>
-                      <Descriptions.Item label="规格">
-                        {materialData.specification}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="制造商">
-                        {materialData.manufacturer}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="存储位置">
-                        {materialData.storage_location}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="创建时间">
-                        {dayjs(materialData.created_at).format('YYYY-MM-DD HH:mm:ss')}
-                      </Descriptions.Item>
-                      <Descriptions.Item label="更新时间">
-                        {dayjs(materialData.updated_at).format('YYYY-MM-DD HH:mm:ss')}
-                      </Descriptions.Item>
-                    </Descriptions>
-                  )
-                },
-                {
-                  key: 'stock',
-                  label: '库存变动',
-                  children: (
-                    <Table
-                      dataSource={stockHistory}
-                      columns={stockHistoryColumns}
-                      rowKey="id"
-                      pagination={false}
-                    />
-                  )
-                },
-                {
-                  key: 'usage',
-                  label: '使用记录',
-                  children: (
-                    <Table
-                      dataSource={usageRecords}
-                      columns={usageColumns}
-                      rowKey="id"
-                      pagination={false}
-                    />
-                  )
-                }
-              ]}
-            />
-          </Card>
-        </Col>
-
-        <Col xs={24} lg={8}>
-          <Card title="库存状态">
-            <div className="text-center p-4">
-              <div className="mb-4">
-                <Text style={{ fontSize: 48, fontWeight: 'bold' }}>
-                  {materialData.current_stock}
-                </Text>
-                <Text style={{ fontSize: 24, marginLeft: 8 }}>
-                  {materialData.unit}
-                </Text>
-              </div>
-              <Tag color={stockStatus.color} style={{ fontSize: 16, padding: '4px 12px' }}>
-                {stockStatus.icon}
-                {stockStatus.text}
-              </Tag>
-              <div className="mt-4">
-                <Progress
-                  percent={stockPercentage}
-                  status={stockStatus.color === 'error' ? 'exception' : 'normal'}
-                  strokeColor={stockStatus.color}
-                />
-              </div>
-              <div className="mt-2">
-                <Text type="secondary">
-                  最低库存水平: {materialData.min_stock_level} {materialData.unit}
-                </Text>
-              </div>
-            </div>
-          </Card>
-
-          <Card title="价格信息" className="mt-6">
-            <div className="text-center p-4">
-              <Statistic
-                title="单价"
-                value={materialData.unit_price}
-                prefix={materialData.currency === 'CNY' ? '¥' : materialData.currency}
-                suffix={`/ ${materialData.unit}`}
-                precision={2}
-                valueStyle={{ color: '#3f8600' }}
-              />
-              <Divider />
-              <Statistic
-                title="库存总价值"
-                value={materialData.current_stock * (materialData.unit_price || 0)}
-                prefix={materialData.currency === 'CNY' ? '¥' : materialData.currency}
-                precision={2}
-                valueStyle={{ color: '#cf1322' }}
-              />
-            </div>
-          </Card>
-
-          <Card title="操作" className="mt-6">
-            <Space direction="vertical" className="w-full">
-              <Button
-                type="primary"
-                icon={<EditOutlined />}
-                block
-                onClick={handleEdit}
-              >
-                编辑焊材
-              </Button>
-              <Button
-                icon={<PlusOutlined />}
-                block
-                onClick={handleAddStock}
-              >
-                添加库存
-              </Button>
-              <Button
-                icon={<DownloadOutlined />}
-                block
-              >
-                导出信息
-              </Button>
-              <Button
-                icon={<DeleteOutlined />}
-                block
-                danger
-                onClick={handleDelete}
-              >
-                删除焊材
-              </Button>
-            </Space>
-          </Card>
-
-          {materialData.current_stock <= materialData.min_stock_level && (
-            <Alert
-              message="库存不足"
-              description="当前库存已低于最低库存水平，建议及时补充库存"
-              type="warning"
-              showIcon
-              className="mt-6"
-            />
-          )}
-        </Col>
-      </Row>
-
-      <Modal
-        title="添加库存"
-        visible={isModalVisible}
-        onOk={() => setIsModalVisible(false)}
-        onCancel={() => setIsModalVisible(false)}
-      >
-        <p>这里可以添加库存变动的表单</p>
-      </Modal>
-    </div>
-  )
+      </Card>
+      <StockInModal visible={action === 'in'} material={material} onCancel={() => setAction(null)} onSuccess={onStockSuccess} />
+      <StockOutModal visible={action === 'out'} material={material} onCancel={() => setAction(null)} onSuccess={onStockSuccess} />
+      <TransactionHistory key={`${material.id}-${action === 'history'}`} visible={action === 'history'} material={material} onCancel={() => setAction(null)} />
+    </>}
+  </div>
 }
 
 export default MaterialsDetail

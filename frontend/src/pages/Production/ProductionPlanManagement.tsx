@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import {
+  Alert,
   Button,
   Card,
   DatePicker,
@@ -34,12 +35,20 @@ const ProductionPlanManagement: React.FC = () => {
   const [pageSize, setPageSize] = useState(10)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<string | undefined>()
+  const [overdue, setOverdue] = useState<boolean | undefined>()
+  const [taskPlan, setTaskPlan] = useState<any>(null)
+  const [taskOptions, setTaskOptions] = useState<any[]>([])
+  const [taskIds, setTaskIds] = useState<number[]>([])
+  const [taskLoading, setTaskLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<any | null>(null)
   const [form] = Form.useForm()
   const ws = readWorkspaceQuery()
+  const requestVersion = useRef(0)
 
   const load = async () => {
+    const version = ++requestVersion.current
     try {
       setLoading(true)
       const data = await productionPlanApi.list({
@@ -48,24 +57,30 @@ const ProductionPlanManagement: React.FC = () => {
         limit: pageSize,
         search: search || undefined,
         status,
+        overdue,
       })
+      if (version !== requestVersion.current) return
       setItems(data.items || [])
       setTotal(data.total || 0)
     } catch (err) {
+      if (version !== requestVersion.current) return
+      setItems([])
+      setTotal(0)
       message.error(err instanceof Error ? err.message : '加载生产计划失败')
     } finally {
-      setLoading(false)
+      if (version === requestVersion.current) setLoading(false)
     }
   }
 
   useEffect(() => {
     void load()
-  }, [page, pageSize, status])
+    return () => { requestVersion.current += 1 }
+  }, [page, pageSize, status, search, overdue])
 
   const openCreate = () => {
     setEditing(null)
     form.resetFields()
-    form.setFieldsValue({ status: 'draft', priority: 'normal', progress_percentage: 0 })
+    form.setFieldsValue({ status: 'draft', priority: 'normal' })
     setOpen(true)
   }
 
@@ -81,11 +96,13 @@ const ProductionPlanManagement: React.FC = () => {
 
   const submit = async () => {
     const values = await form.validateFields()
+    const { progress_percentage, tasks, ...writable } = values
     const payload = {
-      ...values,
+      ...writable,
       plan_start_date: values.plan_start_date?.format('YYYY-MM-DD'),
       plan_end_date: values.plan_end_date?.format('YYYY-MM-DD'),
     }
+    setSaving(true)
     try {
       if (editing) {
         await productionPlanApi.update(ws, editing.id, payload)
@@ -98,7 +115,24 @@ const ProductionPlanManagement: React.FC = () => {
       void load()
     } catch (err) {
       message.error(err instanceof Error ? err.message : '保存失败')
-    }
+    } finally { setSaving(false) }
+  }
+
+  const openTasks = async (record: any) => {
+    setTaskLoading(true)
+    try {
+      const options = await productionPlanApi.taskOptions(ws, record.id)
+      setTaskOptions(options)
+      setTaskIds(options.filter(t => t.plan_id === record.id).map(t => t.id))
+      setTaskPlan(record)
+    } catch (err) { message.error(err instanceof Error ? err.message : '加载任务失败') }
+    finally { setTaskLoading(false) }
+  }
+  const saveTasks = async () => {
+    setSaving(true)
+    try { await productionPlanApi.setTasks(ws, taskPlan.id, taskIds); setTaskPlan(null); void load() }
+    catch (err) { message.error(err instanceof Error ? err.message : '关联失败') }
+    finally { setSaving(false) }
   }
 
   const remove = async (id: number) => {
@@ -122,9 +156,9 @@ const ProductionPlanManagement: React.FC = () => {
             placeholder="搜索编号/名称"
             allowClear
             onSearch={(v) => {
-              setSearch(v)
-              setPage(1)
-              void load()
+              const value = v.trim()
+              if (value === search && page === 1) void load()
+              else { setSearch(value); setPage(1) }
             }}
             style={{ width: 220 }}
           />
@@ -138,6 +172,7 @@ const ProductionPlanManagement: React.FC = () => {
               setPage(1)
             }}
           />
+          <Select placeholder="逾期筛选" allowClear style={{ width: 140 }} options={[{ value: true, label: '仅逾期' }, { value: false, label: '未逾期' }]} onChange={v => { setOverdue(v); setPage(1) }} />
           <Button icon={<ReloadOutlined />} onClick={() => void load()}>
             刷新
           </Button>
@@ -163,7 +198,8 @@ const ProductionPlanManagement: React.FC = () => {
         columns={[
           { title: '编号', dataIndex: 'plan_number' },
           { title: '名称', dataIndex: 'plan_name' },
-          { title: '类型', dataIndex: 'plan_type' },
+          { title: '有效任务', dataIndex: 'task_count' },
+          { title: '逾期', dataIndex: 'overdue', render: (v: boolean) => v ? <Tag color="red">已逾期</Tag> : '—' },
           {
             title: '状态',
             dataIndex: 'status',
@@ -180,9 +216,10 @@ const ProductionPlanManagement: React.FC = () => {
             title: '操作',
             render: (_: unknown, record: any) => (
               <Space>
-                <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(record)} />
+                <Button size="small" disabled={['completed', 'cancelled'].includes(record.status)} icon={<EditOutlined />} onClick={() => openEdit(record)} />
+                <Button size="small" loading={taskLoading} disabled={['completed', 'cancelled'].includes(record.status)} onClick={() => void openTasks(record)}>关联任务</Button>
                 <Popconfirm title="确认删除？" onConfirm={() => void remove(record.id)}>
-                  <Button size="small" danger icon={<DeleteOutlined />} />
+                  <Button size="small" disabled={record.status !== 'draft' || record.task_count > 0} danger icon={<DeleteOutlined />} />
                 </Popconfirm>
               </Space>
             ),
@@ -193,12 +230,15 @@ const ProductionPlanManagement: React.FC = () => {
       <Modal
         title={editing ? '编辑生产计划' : '新建生产计划'}
         open={open}
-        onCancel={() => setOpen(false)}
+        confirmLoading={saving}
+        cancelButtonProps={{ disabled: saving }}
+        onCancel={() => { if (!saving) setOpen(false) }}
         onOk={() => void submit()}
         width={720}
         destroyOnClose
       >
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="vertical" disabled={saving}>
+          <Alert type="info" message="计划进度按未取消任务的进度平均值自动汇总；已完成任务计 100%。草稿→已批准→进行中→已完成，结束前可取消。" style={{ marginBottom: 16 }} />
           <Form.Item name="plan_number" label="计划编号" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
@@ -221,18 +261,15 @@ const ProductionPlanManagement: React.FC = () => {
               />
             </Form.Item>
             <Form.Item name="status" label="状态">
-              <Select style={{ width: 160 }} options={statusOptions} />
+              <Select style={{ width: 160 }} options={statusOptions.filter(o => editing ? o.value === editing.status || editing.allowed_statuses?.includes(o.value) : o.value === 'draft')} />
             </Form.Item>
           </Space>
           <Space size="large" wrap>
             <Form.Item name="plan_start_date" label="开始日期" rules={[{ required: true }]}>
               <DatePicker />
             </Form.Item>
-            <Form.Item name="plan_end_date" label="结束日期" rules={[{ required: true }]}>
+            <Form.Item name="plan_end_date" label="结束日期" dependencies={['plan_start_date']} rules={[{ required: true }, ({ getFieldValue }) => ({ validator(_, value) { return !value || !getFieldValue('plan_start_date') || !value.isBefore(getFieldValue('plan_start_date'), 'day') ? Promise.resolve() : Promise.reject(new Error('结束日期不能早于开始日期')) } })]}>
               <DatePicker />
-            </Form.Item>
-            <Form.Item name="progress_percentage" label="进度(%)">
-              <InputNumber min={0} max={100} />
             </Form.Item>
             <Form.Item name="planned_quantity" label="计划数量">
               <InputNumber min={0} />
@@ -254,6 +291,10 @@ const ProductionPlanManagement: React.FC = () => {
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>
+      </Modal>
+      <Modal title={`关联任务：${taskPlan?.plan_name || ''}`} open={!!taskPlan} confirmLoading={saving} onCancel={() => { if (!saving) setTaskPlan(null) }} onOk={() => void saveTasks()}>
+        <Alert message="只能关联当前工作区及同一工厂的任务；取消勾选将解除关联。" type="info" style={{ marginBottom: 16 }} />
+        <Select aria-label="计划关联任务" mode="multiple" showSearch optionFilterProp="label" style={{ width: '100%' }} value={taskIds} onChange={setTaskIds} options={taskOptions.map(t => ({ value: t.id, label: `${t.task_number} · ${t.task_name}` }))} />
       </Modal>
     </Card>
   )

@@ -11,6 +11,7 @@ from sqlalchemy.orm import relationship
 import enum
 
 from app.core.database import Base
+from app.models.workspace_entity_access import WorkspaceEntityAccessMixin
 
 
 class TaskStatus(str, enum.Enum):
@@ -71,6 +72,7 @@ class ProductionTask(Base):
     project_code = Column(String(100), comment="项目编号")
     
     # ==================== 关联信息 ====================
+    plan_id = Column(Integer, ForeignKey("production_plans.id", ondelete="SET NULL"), nullable=True, index=True)
     wps_id = Column(Integer, ForeignKey("wps.id"), comment="WPS ID")
     pqr_id = Column(Integer, ForeignKey("pqr.id"), comment="PQR ID")
     # P7: immutable engineering-design provenance. Production updates must never
@@ -262,7 +264,7 @@ class ProductionRecord(Base):
         return f"<ProductionRecord(id={self.id}, date={self.record_date})>"
 
 
-class ProductionPlan(Base):
+class ProductionPlan(WorkspaceEntityAccessMixin, Base):
     """生产计划模型"""
     
     __tablename__ = "production_plans"

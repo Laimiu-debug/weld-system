@@ -4,7 +4,26 @@ Welding Material Pydantic schemas for the welding system backend.
 """
 from datetime import datetime, date
 from typing import Optional, List
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
+
+
+class MaterialInput(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False, str_strip_whitespace=True, extra='forbid')
+
+    @field_validator('material_code', 'material_name', 'material_type', 'unit', 'currency', check_fields=False)
+    @classmethod
+    def required_text(cls, value):
+        if not value:
+            raise ValueError('该字段不能为空')
+        return value
+
+    @field_validator('current_stock', 'min_stock_level', 'max_stock_level', 'reorder_point',
+                     'reorder_quantity', 'unit_price', check_fields=False)
+    @classmethod
+    def non_negative(cls, value):
+        if value is not None and value < 0:
+            raise ValueError('数量和价格不能为负数')
+        return value
 
 
 # ==================== 基础Schema ====================
@@ -80,14 +99,14 @@ class MaterialBase(BaseModel):
 
 # ==================== 创建Schema ====================
 
-class MaterialCreate(MaterialBase):
+class MaterialCreate(MaterialBase, MaterialInput):
     """创建焊材Schema"""
     pass
 
 
 # ==================== 更新Schema ====================
 
-class MaterialUpdate(BaseModel):
+class MaterialUpdate(MaterialInput):
     """更新焊材Schema"""
     material_code: Optional[str] = None
     material_name: Optional[str] = None
@@ -134,6 +153,13 @@ class MaterialUpdate(BaseModel):
     description: Optional[str] = None
     notes: Optional[str] = None
     tags: Optional[str] = None
+
+    @model_validator(mode='before')
+    @classmethod
+    def protect_inventory(cls, value):
+        if isinstance(value, dict) and {'current_stock', 'unit'} & value.keys():
+            raise ValueError('库存数量和单位不能通过编辑修改，请使用出入库操作')
+        return value
 
 
 # ==================== 响应Schema ====================

@@ -4,6 +4,7 @@ import { ArrowLeftOutlined, SaveOutlined } from '@ant-design/icons'
 import { useNavigate, useParams } from 'react-router-dom'
 import dayjs from 'dayjs'
 import qualityService from '@/services/quality'
+import QualityStandardField from '@/components/QualityStandardField'
 import workspaceService from '@/services/workspace'
 
 const { Title } = Typography
@@ -15,6 +16,7 @@ const QualityEdit: React.FC = () => {
   const navigate = useNavigate()
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(true)
+  const [snapshot, setSnapshot] = useState<any>(null)
   const [saving, setSaving] = useState(false)
 
   const workspace = () => {
@@ -33,7 +35,9 @@ const QualityEdit: React.FC = () => {
         const ws = workspace()
         const response = await qualityService.getQualityInspectionById(Number(id), ws.type, ws.companyId, ws.factoryId)
         const data = (response as any).data?.data || (response as any).data
+        setSnapshot(data.standard_snapshot)
         form.setFieldsValue({
+          standard_id: data.standard_id,
           inspection_type: data.inspection_type,
           inspection_date: data.inspection_date ? dayjs(data.inspection_date) : undefined,
           inspector_name: data.inspector_name,
@@ -62,6 +66,7 @@ const QualityEdit: React.FC = () => {
       await qualityService.updateQualityInspection(
         Number(id),
         {
+          standard_id: values.standard_id as number | undefined,
           inspection_type: values.inspection_type as string,
           inspection_date: values.inspection_date
             ? dayjs(values.inspection_date as dayjs.Dayjs).format('YYYY-MM-DD')
@@ -108,6 +113,7 @@ const QualityEdit: React.FC = () => {
       </div>
       <Card>
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
+          <QualityStandardField form={form} snapshot={snapshot} />
           <Row gutter={16}>
             <Col xs={24} md={12}>
               <Form.Item name="project_name" label="项目名称" rules={[{ required: true, message: '请输入项目' }]}>

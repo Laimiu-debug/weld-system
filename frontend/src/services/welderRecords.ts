@@ -11,7 +11,7 @@ export interface WelderWorkHistory {
   company_name: string;
   position: string;
   start_date: string;
-  end_date?: string;
+  end_date?: string | null;
   department?: string;
   location?: string;
   job_description?: string;
@@ -116,6 +116,7 @@ export const workHistoryService = {
    */
   async getList(welderId: number, params?: any) {
     const response = await api.get(`/welders/${welderId}/work-histories`, { params });
+    if (response.data?.success === false || response.data?.data?.success === false) throw new Error('工作履历操作失败');
     return response.data.data || response.data;
   },
 
@@ -124,6 +125,7 @@ export const workHistoryService = {
    */
   async create(welderId: number, data: Partial<WelderWorkHistory>, params?: any) {
     const response = await api.post(`/welders/${welderId}/work-histories`, data, { params });
+    if (response.data?.success === false || response.data?.data?.success === false) throw new Error('工作履历操作失败');
     return response.data.data || response.data;
   },
 
@@ -132,6 +134,7 @@ export const workHistoryService = {
    */
   async update(welderId: number, historyId: number, data: Partial<WelderWorkHistory>, params?: any) {
     const response = await api.put(`/welders/${welderId}/work-histories/${historyId}`, data, { params });
+    if (response.data?.success === false || response.data?.data?.success === false) throw new Error('工作履历操作失败');
     return response.data.data || response.data;
   },
 
@@ -140,6 +143,7 @@ export const workHistoryService = {
    */
   async delete(welderId: number, historyId: number, params?: any) {
     const response = await api.delete(`/welders/${welderId}/work-histories/${historyId}`, { params });
+    if (response.data?.success === false) throw new Error('删除工作履历失败');
     return response.data;
   },
 };

@@ -177,10 +177,12 @@ def get_document_parser() -> DocumentParser:
 def get_ai_capabilities(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
+    task_type: str | None = Query(None),
+    complexity: str | None = Query(None),
 ) -> dict:
     """Expose safe provider capabilities without returning credentials."""
     del current_user
-    platform = resolve_platform_ai_config(db)
+    platform = resolve_platform_ai_config(db, task_type=task_type, complexity=complexity)
     return {
         "platform_available": bool(platform["key_configured"] and platform["model"]),
         "platform_provider": platform["provider"],

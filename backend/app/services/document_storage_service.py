@@ -13,6 +13,8 @@ from app.core.config import settings
 
 
 DOCUMENT_TYPES = {
+    ".dxf": "image/vnd.dxf",
+    ".dwg": "image/vnd.dwg",
     ".pdf": "application/pdf",
     ".doc": "application/msword",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -56,7 +58,7 @@ def _validate_filename(original_filename: str, max_bytes: int) -> str:
         raise DocumentUploadError("文件名无效")
     suffix = Path(original_filename).suffix.lower()
     if suffix not in DOCUMENT_TYPES:
-        raise DocumentUploadError("仅支持 PDF、Word、Excel 和常见扫描图片")
+        raise DocumentUploadError("仅支持 PDF、DXF、DWG、Word、Excel 和常见扫描图片")
     if max_bytes <= 0:
         raise DocumentUploadError("上传大小限制配置无效")
     return suffix
@@ -180,6 +182,10 @@ class LocalDocumentStorage:
         valid = False
         if suffix == ".pdf":
             valid = header.startswith(b"%PDF-")
+        elif suffix == ".dwg":
+            valid = header.startswith(b"AC10")
+        elif suffix == ".dxf":
+            valid = header.startswith(b"AutoCAD Binary") or header.lstrip().startswith((b"0", b"999"))
         elif suffix == ".doc":
             valid = header.startswith(bytes.fromhex("D0CF11E0A1B11AE1"))
         elif suffix in {".docx", ".xlsx"}:

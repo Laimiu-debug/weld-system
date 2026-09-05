@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from io import BytesIO
 from pathlib import Path
 import shutil
 import subprocess
@@ -65,6 +66,10 @@ class DefaultDocumentParser:
         try:
             if suffix == ".pdf":
                 return self._parse_pdf(stream)
+            if suffix in {".dxf", ".dwg"}:
+                from app.services.cad_conversion_service import cad_to_pdf
+                parsed = self._parse_pdf(BytesIO(cad_to_pdf(stream, original_filename)))
+                return ParsedDocument(parsed.pages, "cad_to_pdf")
             if suffix == ".docx":
                 return self._parse_docx(stream)
             if suffix == ".doc":
@@ -96,7 +101,9 @@ class DefaultDocumentParser:
             text = _clean_text(page.extract_text() or "")
             has_images = _pdf_page_has_images(page)
             meaningful_chars = len("".join(text.split()))
-            needs_ocr = has_images and meaningful_chars < MIN_MEANINGFUL_TEXT_CHARS
+            # Scans can contain a searchable header while the actual form is
+            # an image; CAD exports can contain only vector outlines.
+            needs_ocr = has_images or meaningful_chars < MIN_MEANINGFUL_TEXT_CHARS
             pages.append(
                 ParsedPage(
                     page_number=number,

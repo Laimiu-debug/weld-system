@@ -52,20 +52,21 @@ const StockOutModal: React.FC<StockOutModalProps> = ({
       const companyId = currentWorkspace.type === 'enterprise' ? currentWorkspace.company_id : undefined
       const factoryId = currentWorkspace.factory_id
 
-      await materialsService.stockOut(workspaceType, companyId, factoryId, data)
+      const response = await materialsService.stockOut(workspaceType, companyId, factoryId, data)
+      if (!response.success) throw new Error(response.message || '出库未成功')
 
       message.success('出库成功')
       form.resetFields()
       onSuccess()
     } catch (error: any) {
-      console.error('出库失败:', error)
-      message.error(error.response?.data?.detail || '出库失败')
+      if (!error.errorFields) message.error('出库失败，请重试，已保留当前输入')
     } finally {
       setLoading(false)
     }
   }
 
   const handleCancel = () => {
+    if (loading) return
     form.resetFields()
     onCancel()
   }
@@ -77,6 +78,9 @@ const StockOutModal: React.FC<StockOutModalProps> = ({
       onOk={handleSubmit}
       onCancel={handleCancel}
       confirmLoading={loading}
+      cancelButtonProps={{ disabled: loading }}
+      closable={!loading}
+      maskClosable={!loading}
       width={600}
       destroyOnClose
     >
@@ -96,6 +100,7 @@ const StockOutModal: React.FC<StockOutModalProps> = ({
       <Form
         form={form}
         layout="vertical"
+        disabled={loading}
       >
         <Form.Item
           label="出库数量"

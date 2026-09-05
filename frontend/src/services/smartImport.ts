@@ -373,7 +373,7 @@ class SmartImportService {
     return response.data
   }
 
-  async getAICapabilities(): Promise<{
+  async getAICapabilities(route?: { task_type: string; complexity: string }): Promise<{
     platform_available: boolean
     platform_provider: string
     platform_model?: string
@@ -383,7 +383,7 @@ class SmartImportService {
     max_document_pages: number
     max_input_chars: number
   }> {
-    const response = await api.get('/smart-import/ai-capabilities')
+    const response = await api.get('/smart-import/ai-capabilities', { params: route })
     return response.data
   }
 

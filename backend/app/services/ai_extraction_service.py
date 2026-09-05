@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import unicodedata
 from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema import ValidationError as JSONSchemaValidationError
@@ -453,7 +456,6 @@ class AIExtractionService:
             status_code = 503 if exc.retryable else 422
             raise AIExtractionRunError(exc.code, str(exc), status_code) from exc
         except (
-            DocumentParseError,
             JSONSchemaValidationError,
             KeyError,
             TypeError,
@@ -463,7 +465,12 @@ class AIExtractionService:
             raise AIExtractionRunError(
                 "invalid_extraction_result", "AI 提取结果未通过结构校验"
             ) from exc
+        except DocumentParseError as exc:
+            self._fail_job(job.id, "document_render_failed", str(exc))
+            self.quota.refund(job.id, user, context, str(exc))
+            raise AIExtractionRunError("document_render_failed", str(exc), 422) from exc
         except Exception as exc:
+            logger.exception("AI extraction failed for job %s", job.id)
             self._fail_job(job.id, "extraction_failed", "AI 提取任务失败")
             self.quota.refund(job.id, user, context, "AI 提取任务失败")
             raise AIExtractionRunError("extraction_failed", "AI 提取任务失败", 500) from exc
@@ -522,7 +529,11 @@ class AIExtractionService:
         response_ids: list[str],
         job: ExtractionJob,
     ) -> None:
-        pending = [page for page in pages if page.ocr_status == "pending"]
+        pending = [
+            page for page in pages
+            if page.ocr_status in {"pending", "failed", "processing"}
+            or (page.ocr_status == "completed" and not (page.text_content or "").strip())
+        ]
         already_ready = len(pages) - len(pending)
         if pending and not run_ocr:
             raise AIExtractionRunError("ocr_required", "文档包含扫描页，必须先执行 OCR")
@@ -560,6 +571,11 @@ class AIExtractionService:
                     )
                 )
                 validate_json(result.data, OCR_SCHEMA)
+                if not result.data["text"].strip():
+                    raise AIExtractionRunError(
+                        "empty_ocr_result",
+                        f"第 {page.page_number} 页 OCR 未返回可读文字，请检查页面清晰度或更换视觉模型后重试",
+                    )
                 page.text_content = result.data["text"]
                 page.ocr_status = "completed"
                 page.page_metadata = {
@@ -817,8 +833,15 @@ def _document_text(pages: list[DocumentPage]) -> str:
 
 def _prune_nulls(value: Any) -> Any:
     if isinstance(value, dict):
+        # JSON-mode providers may return an empty field wrapper rather than
+        # null for the whole field. It is an unknown value, not a schema error.
+        if "value" in value and value["value"] is None and (
+            "confidence" in value or "evidence" in value
+        ):
+            return None
         return {
-            key: _prune_nulls(item) for key, item in value.items() if item is not None
+            key: cleaned for key, item in value.items()
+            if (cleaned := _prune_nulls(item)) is not None
         }
     if isinstance(value, list):
         return [_prune_nulls(item) for item in value]

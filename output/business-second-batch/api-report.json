@@ -1,0 +1,30 @@
+[
+  {
+    "workspace": "personal",
+    "F06": "passed",
+    "F07": "passed",
+    "F08": "passed",
+    "F09": "passed",
+    "ids": {
+      "plan": 2,
+      "standard": 1,
+      "inspection": 1,
+      "review": 1,
+      "template": 1
+    }
+  },
+  {
+    "workspace": "enterprise",
+    "F06": "passed",
+    "F07": "passed",
+    "F08": "passed",
+    "F09": "passed",
+    "ids": {
+      "plan": 3,
+      "standard": 2,
+      "inspection": 2,
+      "review": 2,
+      "template": 2
+    }
+  }
+]

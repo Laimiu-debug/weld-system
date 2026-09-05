@@ -15,7 +15,7 @@ def _png(image: Image.Image) -> bytes:
     return output.getvalue()
 
 
-def test_portrait_raster_is_rotated_to_landscape_title_layout() -> None:
+def test_ink_density_does_not_override_source_reading_direction() -> None:
     drawing = Image.new("RGB", (1200, 800), "white")
     pen = ImageDraw.Draw(drawing)
     pen.rectangle((10, 10, 1190, 790), outline="black", width=4)
@@ -27,8 +27,10 @@ def test_portrait_raster_is_rotated_to_landscape_title_layout() -> None:
 
     prepared = prepare_drawing_page(_png(portrait), 1)
 
-    assert prepared.oriented_size[0] > prepared.oriented_size[1]
-    assert prepared.rotation_degrees == 90
+    assert prepared.oriented_size == portrait.size
+    assert prepared.rotation_degrees == 0
+    with Image.open(BytesIO(prepared.full_png)) as full:
+        assert full.tobytes() == portrait.tobytes()
     with Image.open(BytesIO(prepared.title_png)) as title:
         assert title.width > 300
         assert title.height > 300
@@ -68,3 +70,11 @@ def test_large_drawing_is_bounded_before_it_is_sent_to_ai() -> None:
     assert max(prepared.oriented_size) == MAX_AI_DRAWING_EDGE
     with Image.open(BytesIO(prepared.full_png)) as full:
         assert max(full.size) == MAX_AI_DRAWING_EDGE
+
+
+def test_full_page_title_evidence_is_not_mapped_as_a_crop():
+    prepared = prepare_drawing_page(_png(Image.new("RGB", (1200, 800), "white")), 1)
+    box = [0.1, 0.2, 0.4, 0.3]
+    payload = {"product": {"evidence": {"drawing_number": {"page": 1, "bbox": box.copy()}}}}
+    restore_payload_evidence(payload, [prepared], title_crop_sections=frozenset())
+    assert payload["product"]["evidence"]["drawing_number"]["bbox"] == box

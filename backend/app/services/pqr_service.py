@@ -351,10 +351,15 @@ class PQRService:
         self,
         db: Session,
         *,
-        search_params: dict
+        search_params: dict,
+        current_user: User,
+        workspace_context: WorkspaceContext,
     ) -> List[PQR]:
         """Advanced PQR search."""
         query = db.query(PQR).filter(PQR.is_active == True)
+        query = self.data_access.apply_workspace_filter(
+            query, PQR, current_user, workspace_context
+        )
 
         # Search term
         if search_params.get("search_term"):

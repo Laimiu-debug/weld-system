@@ -19,6 +19,7 @@ export interface Material {
   min_stock_level?: number
   reorder_point?: number
   unit_price?: number
+  currency?: string
   storage_location?: string
   warehouse?: string
   supplier?: string
@@ -54,6 +55,7 @@ export interface MaterialCreate {
   min_stock_level?: number
   reorder_point?: number
   unit_price?: number
+  currency?: string
   storage_location?: string
   supplier?: string
   batch_number?: string
@@ -74,6 +76,7 @@ export interface MaterialUpdate {
   min_stock_level?: number
   reorder_point?: number
   unit_price?: number
+  currency?: string
   storage_location?: string
   supplier?: string
   batch_number?: string
@@ -207,7 +210,7 @@ class MaterialsService {
     }
 
     const response = await api.get(this.baseUrl, { params: queryParams })
-    return response
+    return response.data
   }
 
   /**
@@ -231,8 +234,8 @@ class MaterialsService {
       params.factory_id = factoryId
     }
 
-    const response = await api.get(`${this.baseUrl}/${materialId}`, { params })
-    return response
+    const response = await api.get(`${this.baseUrl}${materialId}`, { params })
+    return response.data
   }
 
   /**
@@ -257,7 +260,7 @@ class MaterialsService {
     }
 
     const response = await api.post(this.baseUrl, data, { params })
-    return response
+    return response.data
   }
 
   /**
@@ -282,8 +285,8 @@ class MaterialsService {
       params.factory_id = factoryId
     }
 
-    const response = await api.put(`${this.baseUrl}/${materialId}`, data, { params })
-    return response
+    const response = await api.put(`${this.baseUrl}${materialId}`, data, { params })
+    return response.data
   }
 
   /**
@@ -307,8 +310,8 @@ class MaterialsService {
       params.factory_id = factoryId
     }
 
-    const response = await api.delete(`${this.baseUrl}/${materialId}`, { params })
-    return response
+    const response = await api.delete(`${this.baseUrl}${materialId}`, { params })
+    return response.data
   }
 
   /**
@@ -332,8 +335,8 @@ class MaterialsService {
       params.factory_id = factoryId
     }
 
-    const response = await api.post(`${this.baseUrl}/batch-delete`, { ids: materialIds }, { params })
-    return response
+    const response = await api.post(`${this.baseUrl}batch-delete`, { ids: materialIds }, { params })
+    return response.data
   }
 
   /**
@@ -383,8 +386,8 @@ class MaterialsService {
       params.notes = data.notes
     }
 
-    const response = await api.post(`${this.baseUrl}/stock-in`, null, { params })
-    return response
+    const response = await api.post(`${this.baseUrl}stock-in`, null, { params })
+    return response.data
   }
 
   /**
@@ -430,8 +433,8 @@ class MaterialsService {
       params.notes = data.notes
     }
 
-    const response = await api.post(`${this.baseUrl}/stock-out`, null, { params })
-    return response
+    const response = await api.post(`${this.baseUrl}stock-out`, null, { params })
+    return response.data
   }
 
   /**
@@ -460,8 +463,8 @@ class MaterialsService {
       queryParams.transaction_type = params.transaction_type
     }
 
-    const response = await api.get(`${this.baseUrl}/transactions`, { params: queryParams })
-    return response
+    const response = await api.get(`${this.baseUrl}transactions`, { params: queryParams })
+    return response.data
   }
 }
 

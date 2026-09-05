@@ -77,7 +77,7 @@ class ProductionTaskBase(BaseModel):
     # 状态信息
     status: str = Field(default="pending", description="状态")
     priority: str = Field(default="normal", description="优先级")
-    progress_percentage: float = Field(default=0, description="进度百分比")
+    progress_percentage: float = Field(default=0, ge=0, le=100, allow_inf_nan=False, description="进度百分比")
 
     # 项目信息
     project_name: Optional[str] = Field(None, description="项目名称")
@@ -156,7 +156,7 @@ class ProductionTaskUpdate(BaseModel):
     tags: Optional[str] = None
     status: Optional[str] = None
     priority: Optional[str] = None
-    progress_percentage: Optional[float] = None
+    progress_percentage: Optional[float] = Field(None, ge=0, le=100, allow_inf_nan=False)
 
 
 # ==================== 响应Schema ====================

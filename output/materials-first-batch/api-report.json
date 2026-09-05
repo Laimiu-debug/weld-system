@@ -1,0 +1,22 @@
+[
+  {
+    "workspace": "personal",
+    "flow": "create/detail/edit/in/out/paged_history/delete",
+    "initial_stock": 10,
+    "final_stock_before_delete": 12,
+    "transactions": 3,
+    "failed_out_did_not_change_stock": true,
+    "cross_account_denied": true,
+    "result": "passed"
+  },
+  {
+    "workspace": "enterprise",
+    "flow": "create/detail/edit/in/out/paged_history/delete",
+    "initial_stock": 10,
+    "final_stock_before_delete": 12,
+    "transactions": 3,
+    "failed_out_did_not_change_stock": true,
+    "cross_account_denied": true,
+    "result": "passed"
+  }
+]

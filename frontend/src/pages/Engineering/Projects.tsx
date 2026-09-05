@@ -273,7 +273,7 @@ const EngineeringProjects: React.FC = () => {
                             </Space>
                           </div>
                           <Upload
-                            accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff"
+          accept=".pdf,.dxf,.dwg,.png,.jpg,.jpeg,.tif,.tiff"
                             showUploadList={false}
                             beforeUpload={(file) => upload(product, file)}
                           >

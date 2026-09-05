@@ -474,10 +474,16 @@ def search_pqr(
     *,
     db: Session = Depends(deps.get_db),
     search_params: PQRSearchParams,
-    current_user: User = Depends(deps.get_current_active_user)
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
 ) -> Any:
     """高级PQR搜索."""
-    pqr_list = PQRService(db).search_pqr(db, search_params=search_params.model_dump())
+    context = get_workspace_context(db, current_user, workspace_id)
+    ensure_module_permission(db, current_user, "pqr", "read")
+    pqr_list = PQRService(db).search_pqr(
+        db, search_params=search_params.model_dump(),
+        current_user=current_user, workspace_context=context,
+    )
 
     # 转换为summary格式
     pqr_summaries = []

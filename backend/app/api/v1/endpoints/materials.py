@@ -137,7 +137,7 @@ def create_material(
         )
 
 
-@router.get("/{material_id}", response_model=dict)
+@router.get("/{material_id:int}", response_model=dict)
 def get_material_detail(
     material_id: int,
     workspace_type: str = Query(..., description="??????personal/enterprise"),
@@ -186,7 +186,7 @@ def get_material_detail(
         )
 
 
-@router.put("/{material_id}", response_model=dict)
+@router.put("/{material_id:int}", response_model=dict)
 def update_material(
     material_id: int,
     material_in: MaterialUpdate,
@@ -237,7 +237,7 @@ def update_material(
         )
 
 
-@router.delete("/{material_id}", response_model=dict)
+@router.delete("/{material_id:int}", response_model=dict)
 def delete_material(
     material_id: int,
     workspace_type: str = Query(..., description="??????personal/enterprise"),

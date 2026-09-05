@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, ConfigDict
 # ==================== 质量检验基础Schema ====================
 
 class QualityInspectionBase(BaseModel):
+    standard_id: Optional[int] = Field(None, gt=0)
     """质量检验基础Schema - 基于数据库模型"""
     inspection_number: Optional[str] = Field(None, description="检验编号（可空，后端自动生成）")
     inspection_type: Optional[str] = Field(None, description="检验类型")
@@ -128,6 +129,7 @@ class QualityInspectionCreate(QualityInspectionBase):
 # ==================== 更新Schema ====================
 
 class QualityInspectionUpdate(BaseModel):
+    standard_id: Optional[int] = Field(None, gt=0)
     """更新质量检验Schema"""
     inspection_number: Optional[str] = None
     inspection_type: Optional[str] = None
@@ -207,6 +209,7 @@ class QualityInspectionUpdate(BaseModel):
 # ==================== 响应Schema ====================
 
 class QualityInspectionResponse(QualityInspectionBase):
+    standard_snapshot: Optional[dict] = None
     """质量检验响应Schema"""
     id: int
     owner_id: int  # 实际数据库字段

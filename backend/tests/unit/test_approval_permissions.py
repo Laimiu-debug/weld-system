@@ -18,6 +18,20 @@ def test_admin_can_always_approve():
     assert service._can_approve(instance, user, {}) is True
 
 
+def test_wps_signature_is_recorded_from_completed_workflow():
+    from datetime import datetime
+    db = MagicMock()
+    document = WPS(id=11, title="WPS", wps_number="WPS-11", status="draft")
+    db.query.return_value.filter.return_value.first.return_value = document
+    completed = datetime(2026, 9, 5, 10, 0)
+    instance = SimpleNamespace(document_type="wps", document_id=11,
+                               final_approver_id=7, completed_at=completed)
+    ApprovalService(db)._update_document_status(instance, "approved")
+    assert document.status == "approved"
+    assert document.approved_by == 7
+    assert document.approved_date == completed
+
+
 def test_can_approve_uses_preloaded_company_permissions():
     service = ApprovalService(MagicMock())
     user = SimpleNamespace(id=2, is_admin=False)

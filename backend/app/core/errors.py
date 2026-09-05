@@ -1,5 +1,6 @@
 """Stable API errors, redaction, and FastAPI exception handlers."""
 import logging
+import math
 import re
 from typing import Any
 
@@ -76,6 +77,11 @@ def redact_sensitive_data(value: Any, parent_key: str = "") -> Any:
         return [redact_sensitive_data(item) for item in value]
     if isinstance(value, str) and SECRET_VALUE_PATTERN.search(value):
         return "[redacted]"
+    if isinstance(value, BaseException):
+        # Pydantic puts ValueError objects in ctx; they are not JSON serializable.
+        return type(value).__name__
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
     return value
 
 

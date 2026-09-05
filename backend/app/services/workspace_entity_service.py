@@ -44,6 +44,15 @@ class WorkspaceEntityService:
         self.code_field = code_field
         self.data_access = DataAccessMiddleware(db)
 
+    def prepare(self, payload, current_user, workspace_context, item=None):
+        return payload
+
+    def serialize(self, item, current_user, workspace_context):
+        return _model_to_dict(item)
+
+    def before_delete(self, item, current_user, workspace_context):
+        pass
+
     def list_items(
         self,
         current_user: User,
@@ -54,6 +63,7 @@ class WorkspaceEntityService:
         search: Optional[str] = None,
         status: Optional[str] = None,
         search_fields: Optional[List[str]] = None,
+        overdue: Optional[bool] = None,
     ) -> Tuple[List[Dict[str, Any]], int]:
         workspace_context.validate()
         query = self.db.query(self.model).filter(self.model.is_active == True)  # noqa: E712
@@ -75,6 +85,9 @@ class WorkspaceEntityService:
                     clauses.append(column.ilike(f"%{search}%"))
             if clauses:
                 query = query.filter(or_(*clauses))
+        if overdue is not None and self.model is ProductionPlan:
+            condition = (ProductionPlan.plan_end_date < date.today()) & ProductionPlan.status.notin_(["completed", "cancelled"])
+            query = query.filter(condition if overdue else ~condition)
         total = query.count()
         rows = (
             query.order_by(self.model.created_at.desc())
@@ -82,7 +95,7 @@ class WorkspaceEntityService:
             .limit(limit)
             .all()
         )
-        return [_model_to_dict(row) for row in rows], total
+        return [self.serialize(row, current_user, workspace_context) for row in rows], total
 
     def get_item(
         self,
@@ -94,7 +107,7 @@ class WorkspaceEntityService:
         if not item or not getattr(item, "is_active", True):
             raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="记录不存在")
         self.data_access.check_access(current_user, item, "VIEW", workspace_context)
-        return _model_to_dict(item)
+        return self.serialize(item, current_user, workspace_context)
 
     def create_item(
         self,
@@ -106,6 +119,7 @@ class WorkspaceEntityService:
 
         workspace_context.validate()
         WorkspaceService(self.db).validate_workspace_access(current_user, workspace_context)
+        payload = self.prepare(payload, current_user, workspace_context)
         valid = {c.name for c in self.model.__table__.columns}
         data = {k: v for k, v in payload.items() if k in valid and k not in {
             "id", "user_id", "workspace_type", "company_id", "factory_id",
@@ -142,7 +156,7 @@ class WorkspaceEntityService:
         self.db.add(item)
         self.db.commit()
         self.db.refresh(item)
-        return _model_to_dict(item)
+        return self.serialize(item, current_user, workspace_context)
 
     def update_item(
         self,
@@ -151,10 +165,18 @@ class WorkspaceEntityService:
         current_user: User,
         workspace_context: WorkspaceContext,
     ) -> Dict[str, Any]:
-        item = self.db.query(self.model).filter(self.model.id == item_id).first()
+        item = self.db.query(self.model).filter(self.model.id == item_id).with_for_update().first()
         if not item or not getattr(item, "is_active", True):
             raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="记录不存在")
         self.data_access.check_access(current_user, item, "EDIT", workspace_context)
+        payload = self.prepare(payload, current_user, workspace_context, item)
+        if self.code_field and payload.get(self.code_field) != getattr(item, self.code_field):
+            duplicate = self.db.query(self.model).filter(
+                getattr(self.model, self.code_field) == payload[self.code_field], self.model.id != item.id,
+                self.model.is_active == True)
+            duplicate = self.data_access.apply_workspace_filter(duplicate, self.model, current_user, workspace_context)
+            if duplicate.first():
+                raise HTTPException(400, f"{self.code_field} 已存在")
         valid = {c.name for c in self.model.__table__.columns}
         for key, value in payload.items():
             if key in valid and key not in {
@@ -166,7 +188,7 @@ class WorkspaceEntityService:
         item.updated_at = datetime.utcnow()
         self.db.commit()
         self.db.refresh(item)
-        return _model_to_dict(item)
+        return self.serialize(item, current_user, workspace_context)
 
     def delete_item(
         self,
@@ -174,10 +196,11 @@ class WorkspaceEntityService:
         current_user: User,
         workspace_context: WorkspaceContext,
     ) -> None:
-        item = self.db.query(self.model).filter(self.model.id == item_id).first()
+        item = self.db.query(self.model).filter(self.model.id == item_id).with_for_update().first()
         if not item or not getattr(item, "is_active", True):
             raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="记录不存在")
         self.data_access.check_access(current_user, item, "DELETE", workspace_context)
+        self.before_delete(item, current_user, workspace_context)
         item.is_active = False
         item.updated_by = current_user.id
         item.updated_at = datetime.utcnow()
@@ -190,93 +213,8 @@ def run_report_template(
     current_user: User,
     workspace_context: WorkspaceContext,
 ) -> Dict[str, Any]:
-    """Lightweight aggregate run for configured data sources."""
-    data_access = DataAccessMiddleware(db)
-    try:
-        sources = json.loads(template.get("data_sources") or "[]")
-    except json.JSONDecodeError:
-        sources = []
-    if isinstance(sources, str):
-        sources = [sources]
-    try:
-        filters = json.loads(template.get("filters") or "[]")
-    except json.JSONDecodeError:
-        filters = []
-    if not isinstance(filters, list):
-        filters = []
-
-    source_model = {
-        "wps": WPS,
-        "pqr": PQR,
-        "quality": QualityInspection,
-        "production": ProductionTask,
-    }
-    results = []
-    for source in sources:
-        model = source_model.get(str(source).lower())
-        if model is None:
-            results.append({"source": source, "total": 0, "note": "unsupported"})
-            continue
-        query = db.query(model)
-        if hasattr(model, "is_active"):
-            query = query.filter(model.is_active == True)  # noqa: E712
-        # QualityInspection 可能无 is_active
-        query = data_access.apply_workspace_filter(
-            query=query,
-            model=model,
-            user=current_user,
-            workspace_context=workspace_context,
-        )
-        # 仅允许使用模型真实列，避免把用户输入拼进 SQL。某数据源没有的字段会忽略。
-        applied_filters = 0
-        for item in filters:
-            if not isinstance(item, dict):
-                continue
-            field = str(item.get("field") or "").strip()
-            value = item.get("value")
-            operator = str(item.get("operator") or "eq").lower()
-            column = getattr(model, field, None)
-            if not field or column is None or value in (None, ""):
-                continue
-            try:
-                python_type = column.property.columns[0].type.python_type
-                if python_type is bool:
-                    value = str(value).strip().lower() in {"1", "true", "yes", "是"}
-                elif python_type is int:
-                    value = int(value)
-                elif python_type is float:
-                    value = float(value)
-                elif python_type is datetime:
-                    value = datetime.fromisoformat(str(value))
-                elif python_type is date:
-                    value = date.fromisoformat(str(value))
-            except (AttributeError, TypeError, ValueError):
-                # 无法转换的筛选条件不应让整份报表失败。
-                continue
-            if operator == "contains":
-                query = query.filter(cast(column, String).ilike(f"%{value}%"))
-            elif operator == "gte":
-                query = query.filter(column >= value)
-            elif operator == "lte":
-                query = query.filter(column <= value)
-            else:
-                query = query.filter(column == value)
-            applied_filters += 1
-        # QualityInspection uses owner_id; DataAccessMiddleware should handle via user_id property or owner_id
-        total = query.count()
-        results.append({
-            "source": source,
-            "total": total,
-            "note": f"已应用 {applied_filters} 个筛选条件" if applied_filters else None,
-        })
-
-    return {
-        "template_id": template.get("id"),
-        "name": template.get("name"),
-        "chart_type": template.get("chart_type") or "table",
-        "generated_at": datetime.utcnow().isoformat(),
-        "results": results,
-    }
+    from app.services.report_template_runner import run_report
+    return run_report(db, template, current_user, workspace_context)
 
 
 def paginated_payload(items: List[Any], total: int, skip: int, limit: int) -> Dict[str, Any]:
@@ -292,16 +230,20 @@ def paginated_payload(items: List[Any], total: int, skip: int, limit: int) -> Di
 
 
 def plan_service(db: Session) -> WorkspaceEntityService:
-    return WorkspaceEntityService(db, ProductionPlan, code_field="plan_number")
+    from app.services.business_workflow_service import PlanService
+    return PlanService(db, ProductionPlan, code_field="plan_number")
 
 
 def standard_service(db: Session) -> WorkspaceEntityService:
-    return WorkspaceEntityService(db, QualityStandard, code_field="standard_code")
+    from app.services.business_workflow_service import StandardService
+    return StandardService(db, QualityStandard, code_field="standard_code")
 
 
 def performance_service(db: Session) -> WorkspaceEntityService:
-    return WorkspaceEntityService(db, EmployeePerformance)
+    from app.services.business_workflow_service import PerformanceService
+    return PerformanceService(db, EmployeePerformance)
 
 
 def report_template_service(db: Session) -> WorkspaceEntityService:
-    return WorkspaceEntityService(db, ReportTemplate)
+    from app.services.business_workflow_service import ReportService
+    return ReportService(db, ReportTemplate)

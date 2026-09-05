@@ -102,7 +102,7 @@ const DrawingReview: React.FC = () => {
   useEffect(() => {
     void load();
     void smartImportService
-      .getAICapabilities()
+      .getAICapabilities({ task_type: "drawing_import", complexity: "advanced" })
       .then((value) => setPlatformHost(value.platform_host || ""));
   }, [load]);
   useEffect(() => {
