@@ -11,9 +11,37 @@ export interface ReleasedTask {
   source_step_snapshot: { order_index?: number };
 }
 export interface ReleaseDetail {
-  release: { id: string; status: string };
+  release: { id: string; status: string; consumable_issue_list_id?: string };
   tasks: ReleasedTask[];
   authorizations: ResourceAuthorization[];
+  change_requests: SequenceChange[];
+  executions: {
+    id: string;
+    production_task_id: number;
+    status: string;
+    actual_parameters: Record<string, number>;
+    recorded_at: string;
+    consumable_usage_event_ids: string[];
+  }[];
+  quality_nodes: {
+    id: string;
+    production_task_id: number;
+    quality_inspection_id: number;
+  }[];
+  usage_events: {
+    id: string;
+    event_type: string;
+    quantity: number;
+    unit: string;
+  }[];
+}
+export interface SequenceChange {
+  id: string;
+  status: string;
+  reason: string;
+  source_sequence_revision_id: string;
+  proposed_sequence_revision_id?: string;
+  approval_instance_id?: number;
 }
 export interface ResourceAuthorization {
   id: string;
@@ -27,8 +55,36 @@ export const productionReleaseService = {
   async forSequence(id: string): Promise<ReleaseDetail | null> {
     return (await api.get(`${root}/sequences/${id}/release`)).data;
   },
-  async release(id: string) {
-    return (await api.post(`${root}/sequences/${id}/release`, {})).data;
+  async issueLists(
+    id: string,
+  ): Promise<{ id: string; document_number: string }[]> {
+    return (await api.get(`${root}/sequences/${id}/issue-lists`)).data;
+  },
+  async requestChange(
+    id: string,
+    reason: string,
+    workflow_id?: number,
+  ): Promise<SequenceChange> {
+    return (
+      await api.post(`${root}/releases/${id}/change-requests`, {
+        reason,
+        workflow_id,
+      })
+    ).data;
+  },
+  async applyChange(id: string, proposed_sequence_revision_id: string) {
+    return (
+      await api.post(`${root}/change-requests/${id}/apply`, {
+        proposed_sequence_revision_id,
+      })
+    ).data;
+  },
+  async release(id: string, consumable_issue_list_id?: string) {
+    return (
+      await api.post(`${root}/sequences/${id}/release`, {
+        consumable_issue_list_id,
+      })
+    ).data;
   },
   async assign(
     id: number,
@@ -44,12 +100,15 @@ export const productionReleaseService = {
     id: number,
     key: string,
     actual_parameters: Record<string, number>,
+    consumable_usage_event_ids: string[] = [],
+    status: "recorded" | "completed" = "completed",
   ) {
     return (
       await api.post(`${root}/tasks/${id}/execution`, {
         idempotency_key: key,
-        status: "completed",
+        status,
         actual_parameters,
+        consumable_usage_event_ids,
       })
     ).data;
   },

@@ -50,6 +50,7 @@ def generate(
             data.ai_explanation,
             current_user,
             context,
+            structure=data.structure.model_dump(),
         )
     )
 
@@ -145,7 +146,13 @@ def recalculate(
     return row(
         service.generate(
             parent.product_revision_id,
-            data.strategies or parent.strategy_snapshot,
+            data.strategies
+            if data.strategies is not None
+            else {
+                key: value
+                for key, value in parent.strategy_snapshot.items()
+                if not key.startswith("_")
+            },
             None,
             None,
             current_user,
@@ -153,6 +160,9 @@ def recalculate(
             parent_id=parent.id,
             change_summary=data.change_summary,
             change_request_id=data.change_request_id,
+            structure=data.structure.model_dump()
+            if data.structure
+            else parent.strategy_snapshot.get("_structure"),
         )
     )
 

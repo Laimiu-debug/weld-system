@@ -27,6 +27,7 @@ import {
   Empty,
   Form,
   Input,
+  InputNumber,
   List,
   Modal,
   Row,
@@ -62,6 +63,8 @@ import {
 } from "@/services/sequence";
 import "./sequence.css";
 import ProductionReleasePanel from "./ProductionReleasePanel";
+import { productionError } from "./SequenceChangePanel";
+import { productionReleaseService } from "@/services/productionRelease";
 
 const { Title, Text, Paragraph } = Typography;
 const statusMeta: Record<string, { label: string; color: string }> = {
@@ -253,6 +256,12 @@ const WeldSequencePlanning: React.FC = () => {
     setWorking(true);
     try {
       const created = await sequenceService.generate(id, {
+        structure: {
+          template: values.template || "auto",
+          part_roles: values.part_roles || {},
+          closure_joint_ids: values.closure_joint_ids || [],
+          segment_length_mm: values.segment_length_mm || 500,
+        },
         strategies: {
           symmetric: values.symmetric ?? true,
           segmented: values.segmented ?? false,
@@ -264,6 +273,8 @@ const WeldSequencePlanning: React.FC = () => {
       setGenerateOpen(false);
       await load();
       setActiveId(created.id);
+    } catch (e) {
+      message.error(productionError(e));
     } finally {
       setWorking(false);
     }
@@ -315,10 +326,19 @@ const WeldSequencePlanning: React.FC = () => {
     if (!detail) return;
     setWorking(true);
     try {
+      const released = await productionReleaseService.forSequence(
+        detail.revision.id,
+      );
+      if (released?.release.status === "released") {
+        message.info("请在下方“已放行焊序变更”面板申请变更，批准后重算");
+        return;
+      }
       const created = await sequenceService.recalculate(detail.revision.id);
       message.success("已按当前焊缝和 P4 快照生成新版本");
       await load();
       setActiveId(created.id);
+    } catch (e) {
+      message.error(productionError(e));
     } finally {
       setWorking(false);
     }
@@ -437,7 +457,17 @@ const WeldSequencePlanning: React.FC = () => {
           description={release?.reason}
         />
 
-        {detail && <ProductionReleasePanel key={detail.revision.id} sequenceId={detail.revision.id} approved={detail.revision.status === "approved"} />}
+        {detail && (
+          <ProductionReleasePanel
+            key={detail.revision.id}
+            sequenceId={detail.revision.id}
+            approved={detail.revision.status === "approved"}
+            onSequenceChange={async (newId) => {
+              await load();
+              setActiveId(newId);
+            }}
+          />
+        )}
         <Card className="sequence-toolbar">
           <Space wrap>
             <Text strong>焊序版本</Text>
@@ -579,19 +609,73 @@ const WeldSequencePlanning: React.FC = () => {
             type="info"
             showIcon
             message="策略不会绕过强制约束"
-            description="对称、分段和跳焊只影响同等可执行步骤的施工策略；非法候选会被确定性规则排除。"
+            description="分段和跳焊按焊缝长度生成独立任务。交错顺序形成强制依赖；起点、方向及实际几何对称性须在施工图上核对。"
           />
           <Form
             form={generateForm}
             layout="vertical"
             initialValues={{
+              template: "auto",
+              segment_length_mm: 500,
               symmetric: true,
               segmented: false,
               skip_weld: false,
             }}
           >
+            <Form.Item name="template" label="结构模板">
+              <Select
+                options={[
+                  { value: "auto", label: "按确认的结构角色和连接选择" },
+                  { value: "generic", label: "通用焊接结构" },
+                  {
+                    value: "pressure_vessel",
+                    label: "压力容器（须确认筒体/封头连接）",
+                  },
+                ]}
+              />
+            </Form.Item>
+            {(product?.parts || [])
+              .filter((part) => !part.is_deleted)
+              .map((part) => (
+                <Form.Item
+                  key={part.id}
+                  name={["part_roles", part.id]}
+                  label={`结构角色：${part.part_number || ""} ${part.name}`}
+                >
+                  <Select
+                    allowClear
+                    options={[
+                      { value: "shell", label: "筒体/筒节" },
+                      { value: "head", label: "封头" },
+                      { value: "nozzle", label: "接管" },
+                      { value: "general", label: "其他零件" },
+                    ]}
+                  />
+                </Form.Item>
+              ))}
+            <Form.Item
+              name="closure_joint_ids"
+              label="实际最终封闭焊缝（容器必选）"
+            >
+              <Select
+                mode="multiple"
+                options={(product?.weld_joints || [])
+                  .filter((joint) => !joint.is_deleted)
+                  .map((joint) => ({
+                    value: joint.id,
+                    label: joint.weld_number,
+                  }))}
+              />
+            </Form.Item>
+            <Form.Item
+              name="segment_length_mm"
+              label="每段最大长度（mm，分段/跳焊时使用）"
+              rules={[{ required: true }]}
+            >
+              <InputNumber min={1} max={100000} />
+            </Form.Item>
             <Form.Item name="symmetric" valuePropName="checked">
-              <Checkbox>优先对称焊，降低变形风险</Checkbox>
+              <Checkbox>同类焊缝两端交错排序（需人工核对几何对称性）</Checkbox>
             </Form.Item>
             <Form.Item name="segmented" valuePropName="checked">
               <Checkbox>启用分段焊策略</Checkbox>

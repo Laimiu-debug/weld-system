@@ -36,6 +36,12 @@ from app.models.production_release import (
 from app.models.user import User
 from app.services.approval_service import ApprovalService
 from app.services.engineering_service import workspace_values
+from app.services.sequence_structure_service import (
+    resolve_structure,
+    structure_joint_family,
+    expand_weld_strategies,
+)
+from app.services.sequence_change_service import sync_change_approval
 
 
 TEMPLATE_CODE = "PRESSURE_VESSEL_V1"
@@ -280,11 +286,18 @@ def build_pressure_vessel_blueprint(
     freezes: dict[str, Any],
     strategies: dict[str, bool] | None = None,
     preferred_codes: list[str] | None = None,
+    structure: dict | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     policy = {**DEFAULT_STRATEGIES, **(strategies or {})}
     steps: list[dict[str, Any]] = []
     dependencies: list[dict[str, Any]] = []
     priorities: dict[str, tuple[int, str]] = {}
+    family_of = (
+        lambda joint: structure_joint_family(joint, structure)
+        if structure
+        else classify_joint(joint, parts)
+    )
+    generic = bool(structure and structure["template"] == "generic")
 
     def add_step(code, step_type, title, phase, priority, **extra):
         steps.append(
@@ -300,7 +313,7 @@ def build_pressure_vessel_blueprint(
                 "constraint_tags": extra.get("constraint_tags", []),
                 "process_parameters": extra.get("process_parameters", {}),
                 "inspection_node": extra.get("inspection_node", {}),
-                "explanation": extra.get("explanation", "由压力容器模板确定"),
+                "explanation": extra.get("explanation", "由已选结构模板确定"),
                 "source_snapshot": extra.get("source_snapshot", {}),
             }
         )
@@ -317,20 +330,23 @@ def build_pressure_vessel_blueprint(
             }
         )
 
-    add_step("PREP-SHELL", "assembly", "筒板下料、卷制与校圆", "材料与成形", 1, is_locked=True)
-    add_step("PREP-HEAD", "assembly", "封头成形与坡口准备", "材料与成形", 2, is_locked=True)
-    add_step("PREP-NOZZLE", "assembly", "接管与开孔件预制", "材料与成形", 3, is_locked=True)
+    if generic:
+        add_step("PREP-GENERAL", "assembly", "零件备料与坡口准备", "材料与成形", 1, is_locked=True)
+    else:
+        add_step("PREP-SHELL", "assembly", "筒板下料、卷制与校圆", "材料与成形", 1, is_locked=True)
+        add_step("PREP-HEAD", "assembly", "封头成形与坡口准备", "材料与成形", 2, is_locked=True)
+        add_step("PREP-NOZZLE", "assembly", "接管与开孔件预制", "材料与成形", 3, is_locked=True)
     terminals = []
     closure_sensitive = []
     head_welds = []
     any_pwht = False
     sorted_joints = sorted(
-        joints, key=lambda item: (classify_joint(item, parts)[1], item.weld_number)
+        joints, key=lambda item: (family_of(item)[1], item.weld_number)
     )
     if policy["symmetric"]:
         grouped: dict[int, list[Any]] = defaultdict(list)
         for item in sorted_joints:
-            grouped[classify_joint(item, parts)[1]].append(item)
+            grouped[family_of(item)[1]].append(item)
         sorted_joints = []
         for key in sorted(grouped):
             group = grouped[key]
@@ -342,7 +358,7 @@ def build_pressure_vessel_blueprint(
     for joint in sorted_joints:
         requirement = requirements.get(joint.id)
         freeze = freezes.get(joint.id)
-        phase, priority, family = classify_joint(joint, parts)
+        phase, priority, family = family_of(joint)
         asm = f"ASM-{joint.id}"
         weld = f"WELD-{joint.id}"
         base = (
@@ -352,6 +368,8 @@ def build_pressure_vessel_blueprint(
             if family == "head"
             else "PREP-SHELL"
         )
+        if generic:
+            base = "PREP-GENERAL"
         part_names = [
             getattr(parts.get(joint.part_a_id), "name", None),
             getattr(parts.get(joint.part_b_id), "name", None),
@@ -410,10 +428,15 @@ def build_pressure_vessel_blueprint(
             )
             add_edge(weld, nde, "nde", "焊接完成后执行规定的无损检测")
             terminal = nde
-        if _is_internal(requirement) and family != "head":
+        is_closing = (
+            joint.id in structure.get("closure_joint_ids", [])
+            if structure
+            else family == "head"
+        )
+        if _is_internal(requirement) and not is_closing:
             closure_sensitive.append(terminal)
         terminals.append(terminal)
-        if family == "head":
+        if is_closing:
             head_welds.append(weld)
         any_pwht = any_pwht or bool(getattr(requirement, "pwht_required", False))
 
@@ -459,6 +482,12 @@ def build_pressure_vessel_blueprint(
     for code in final_inputs:
         add_edge(code, "FINAL-INSPECTION", "nde", "所有制造与检验节点完成后才能最终检验")
 
+    if structure is not None:
+        steps, dependencies = expand_weld_strategies(
+            steps, dependencies, joints, policy, structure.get("segment_length_mm", 500)
+        )
+    if len(steps) > 2000:
+        raise HTTPException(422, "焊序超过 2000 步，请调整分段长度或拆分产品")
     codes = [item["step_code"] for item in steps]
     valid_preferred = [code for code in (preferred_codes or []) if code in set(codes)]
     if policy["symmetric"]:
@@ -529,30 +558,41 @@ class WeldSequenceService:
         parent_id: str | None = None,
         change_summary: str | None = None,
         change_request_id: str | None = None,
+        structure: dict | None = None,
     ) -> WeldSequenceRevision:
         revision = self._get(ProductRevision, revision_id, user, context, True)
+        self.db.refresh(revision, with_for_update=True)
         approved_change = None
-        if parent_id:
-            released = (
-                self.db.query(ProductionReleaseBatch)
-                .filter(ProductionReleaseBatch.sequence_revision_id == parent_id)
+        released = (
+            self.db.query(ProductionReleaseBatch)
+            .filter(
+                ProductionReleaseBatch.product_revision_id == revision.id,
+                ProductionReleaseBatch.status == "released",
+            )
+            .with_for_update()
+            .first()
+        )
+        if released:
+            approved_change = (
+                self.db.query(ProductionSequenceChangeRequest)
+                .filter(
+                    ProductionSequenceChangeRequest.id == change_request_id,
+                    ProductionSequenceChangeRequest.production_release_id
+                    == released.id,
+                )
                 .first()
             )
-            if released:
-                approved_change = (
-                    self.db.query(ProductionSequenceChangeRequest)
-                    .filter(
-                        ProductionSequenceChangeRequest.id == change_request_id,
-                        ProductionSequenceChangeRequest.production_release_id
-                        == released.id,
-                        ProductionSequenceChangeRequest.status == "approved",
-                    )
-                    .first()
-                )
-                if not change_request_allows_recalculation(
-                    released.id, approved_change
-                ):
-                    raise HTTPException(409, "已发布焊序重算必须绑定已批准的变更申请")
+            sync_change_approval(self.db, approved_change)
+            if (
+                not change_request_allows_recalculation(released.id, approved_change)
+                or parent_id
+                not in {
+                    released.sequence_revision_id,
+                    getattr(approved_change, "proposed_sequence_revision_id", None),
+                }
+                or not parent_id
+            ):
+                raise HTTPException(409, "已发布焊序重算必须绑定已批准的变更申请")
         if revision.status != "approved":
             raise HTTPException(409, "产品图纸版本批准后才能生成正式候选焊序")
         product = (
@@ -581,8 +621,9 @@ class WeldSequenceService:
             .all()
         }
         freezes = self._approved_freezes(revision.id)
+        structure = resolve_structure(parts, joints, structure)
         steps, dependencies, validation = build_pressure_vessel_blueprint(
-            joints, requirements, parts, freezes, strategies, ai_step_codes
+            joints, requirements, parts, freezes, strategies, ai_step_codes, structure
         )
         source_matches = [
             {
@@ -607,9 +648,15 @@ class WeldSequenceService:
             parent_revision_id=parent_id,
             status="draft",
             source_data_version=revision.data_version,
-            template_code=TEMPLATE_CODE,
-            template_version=TEMPLATE_VERSION,
-            strategy_snapshot={**DEFAULT_STRATEGIES, **strategies},
+            template_code=TEMPLATE_CODE
+            if structure["template"] == "pressure_vessel"
+            else "GENERIC_WELDMENT_V1",
+            template_version="2.0.0",
+            strategy_snapshot={
+                **DEFAULT_STRATEGIES,
+                **strategies,
+                "_structure": structure,
+            },
             source_match_snapshot=source_matches,
             source_match_hash=snapshot_hash(source_matches),
             candidate_source="ai_assisted" if ai_step_codes else "deterministic",
@@ -623,7 +670,6 @@ class WeldSequenceService:
         self.db.flush()
         if approved_change is not None:
             approved_change.proposed_sequence_revision_id = sequence.id
-            approved_change.status = "applied"
         step_by_code = {}
         for item in steps:
             step = WeldSequenceStep(
@@ -847,6 +893,16 @@ class WeldSequenceService:
                     "successor_code": code_by_id[old.successor_step_id],
                 }
             )
+        for request in (
+            self.db.query(ProductionSequenceChangeRequest)
+            .filter(
+                ProductionSequenceChangeRequest.proposed_sequence_revision_id
+                == parent.id,
+                ProductionSequenceChangeRequest.status == "approved",
+            )
+            .all()
+        ):
+            request.proposed_sequence_revision_id = child.id
         child.validation_result = validate_sequence(step_values, dep_values)
         child.validation_hash = snapshot_hash(child.validation_result)
         self.db.commit()

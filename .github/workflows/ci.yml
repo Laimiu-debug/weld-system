@@ -68,7 +68,7 @@ jobs:
           alembic upgrade head
           alembic current | grep "(head)"
       - name: Foundation and AI input PostgreSQL regression
-        run: python -m pytest tests/integration/test_foundation_integrity.py tests/integration/test_ai_input_integrity.py -q --tb=short
+        run: python -m pytest tests/integration/test_foundation_integrity.py tests/integration/test_ai_input_integrity.py tests/integration/test_sequence_workflow.py -q --tb=short
         env:
           RUN_LOCAL_DB_TESTS: "1"
 

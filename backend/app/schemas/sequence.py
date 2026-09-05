@@ -4,7 +4,17 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 
+class SequenceStructure(BaseModel):
+    template: Literal["auto", "generic", "pressure_vessel"] = "auto"
+    part_roles: dict[str, Literal["shell", "head", "nozzle", "general"]] = Field(
+        default_factory=dict
+    )
+    closure_joint_ids: list[str] = Field(default_factory=list, max_length=100)
+    segment_length_mm: float = Field(default=500, gt=0, le=100000, allow_inf_nan=False)
+
+
 class SequenceGenerate(BaseModel):
+    structure: SequenceStructure = Field(default_factory=SequenceStructure)
     strategies: dict[str, bool] = Field(default_factory=dict)
     ai_step_codes: list[str] | None = Field(None, max_length=1000)
     ai_explanation: str | None = Field(None, max_length=4000)
@@ -37,9 +47,16 @@ class SequenceReorder(BaseModel):
 
 
 class SequenceRecalculate(BaseModel):
+    structure: SequenceStructure | None = None
     strategies: dict[str, bool] | None = None
     change_summary: str = Field(default="按当前数据重新计算", max_length=1000)
     change_request_id: str | None = None
+
+    @model_validator(mode="after")
+    def validate_strategies(self):
+        if self.strategies is not None:
+            SequenceGenerate(strategies=self.strategies)
+        return self
 
 
 class SequenceSubmit(BaseModel):

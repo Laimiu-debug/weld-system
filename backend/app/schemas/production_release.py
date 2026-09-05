@@ -1,7 +1,8 @@
 """P7 production release API contracts."""
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from math import isfinite
 
 
 class ReleaseSequenceRequest(BaseModel):
@@ -25,6 +26,23 @@ class ExecutionRecordRequest(BaseModel):
     consumable_usage_event_ids: list[str] = Field(default_factory=list, max_length=1000)
     repair_snapshot: dict = Field(default_factory=dict)
     quality_snapshot: dict = Field(default_factory=dict)
+
+    @field_validator("actual_parameters")
+    @classmethod
+    def validate_actual_parameters(cls, values):
+        for name, value in values.items():
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not isfinite(value)
+            ):
+                raise ValueError("实际参数必须为有限数值")
+            if (
+                name in {"current", "voltage", "travel_speed", "heat_input"}
+                and value < 0
+            ):
+                raise ValueError("电流、电压、焊速及热输入不能为负数")
+        return values
 
 
 class SequenceChangeRequestCreate(BaseModel):

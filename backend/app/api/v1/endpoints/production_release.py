@@ -75,6 +75,18 @@ def release_detail(
     return ProductionReleaseService(db).detail(release_id, current_user, context)
 
 
+@router.get("/sequences/{sequence_id}/issue-lists")
+def available_issue_lists(
+    sequence_id: str,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
+):
+    context = resolve_workspace(db, current_user, workspace_id)
+    _permission(db, current_user, context)
+    return ProductionReleaseService(db).issue_lists(sequence_id, current_user, context)
+
+
 @router.post("/tasks/{task_id}/assign")
 def assign_resource(
     task_id: int,
